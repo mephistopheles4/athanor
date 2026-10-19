@@ -1,7 +1,7 @@
 // Shared test helpers. Every test gets its own state folder and name prefix,
 // so no test touches a live machine's slots, configuration or image marks.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,8 +102,10 @@ export function fake(t, scenario = {}) {
     dir,
     docker: [process.execPath, fakeDocker, dir],
     setScenario: (s) => writeFileSync(join(dir, 'scenario.json'), JSON.stringify(s)),
-    addContainer: (name, labels, image = 'athanor:old') =>
-      writeFileSync(join(dir, 'containers', encodeURIComponent(name) + '.json'), JSON.stringify({ name, labels, image, running: true })),
+    addContainer: (name, labels, image = 'athanor:old') => {
+      mkdirSync(join(dir, 'containers'), { recursive: true });
+      writeFileSync(join(dir, 'containers', encodeURIComponent(name) + '.json'), JSON.stringify({ name, labels, image, running: true }));
+    },
     addImage: (tag) => {
       mkdirSync(join(dir, 'images'), { recursive: true });
       writeFileSync(join(dir, 'images', encodeURIComponent(tag) + '.json'), JSON.stringify({ tag }));
@@ -119,6 +121,36 @@ export function fake(t, scenario = {}) {
 }
 
 export const callsOf = (calls, verb) => calls.filter((c) => c.args[0] === verb);
+
+// A stream stand-in that keeps what is written to it.
+export function collector() {
+  const parts = [];
+  return { write: (c) => { parts.push(Buffer.from(c)); return true; }, text: () => Buffer.concat(parts).toString('utf8') };
+}
+
+// A file's bytes from a recorded tar listing, or undefined.
+export function tarFile(entries, name) {
+  const entry = entries.find((e) => e.name === name && e.type === '0');
+  return entry ? Buffer.from(entry.content, 'base64').toString('utf8') : undefined;
+}
+
+export const tarNames = (entries) => entries.filter((e) => e.type === '0').map((e) => e.name).sort();
+
+// Everything a run must leave as it was: stash list, index entries, status,
+// refs, the index file's bytes and time, and the object count.
+export function gitState(repo) {
+  const indexPath = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim();
+  const index = existsSync(indexPath) ? statSync(indexPath) : null;
+  return {
+    stash: git(repo, ['stash', 'list']),
+    stage: git(repo, ['ls-files', '--stage']),
+    status: git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all']),
+    refs: git(repo, ['show-ref']),
+    indexBytes: index ? readFileSync(indexPath).toString('base64') : null,
+    indexTime: index ? index.mtimeMs : null,
+    objects: git(repo, ['count-objects', '-v']),
+  };
+}
 
 export const baseConfig = {
   dockerfile: 'test/Dockerfile',
