@@ -5,11 +5,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { run } from '../../src/index.mjs';
 import { ask } from '../../src/slots.mjs';
 import {
   makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, collector, tarFile, tarNames, gitState, git, tempDir, writeFiles,
 } from '../helpers.mjs';
+
+const sourceCheck = fileURLToPath(new URL('../../scripts/check-source.mjs', import.meta.url));
+const check = (...dirs) => spawnSync(process.execPath, [sourceCheck, ...dirs], { encoding: 'utf8', shell: false });
 
 const runWith = (t, repo, docker, extra = {}) =>
   run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix(), ...extra });
@@ -161,7 +166,7 @@ test('C12 an interrupt removes the container, frees the slot and returns 130', a
   assert.equal((await ask(prefix, 1)).held, false, 'the slot is free');
 });
 
-test('C16 a command with shell characters reaches the container as the same literal arguments', async (t) => {
+test('C16 a command with shell characters reaches the container as the same literal arguments, and the source check finds no shell use', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t);
@@ -170,6 +175,29 @@ test('C16 a command with shell characters reaches the container as the same lite
   const args = callsOf(docker.calls(), 'run')[0].args;
   assert.deepEqual(args.slice(args.length - command.length), command);
   assert.equal(args[args.length - command.length - 1], 'athanor', '$0 for sh -c');
+
+  await t.test('the source check', async (t) => {
+    const clean = check();
+    assert.equal(clean.status, 0, clean.stderr);
+  
+    const bad = [
+      "spawn('docker', [], { shell: true });",
+      "spawnSync('git', args, {shell:true})",
+      "import { exec } from 'node:child_process'; exec('ls');",
+      "child_process.execSync('ls')",
+      "execFile('git', ['x'], { shell: 'bash' })",
+      "execFileSync('git', [], { shell: true })",
+    ];
+    for (const line of bad) {
+      await t.test(line, () => {
+        const dir = tempDir(t);
+        writeFiles(dir, { 'src/bad.mjs': `${line}\n` });
+        const r = check(join(dir, 'src'));
+        assert.equal(r.status, 1, `expected a failure for: ${line}`);
+        assert.match(r.stderr, /bad\.mjs:1/);
+      });
+    }
+  });
 });
 
 test('C19 no host environment value, host folder or socket reaches the container', async (t) => {

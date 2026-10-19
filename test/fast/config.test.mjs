@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, symlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '../../src/index.mjs';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli } from '../helpers.mjs';
+import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.mjs';
 
 async function runIn(t, repo, extra = {}) {
   const docker = fake(t);
@@ -155,5 +155,20 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     const { result } = await runIn(t, repo);
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
     assert.ok(existsSync(process.env.ATHANOR_HOME));
+  });
+  await t.test('maxRuns 3 in the file: three at once', async (t) => {
+    const home = isolate(t);
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 3 }));
+    const { results, progress } = await together(t, 3);
+    assert.deepEqual(results.map((r) => r.slot).sort(), [1, 2, 3]);
+    assert.equal(progress.some(waited), false);
+  });
+  await t.test('ATHANOR_MAX_RUNS=1 overrides maxRuns 3: the second waits', async (t) => {
+    const home = isolate(t, { ATHANOR_MAX_RUNS: '1' });
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 3 }));
+    const { results, progress } = await together(t, 2, { hangMs: 800 });
+    assert.deepEqual(results.map((r) => r.slot), [1, 1]);
+    assert.equal(progress.filter(waited).length, 1);
+    assert.ok(results.some((r) => r.waitedMs >= 500));
   });
 });

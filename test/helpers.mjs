@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { run } from '../src/index.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const bin = join(here, '..', 'bin', 'athanor.mjs');
@@ -156,3 +157,16 @@ export const baseConfig = {
   dockerfile: 'test/Dockerfile',
   commands: { test: ['node', 'test/run.mjs'] },
 };
+
+// Start `count` hanging runs together; resolve with their results and the
+// progress lines each printed.
+export async function together(t, count, { hangMs = 1500, prefix = uniquePrefix() } = {}) {
+  const repo = makeRepo(t, { athanor: baseConfig });
+  const docker = fake(t, { run: { hangMs } });
+  const progress = Array.from({ length: count }, () => []);
+  const results = await Promise.all(progress.map((lines) =>
+    run({ cwd: repo, docker: docker.docker, prefix, onProgress: (l) => lines.push(l) })));
+  return { results, progress, docker };
+}
+
+export const waited = (lines) => lines.some((l) => /waiting for a free run slot/.test(l));

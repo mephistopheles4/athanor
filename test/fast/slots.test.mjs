@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { run, status } from '../../src/index.mjs';
 import { lockPath } from '../../src/slots.mjs';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.mjs';
+import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, together, waited } from '../helpers.mjs';
 
 // Hold a slot from this process with any answer line; returns a closer.
 function holdSlot(t, prefix, slot, line) {
@@ -20,18 +20,6 @@ function holdSlot(t, prefix, slot, line) {
   });
 }
 
-// Start `count` hanging runs together; resolve with their results and the
-// progress lines each printed.
-async function together(t, count, { hangMs = 1500, prefix = uniquePrefix() } = {}) {
-  const repo = makeRepo(t, { athanor: baseConfig });
-  const docker = fake(t, { run: { hangMs } });
-  const progress = Array.from({ length: count }, () => []);
-  const results = await Promise.all(progress.map((lines) =>
-    run({ cwd: repo, docker: docker.docker, prefix, onProgress: (l) => lines.push(l) })));
-  return { results, progress, docker };
-}
-
-const waited = (lines) => lines.some((l) => /waiting for a free run slot/.test(l));
 
 test('C9 ATHANOR_MAX_RUNS sets the limit, bad values exit 125, and a holder above the limit gives a warning', async (t) => {
   await t.test('with 3, three runs go at once', async (t) => {
@@ -62,24 +50,6 @@ test('C9 ATHANOR_MAX_RUNS sets the limit, bad values exit 125, and a holder abov
     const result = await run({ cwd: repo, docker: fake(t).docker, prefix, onProgress: (l) => lines.push(l) });
     assert.equal(result.outcome, 'pass');
     assert.ok(lines.some((l) => /warning: another caller uses a different run limit/.test(l)), lines.join('\n'));
-  });
-});
-
-test('C24 the run limit comes from maxRuns in the file, and ATHANOR_MAX_RUNS overrides it', async (t) => {
-  await t.test('maxRuns 3 in the file: three at once', async (t) => {
-    const home = isolate(t);
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 3 }));
-    const { results, progress } = await together(t, 3);
-    assert.deepEqual(results.map((r) => r.slot).sort(), [1, 2, 3]);
-    assert.equal(progress.some(waited), false);
-  });
-  await t.test('ATHANOR_MAX_RUNS=1 overrides maxRuns 3: the second waits', async (t) => {
-    const home = isolate(t, { ATHANOR_MAX_RUNS: '1' });
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 3 }));
-    const { results, progress } = await together(t, 2, { hangMs: 800 });
-    assert.deepEqual(results.map((r) => r.slot), [1, 1]);
-    assert.equal(progress.filter(waited).length, 1);
-    assert.ok(results.some((r) => r.waitedMs >= 500));
   });
 });
 
