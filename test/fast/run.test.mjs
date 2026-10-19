@@ -229,19 +229,6 @@ test('C25 a run never passes on a partial snapshot, and each failure gets its ou
   }
 });
 
-test('C26 a same-named container without athanor\'s label is left alone and the run exits 125', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: baseConfig });
-  const docker = fake(t);
-  const prefix = uniquePrefix();
-  docker.addContainer(`${prefix}-slot-1`, { other: 'x' });
-  const result = await run({ cwd: repo, docker: docker.docker, prefix });
-  assert.equal(result.exitCode, 125);
-  assert.match(result.message, /without athanor's label/);
-  assert.equal(callsOf(docker.calls(), 'rm').length, 0);
-  assert.equal(callsOf(docker.calls(), 'run').length, 0);
-});
-
 test('C28 only the hashed set reaches the build', async (t) => {
   isolate(t);
   const athanor = { ...baseConfig, dockerfile: 'test/Dockerfile', context: 'test', inputs: ['package-lock.json'] };

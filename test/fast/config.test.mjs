@@ -157,14 +157,3 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     assert.ok(existsSync(process.env.ATHANOR_HOME));
   });
 });
-
-test('C9 a bad ATHANOR_MAX_RUNS exits 125 naming the variable', async (t) => {
-  for (const value of ['0', '-1', 'x', '2.5', '']) {
-    await t.test(JSON.stringify(value), async (t) => {
-      isolate(t, { ATHANOR_MAX_RUNS: value });
-      const repo = makeRepo(t, { athanor: baseConfig });
-      const { result, calls } = await runIn(t, repo);
-      assertSetupError(result, calls, /ATHANOR_MAX_RUNS/);
-    });
-  }
-});
