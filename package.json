@@ -1,0 +1,28 @@
+{
+  "name": "athanor-testbox",
+  "version": "0.1.0",
+  "description": "Run a repo's tests on the current commit in a fresh, offline Docker container, with a machine-wide run limit.",
+  "license": "MIT",
+  "author": "Ayman Diab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mephistopheles4/athanor.git"
+  },
+  "type": "module",
+  "bin": {
+    "athanor": "bin/athanor.mjs"
+  },
+  "exports": "./src/index.mjs",
+  "files": [
+    "bin/",
+    "src/"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node test/run.mjs fast",
+    "test:docker": "node test/run.mjs docker",
+    "check": "node scripts/check-source.mjs"
+  }
+}
