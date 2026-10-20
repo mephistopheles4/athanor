@@ -76,7 +76,7 @@ export function writeFiles(dir, files) {
   }
 }
 
-const ISOLATED_ENV = ['ATHANOR_HOME', 'ATHANOR_MAX_RUNS', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'BUILDX_BUILDER'];
+const ISOLATED_ENV = ['ATHANOR_HOME', 'ATHANOR_MAX_RUNS', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'BUILDX_BUILDER'];
 
 // Give a test its own state folder and clear every environment value athanor
 // reads; restore them afterwards. Returns the state folder.

@@ -27,6 +27,8 @@ const TYPES = {
   maxMemory: [isMemory, 'must be digits followed by m or g, such as 8g'],
   maxCpus: [isPositiveNumber, 'must be a number greater than 0'],
   maxTimeoutMinutes: [isPositiveNumber, 'must be a number greater than 0'],
+  // Machine file only: a repo cannot set it, because the repo key list leaves it out.
+  allowPlainTcp: [(v) => typeof v === 'boolean', 'must be true or false'],
 };
 
 export function memoryBytes(value) {

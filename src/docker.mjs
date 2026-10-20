@@ -6,10 +6,50 @@ import { AthanorError } from './errors.mjs';
 const firstLine = (text) => String(text).trim().split('\n')[0]?.trim() ?? '';
 const noSuch = (text) => /no such (container|object|image)/i.test(text);
 
-// athanor uses Docker as the user has it configured, local or remote (ADR 0012).
-// It checks only that the engine answers, and reads the builder's driver so a
-// docker-container builder can be told to load its image into the engine.
-export async function prepareDocker(docker) {
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+// The engine endpoint Docker will use, and whether its TLS is verified:
+// DOCKER_HOST when set, else the active context (which honours DOCKER_CONTEXT).
+async function engineEndpoint(docker, env) {
+  if (env.DOCKER_HOST !== undefined && env.DOCKER_HOST !== '') {
+    const verify = env.DOCKER_TLS_VERIFY !== undefined && env.DOCKER_TLS_VERIFY !== '';
+    return { host: env.DOCKER_HOST, tlsVerified: verify, setting: `DOCKER_HOST ("${env.DOCKER_HOST}")` };
+  }
+  const r = await call([...docker, 'context', 'inspect']);
+  if (r.code !== 0) {
+    throw new AthanorError(`Docker is not reachable: docker context inspect failed (${firstLine(r.stderr) || `exit ${r.code}`}). Start Docker, then run again.`);
+  }
+  let context;
+  try {
+    context = JSON.parse(r.stdout)[0];
+  } catch {
+    throw new AthanorError('docker context inspect gave output athanor cannot read. Check your Docker install.');
+  }
+  const endpoint = context?.Endpoints?.docker ?? {};
+  const material = context?.TLSMaterial?.docker ?? [];
+  const setting = env.DOCKER_CONTEXT !== undefined && env.DOCKER_CONTEXT !== ''
+    ? `DOCKER_CONTEXT ("${env.DOCKER_CONTEXT}")`
+    : `the active Docker context ("${context?.Name ?? 'unknown'}")`;
+  return { host: endpoint.Host ?? '', tlsVerified: material.includes('ca.pem') && endpoint.SkipTLSVerify !== true, setting };
+}
+
+// A tcp endpoint without TLS verification sends the snapshot, the build
+// context and the test output in clear (ADR 0013). Loopback stays on the machine.
+function isPlainRemoteTcp({ host, tlsVerified }) {
+  const match = host.match(/^(tcp|http):\/\/(\[[^\]]+\]|[^:/]+)/i);
+  if (!match || tlsVerified) return false;
+  return !LOOPBACK.has(match[2].toLowerCase());
+}
+
+// athanor uses Docker as the user has it configured, local or remote (ADR 0012),
+// but refuses a plain tcp endpoint unless the machine configuration allows it
+// (ADR 0013). It checks that the engine answers, and reads the builder's driver
+// so a docker-container builder can be told to load its image into the engine.
+export async function prepareDocker(docker, env = process.env, { allowPlainTcp = false, machineFile = 'config.json' } = {}) {
+  const endpoint = await engineEndpoint(docker, env);
+  if (!allowPlainTcp && isPlainRemoteTcp(endpoint)) {
+    throw new AthanorError(`${endpoint.setting} is a plain tcp endpoint without TLS verification, so the snapshot, the build context and the test output would cross the network unencrypted. Use ssh://, tcp with TLS verification (DOCKER_TLS_VERIFY=1), or a local engine. On a network you trust, you can allow it with "allowPlainTcp": true in the machine configuration (${machineFile}).`);
+  }
   const version = await call([...docker, 'version', '--format', '{{.Server.Version}}']);
   if (version.code !== 0) {
     throw new AthanorError(`Docker is not reachable: docker version failed (${firstLine(version.stderr) || `exit ${version.code}`}). Start Docker, then run again.`);

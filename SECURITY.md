@@ -20,9 +20,14 @@ reaching the test container, a configured path escaping the repo, or a
 command reaching a shell on the host.
 
 athanor is for repos you trust to build: the image build runs the repo's own
-Dockerfile with network access. That is by design, not a hole. So is sending
-the build context and snapshot to whatever Docker engine you have configured,
-local or remote.
+Dockerfile with network access. athanor sends the build context and snapshot
+to the Docker engine you have configured, local or remote, but refuses a plain
+tcp engine without TLS verification unless the machine configuration allows
+it. Which of these risks are accepted is decided in the threat model.
+
+Don't run athanor on a Docker engine shared with people you don't trust:
+anyone with access to the engine can read your runs and change their results.
+Teammates you trust on an office build box are fine.
 
 Docker, Docker Desktop, git and Node are outside athanor. Report a hole in one
 of them to its maker.

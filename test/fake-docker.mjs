@@ -76,7 +76,11 @@ async function main() {
     const host = named && scenario.contexts?.[named] !== undefined
       ? scenario.contexts[named]
       : scenario.contextHost ?? 'unix:///var/run/docker.sock';
-    console.log(JSON.stringify([{ Name: named ?? 'fake', Endpoints: { docker: { Host: host } } }]));
+    console.log(JSON.stringify([{
+      Name: named ?? 'fake',
+      Endpoints: { docker: { Host: host, SkipTLSVerify: scenario.contextSkipTls === true } },
+      TLSMaterial: scenario.contextTls ?? {},
+    }]));
     return 0;
   }
   if (a === 'buildx' && b === 'inspect') {

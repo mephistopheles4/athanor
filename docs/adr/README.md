@@ -17,3 +17,4 @@ changed one gets a new record that names the one it replaces.
 | [0010](0010-inputs-keep-their-repo-relative-path.md) | An inputs file keeps its repo-relative path |
 | [0011](0011-the-state-folder.md) | The state folder is .athanor in home |
 | [0012](0012-docker-as-configured.md) | Docker as configured |
+| [0013](0013-plain-tcp-refused-by-default.md) | A plain tcp Docker endpoint is refused by default |

@@ -439,24 +439,52 @@ test('C28 only the hashed set reaches the build', async (t) => {
   });
 });
 
-test('S4 athanor uses Docker as configured: a remote engine, context or builder is not refused', async (t) => {
-  // The owner removed C29's local-Docker check; see the spec amendment on issue 1.
-  const rows = [
-    { name: 'a tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' } },
-    { name: 'a context with a tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2376' } },
+test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unless the machine allows it', async (t) => {
+  // The owner removed C29's local-Docker check, then chose q8 A2: plain tcp
+  // without TLS is refused by default, with a machine-config opt-out.
+  const tls = { 'docker': ['ca.pem', 'cert.pem', 'key.pem'] };
+  const passes = [
+    { name: 'a tcp DOCKER_HOST with TLS verification', env: { DOCKER_HOST: 'tcp://10.0.0.5:2376', DOCKER_TLS_VERIFY: '1' } },
+    { name: 'an ssh DOCKER_HOST', env: { DOCKER_HOST: 'ssh://builder@10.0.0.5' } },
+    { name: 'a loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://127.0.0.1:2375' } },
+    { name: 'a localhost tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://localhost:2375' } },
+    { name: 'an IPv6 loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://[::1]:2375' } },
+    { name: 'a context with a TLS-verified tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2376', contextTls: tls } },
     { name: 'a remote builder', env: { BUILDX_BUILDER: 'far' }, scenario: { builderDriver: 'remote', builderEndpoint: 'tcp://10.0.0.5:1234' } },
+    { name: 'a plain tcp DOCKER_HOST with the machine opt-out', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, machine: { allowPlainTcp: true } },
   ];
-  for (const row of rows) {
-    await t.test(row.name, async (t) => {
-      isolate(t, row.env ?? {});
+  for (const row of passes) {
+    await t.test(`passes: ${row.name}`, async (t) => {
+      const home = isolate(t, row.env ?? {});
+      if (row.machine) writeFileSync(join(home, 'config.json'), JSON.stringify(row.machine));
       const repo = makeRepo(t, { athanor: baseConfig });
       const docker = fake(t, row.scenario ?? {});
       const result = await runWith(t, repo, docker);
       assert.equal(result.outcome, 'pass', JSON.stringify(result));
-      assert.equal(callsOf(docker.calls(), 'build').length, 1);
       assert.equal(callsOf(docker.calls(), 'run').length, 1);
     });
   }
+
+  const refusals = [
+    { name: 'a plain tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, says: /DOCKER_HOST \("tcp:\/\/10\.0\.0\.5:2375"\).*without TLS.*allowPlainTcp/s },
+    { name: 'a context with a plain tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2375' }, says: /DOCKER_CONTEXT \("remote"\).*without TLS.*allowPlainTcp/s },
+    { name: 'a context whose TLS verification is skipped', scenario: { contextHost: 'tcp://10.0.0.5:2376', contextTls: tls, contextSkipTls: true }, says: /active Docker context.*without TLS/s },
+    { name: 'the opt-out set in the repo config', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, athanor: { ...baseConfig, allowPlainTcp: true }, says: /unknown key "allowPlainTcp"/ },
+    { name: 'the opt-out as a string in the machine file', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, machine: { allowPlainTcp: 'yes' }, says: /allowPlainTcp must be true or false/ },
+  ];
+  for (const row of refusals) {
+    await t.test(`refuses: ${row.name}`, async (t) => {
+      const home = isolate(t, row.env ?? {});
+      if (row.machine) writeFileSync(join(home, 'config.json'), JSON.stringify(row.machine));
+      const repo = makeRepo(t, { athanor: row.athanor ?? baseConfig });
+      const docker = fake(t, row.scenario ?? {});
+      const result = await runWith(t, repo, docker);
+      assert.equal(result.exitCode, 125, JSON.stringify(result));
+      assert.match(result.message, row.says);
+      assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
+    });
+  }
+
   await t.test('an engine that does not answer exits 125 saying Docker is not reachable', async (t) => {
     isolate(t);
     const repo = makeRepo(t, { athanor: baseConfig });

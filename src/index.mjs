@@ -111,7 +111,10 @@ async function runInner(options, partial) {
   const timeLimitSeconds = options.timeLimitSeconds ?? limits.timeoutMinutes * 60;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  const { driver } = await prepareDocker(docker);
+  const { driver } = await prepareDocker(docker, env, {
+    allowPlainTcp: machine.allowPlainTcp === true,
+    machineFile: join(home, 'config.json'),
+  });
   // A docker-container builder keeps its result in the build cache unless told to load it.
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 

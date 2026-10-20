@@ -20,6 +20,17 @@ context and the buildx builder), local or remote. With a remote engine or
 builder, your build context and your snapshot, uncommitted changes included,
 go to that machine.
 
+A plain `tcp://` engine without TLS verification is refused, because your
+work and the test output would cross the network unencrypted. Use `ssh://`,
+tcp with TLS verification, or a local engine; loopback addresses pass. On a
+network you trust (a home lab, an office build box, a VM on this machine, or
+CI running Docker inside Docker), set `"allowPlainTcp": true` in the machine
+configuration. A repo cannot set it.
+
+Don't run athanor on a Docker engine shared with people you don't trust:
+anyone with access to the engine can read your runs and change their results.
+Teammates you trust on an office build box are fine.
+
 ```bash
 npm install --save-dev @mephistopheles4/athanor
 ```
@@ -95,7 +106,7 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 
 ```json
 { "maxRuns": 2, "memory": "2g", "cpus": 2, "timeoutMinutes": 30, "pruneDays": 30,
-  "maxMemory": "8g", "maxCpus": 4, "maxTimeoutMinutes": 120 }
+  "maxMemory": "8g", "maxCpus": 4, "maxTimeoutMinutes": 120, "allowPlainTcp": false }
 ```
 
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
