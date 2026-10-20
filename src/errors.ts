@@ -2,7 +2,7 @@
 // a broken image contract, a failed snapshot or a bad environment value.
 // The CLI turns it into exit 125.
 export class AthanorError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message);
     this.name = 'AthanorError';
   }

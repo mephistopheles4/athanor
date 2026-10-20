@@ -3,12 +3,22 @@
 // process ends, even after a hard kill.
 import net from 'node:net';
 
-export function lockPath(prefix, slot) {
+// What a holder tells whoever asks; `slot` and `limit` are added when it holds.
+export type HolderInfo = { pid: number; started: number; repo: string; [key: string]: unknown };
+
+export type HolderAnswer = HolderInfo & { slot: number; limit: number };
+
+export type Slot = { slot: number; release: () => Promise<void> };
+
+// Slot n's state: not held, held with no usable answer, or held with one.
+export type Asked = { held: false } | { held: true; answer?: HolderAnswer };
+
+export function lockPath(prefix: string, slot: number): string {
   const name = `${prefix}-slot-${slot}`;
   return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : `\0${name}`;
 }
 
-const sleep = (ms, signal) =>
+const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
     const onAbort = () => { clearTimeout(timer); resolve(); };
     const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
@@ -16,14 +26,14 @@ const sleep = (ms, signal) =>
   });
 
 // Try to hold one slot. Resolves to a net.Server, or null when it is held.
-function tryHold(prefix, slot, info) {
+function tryHold(prefix: string, slot: number, info: Record<string, unknown>): Promise<net.Server | null> {
   return new Promise((resolve, reject) => {
     const line = JSON.stringify({ slot, ...info }) + '\n';
     const server = net.createServer((socket) => {
       socket.on('error', () => {});
       socket.end(line);
     });
-    server.once('error', (error) => {
+    server.once('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE' || error.code === 'EACCES') resolve(null);
       else reject(error);
     });
@@ -32,14 +42,20 @@ function tryHold(prefix, slot, info) {
 }
 
 // Wait for one of slots 1..limit. Resolves to { slot, release } or null if aborted.
-export async function acquire({ prefix, limit, info, signal, onWait }) {
+export async function acquire({ prefix, limit, info, signal, onWait }: {
+  prefix: string;
+  limit: number;
+  info: HolderInfo;
+  signal?: AbortSignal;
+  onWait?: () => void;
+}): Promise<Slot | null> {
   let told = false;
   while (!signal?.aborted) {
     for (let slot = 1; slot <= limit; slot++) {
       const server = await tryHold(prefix, slot, { ...info, limit });
       if (server) {
         server.unref();
-        return { slot, release: () => new Promise((r) => server.close(() => r())) };
+        return { slot, release: () => new Promise<void>((r) => server.close(() => r())) };
       }
     }
     if (!told) {
@@ -51,7 +67,7 @@ export async function acquire({ prefix, limit, info, signal, onWait }) {
   return null;
 }
 
-const isHolderAnswer = (v) =>
+const isHolderAnswer = (v: any): v is HolderAnswer =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Number.isInteger(v.slot) && Number.isInteger(v.pid) && Number.isFinite(new Date(v.started).getTime()) && typeof v.started === 'number' &&
   // No control characters, so an answer cannot draw on the terminal that shows it.
@@ -59,12 +75,12 @@ const isHolderAnswer = (v) =>
 
 // Ask slot n's holder. Resolves to { held: false }, { held: true }, or
 // { held: true, answer } when it answered with one well-formed JSON line.
-export function ask(prefix, slot, timeoutMs = 1000) {
+export function ask(prefix: string, slot: number, timeoutMs = 1000): Promise<Asked> {
   return new Promise((resolve) => {
     const socket = net.connect(lockPath(prefix, slot));
     let data = '';
     let connected = false;
-    const done = (value) => { clearTimeout(timer); socket.destroy(); resolve(value); };
+    const done = (value: Asked) => { clearTimeout(timer); socket.destroy(); resolve(value); };
     const timer = setTimeout(() => done({ held: connected }), timeoutMs);
     socket.on('connect', () => { connected = true; });
     socket.on('data', (chunk) => {
@@ -74,10 +90,10 @@ export function ask(prefix, slot, timeoutMs = 1000) {
     socket.on('error', () => done({ held: connected }));
     socket.on('end', () => {
       const lines = data.split('\n').filter((l) => l !== '');
-      let answer;
+      let answer: unknown;
       if (lines.length === 1) {
         try {
-          answer = JSON.parse(lines[0]);
+          answer = JSON.parse(lines[0]!);
         } catch {
           answer = undefined;
         }

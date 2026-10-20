@@ -3,7 +3,7 @@
 // ignoring case on Windows.
 import { realpathSync, existsSync } from 'node:fs';
 import { resolve, sep, relative } from 'node:path';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 
 const segments = (p) => {
   const parts = p.split(sep).filter((s) => s !== '');

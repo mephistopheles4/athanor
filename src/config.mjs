@@ -1,7 +1,7 @@
 // The repo's athanor key, the machine configuration, and the limits a run uses.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,

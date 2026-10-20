@@ -2,7 +2,7 @@
 // The core (index.mjs) does the work and never prints or exits.
 import { readFileSync } from 'node:fs';
 import { run, status, prune } from './index.mjs';
-import { AthanorError, EXIT } from './errors.mjs';
+import { AthanorError, EXIT } from './errors.js';
 
 const SUBCOMMANDS = 'The subcommands are: run, status, prune. Use athanor --version for the version.';
 
