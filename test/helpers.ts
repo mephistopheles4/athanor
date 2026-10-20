@@ -109,7 +109,7 @@ export function isolate(t: TestContext, env: Record<string, string> = {}): strin
 // A fake Docker with its own scenario folder. calls() returns the recorded
 // argument arrays (and tar listings), oldest first.
 export interface Call { args: string[]; tar?: TarEntry[] }
-export interface TarEntry { name: string; type: string; mode: string; content?: string }
+export interface TarEntry { name: string; type: string; mode: string; content: string | undefined }
 
 export type Fake = ReturnType<typeof fake>;
 
@@ -118,6 +118,7 @@ export function fake(t: TestContext, scenario: Record<string, unknown> = {}) {
   writeFileSync(join(dir, 'scenario.json'), JSON.stringify(scenario));
   return {
     dir,
+    // Node prints an ExperimentalWarning when it runs a .ts file, and tests check the fake's stderr, so the flag turns it off.
     docker: [process.execPath, '--disable-warning=ExperimentalWarning', fakeDocker, dir],
     setScenario: (s: Record<string, unknown>) => writeFileSync(join(dir, 'scenario.json'), JSON.stringify(s)),
     addContainer: (name: string, labels: Record<string, string>, image = 'athanor:old') => {
@@ -149,7 +150,7 @@ export function collector() {
 // A file's bytes from a recorded tar listing, or undefined.
 export function tarFile(entries: TarEntry[], name: string): string | undefined {
   const entry = entries.find((e) => e.name === name && e.type === '0');
-  return entry ? Buffer.from(entry.content ?? '', 'base64').toString('utf8') : undefined;
+  return entry ? Buffer.from(entry.content!, 'base64').toString('utf8') : undefined;
 }
 
 export const tarNames = (entries: TarEntry[]): string[] => entries.filter((e) => e.type === '0').map((e) => e.name).sort();

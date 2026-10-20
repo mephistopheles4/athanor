@@ -20,8 +20,8 @@ Node runs directly with no compile step. They still import the core from
 `test/tsconfig.json` maps the same names to `src/` and runs `tsc --noEmit` in
 CI, so the tests see the options marked `@internal` that the shipped
 declarations leave out. The helpers start the fake Docker with
-`--disable-warning=ExperimentalWarning`, so no Node warning reaches the output
-that tests check.
+`--disable-warning=ExperimentalWarning`, so the warning Node prints when it
+strips types from a `.ts` file does not reach the output that tests check.
 
 `typescript` and `@types/node` are exact-pinned devDependencies with a
 committed lockfile, installed by `npm ci`. `package.json` still has no

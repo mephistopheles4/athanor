@@ -23,6 +23,7 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
   cpSync(join(root, 'tsconfig.json'), join(copy, 'tsconfig.json'));
   cpSync(join(root, 'src'), join(copy, 'src'), { recursive: true });
   writeFiles(copy, {
+    // Without it the copy's .ts files build as CommonJS, and cli.ts's import.meta adds a second error.
     'package.json': '{ "type": "module" }\n',
     'src/planted.ts':"export const planted: number = 'not a number';\n",
     'dist/stale.mjs': 'export {};\n',
@@ -73,7 +74,7 @@ test('T5 a shell use planted in a .ts file fails the source check', async (t) =>
       assert.match(r.stderr, /bad\.ts:\d+: /);
     });
   }
-  // Every other extension tsc compiles under allowJs is read too.
+  // Every other JavaScript and TypeScript extension the source check reads is read too.
   for (const ext of ['mts', 'cts', 'tsx', 'jsx']) {
     await t.test(`a .${ext} file`, () => {
       const dir = tempDir(t);

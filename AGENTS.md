@@ -39,6 +39,8 @@ as CI does. Then one runner, named tiers, from the repo root:
   Runs anywhere Node 24 and git run.
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
+- `node node_modules/typescript/bin/tsc -p test/tsconfig.json` — the type check
+  of the tests (no emit). `tsc -p tsconfig.json --noEmit` checks `src/`.
 - `node scripts/check-source.mjs` — the source check (no shell use). It reads
   every JavaScript and TypeScript source file, not `dist/`.
 
@@ -48,7 +50,7 @@ and builds it (`scripts/build.mjs`); a compile error ends the run with
 time in a worktree. The tests and the fake Docker are `.ts` files with erasable
 syntax only, which Node runs directly. They import the core as `#dist/...`
 (`package.json` `imports`), which is `dist/` at run time and `src/` for
-`test/tsconfig.json`, so that the type check sees the `@internal` options.
+`test/tsconfig.json`, so that the type check sees the test-only options (marked `@internal`, ADR 0003).
 
 CI runs `npm ci`, a strict `tsc` check of `src/` and of `test/`
 (`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file, the

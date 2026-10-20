@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import type { TarEntry } from './helpers.ts';
 
 const [dir, ...args] = process.argv.slice(2) as [string, ...string[]];
 // The scenario file is JSON written by the test; its keys are read as they come.
@@ -29,8 +30,6 @@ function readStdin(): Promise<Buffer> {
 }
 
 // A small tar reader: returns [{ name, type, content }] for regular files and folders.
-interface TarEntry { name: string; type: string; mode: string; content: string | undefined }
-
 function readTar(buffer: Buffer): TarEntry[] {
   const entries: TarEntry[] = [];
   let offset = 0;
