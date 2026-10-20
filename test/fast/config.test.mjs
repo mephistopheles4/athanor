@@ -188,3 +188,48 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     assert.ok(results.some((r) => r.waitedMs >= 500));
   });
 });
+
+test('T8 a configuration message names the file the bad value came from, in its present text', async (t) => {
+  const ceiling = (value, max, where) => `memory ${value} is above the machine ceiling maxMemory ${max}. Lower it in ${where}, or raise maxMemory in the machine configuration.`;
+  const rows = [
+    { name: 'a repo value', athanor: { ...baseConfig, memory: '9g' }, says: () => ceiling('9g', '8g', 'the "athanor" key') },
+    { name: 'a machine file value', file: { memory: '9g' }, says: (home) => ceiling('9g', '8g', `the machine configuration file ${join(home, 'config.json')}`) },
+    { name: 'the default value', file: { maxMemory: '1g' }, says: () => ceiling('2g', '1g', 'the "athanor" key') },
+  ];
+  for (const row of rows) {
+    await t.test(row.name, async (t) => {
+      const home = isolate(t);
+      if (row.file) writeFileSync(join(home, 'config.json'), JSON.stringify(row.file));
+      const repo = makeRepo(t, { athanor: row.athanor ?? baseConfig });
+      const { result, calls } = await runIn(t, repo);
+      assertSetupError(result, calls, /above the machine ceiling/);
+      assert.equal(result.message, row.says(home));
+    });
+  }
+});
+
+test('T9 a key only the machine may set is refused in the repo configuration, and a repo key in the machine file', async (t) => {
+  const repoKeys = 'dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes';
+  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp';
+  const machineOnly = { maxRuns: 3, pruneDays: 7, maxMemory: '4g', maxCpus: 2, maxTimeoutMinutes: 60, allowPlainTcp: true };
+  for (const [key, value] of Object.entries(machineOnly)) {
+    await t.test(`${key} in the repo`, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, { athanor: { ...baseConfig, [key]: value } });
+      const { result, calls } = await runIn(t, repo);
+      assertSetupError(result, calls, /unknown key/);
+      assert.equal(result.message, `The "athanor" key in package.json has an unknown key "${key}". Its keys are: ${repoKeys}.`);
+    });
+  }
+  const repoOnly = { dockerfile: 'Dockerfile', context: '.', inputs: [], commands: { test: ['true'] } };
+  for (const [key, value] of Object.entries(repoOnly)) {
+    await t.test(`${key} in the machine file`, async (t) => {
+      const home = isolate(t);
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ [key]: value }));
+      const repo = makeRepo(t, { athanor: baseConfig });
+      const { result, calls } = await runIn(t, repo);
+      assertSetupError(result, calls, /unknown key/);
+      assert.equal(result.message, `The machine configuration file ${join(home, 'config.json')} has an unknown key "${key}". Its keys are: ${machineKeys}.`);
+    });
+  }
+});

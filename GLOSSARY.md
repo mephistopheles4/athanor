@@ -26,6 +26,12 @@
 - **Machine configuration.** The optional `config.json` in the state folder:
   the run limit, default per-run limits, their ceilings, and the default age
   for `prune`.
+- **Run configuration.** Everything a run needs from the repo configuration
+  and the machine configuration: the build settings, the command, the limits,
+  the time limit and the Docker endpoint settings. Its paths are checked to
+  stay inside the repo, its limits are held to the machine's ceilings, and
+  each value keeps the file it came from, so a message names the file to fix.
+  One table says which keys a repo may set and which only the machine may set.
 - **Boot script.** The short `sh` script that unpacks the snapshot in the
   container, prints the boot marker, and runs the test command.
 - **Boot marker.** The line `athanor-boot-ok` the boot script prints on stderr
