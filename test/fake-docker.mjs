@@ -74,7 +74,7 @@ function parseRun(runArgs) {
     const name = runArgs[i];
     if (RUN_FLAGS.has(name)) continue;
     if (!RUN_VALUED.has(name)) return { error: `fake docker: unknown run option ${name}` };
-    if (i + 1 >= runArgs.length) return { error: `fake docker: run option ${name} needs a value` };
+    if (i + 1 >= runArgs.length || runArgs[i + 1].startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
     options.set(name, runArgs[++i]);
   }
   if (i >= runArgs.length) return { error: 'fake docker: run has no image' };

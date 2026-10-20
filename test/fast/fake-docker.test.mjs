@@ -14,8 +14,13 @@ test('T12 the fake Docker exits non-zero on an unknown run option, and finds the
     return spawnSync(exe, [...rest, 'run', ...args], { input: '', encoding: 'utf8', shell: false });
   };
   const typo = dockerRun(['-i', '--netwrk', 'none', '--name', 'c1', 'athanor:img', 'sh']);
-  assert.notEqual(typo.status, 0, 'a typo in an option fails');
+  assert.equal(typo.status, 125, 'a typo in an option fails');
   assert.match(typo.stderr, /unknown run option --netwrk/);
+
+  // An option token in place of a value is not taken as the value.
+  const noValue = dockerRun(['-i', '--name', '--netwrk', 'none', 'athanor:img', 'sh']);
+  assert.equal(noValue.status, 125, 'a missing value fails');
+  assert.match(noValue.stderr, /--name needs a value/);
 
   // An option value of `sh` must not be taken for the boot command.
   const ok = dockerRun(['-i', '--name', 'sh', '--network', 'none', 'athanor:img', 'sh', '-c', 'true']);
