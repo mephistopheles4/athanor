@@ -4,15 +4,49 @@
 import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
-import { call } from './proc.mjs';
+import { call, start } from './proc.mjs';
 import { AthanorError } from './errors.js';
+
+type Env = NodeJS.ProcessEnv;
+// A child as start() returns it: the process and the promise of its end.
+type Started = ReturnType<typeof start>;
+
+// A run's scratch folder and the git environments that use it.
+export interface Scratch {
+  dir: string;
+  // An env with a fresh copy of the real index (or an empty index).
+  env(fromRealIndex?: boolean): Env;
+  objectsEnv: Env;
+  archiveEnv: Env;
+  remove(): void;
+}
+
+export interface Snapshot {
+  // A commit, or a tree when the snapshot holds untracked files.
+  id: string;
+  untracked: boolean;
+  untrackedLeftOut: number;
+}
+
+export interface BuildContext {
+  commit: string;
+  tree: string;
+  tag: string;
+  hash: string;
+}
+
+// What a tar stream carries (ADR 0006).
+export type TarOf = 'build context' | 'snapshot';
 
 const TAG_FORMAT = 'athanor-image-v1';
 const STALE_MS = 24 * 60 * 60 * 1000;
 // Line endings pinned for every archive athanor makes (C32).
-export const ARCHIVE_CONFIG = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
+const ARCHIVE_CONFIG = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
+// File modes pinned for the build context's archive, so every machine builds
+// the image from the same modes (ADR 0006).
+const BUILD_ARCHIVE_CONFIG = ['-c', 'tar.umask=0022'];
 
-async function git(args, { cwd, env, what }) {
+async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env; what: string }): Promise<string> {
   const r = await call(['git', ...args], { cwd, env });
   if (r.code !== 0) {
     throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}.`);
@@ -20,10 +54,10 @@ async function git(args, { cwd, env, what }) {
   return r.stdout;
 }
 
-const firstLine = (text) => String(text).trim().split('\n')[0]?.trim() ?? '';
+const firstLine = (text: unknown): string => String(text).trim().split('\n')[0]?.trim() ?? '';
 
 // The top of the work tree, after checking there is a commit and no conflict.
-export async function repoRoot(cwd) {
+export async function repoRoot(cwd: string): Promise<string> {
   const top = await call(['git', 'rev-parse', '--show-toplevel'], { cwd });
   if (top.code !== 0) {
     throw new AthanorError('This folder is not inside a git repository. Run athanor from inside the repo you want to test.');
@@ -42,7 +76,7 @@ export async function repoRoot(cwd) {
 
 // A per-run scratch folder in the state folder: an object folder whose
 // alternates name the repo's store, and room for index copies.
-export async function makeScratch(home, root) {
+export async function makeScratch(home: string, root: string): Promise<Scratch> {
   const runs = join(home, 'runs');
   mkdirSync(runs, { recursive: true });
   const dir = join(runs, `${process.pid}-${randomBytes(6).toString('hex')}`);
@@ -65,21 +99,21 @@ export async function makeScratch(home, root) {
   return {
     dir,
     // An env with a fresh copy of the real index (or an empty index).
-    env(fromRealIndex = true) {
+    env(fromRealIndex = true): Env {
       const index = join(dir, `index-${++copies}`);
       if (fromRealIndex && existsSync(realIndex)) copyFileSync(realIndex, index);
       return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' };
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
     archiveEnv: { ...process.env, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
-    remove() {
+    remove(): void {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     },
   };
 }
 
 // Delete per-run folders a hard-killed run left behind.
-export function clearStale(home) {
+export function clearStale(home: string): void {
   const runs = join(home, 'runs');
   if (!existsSync(runs)) return;
   const now = Date.now();
@@ -93,8 +127,8 @@ export function clearStale(home) {
   }
 }
 
-// The work as git sees it. Returns { id, untracked, untrackedLeftOut }.
-export async function snapshot(root, scratch, { untracked }) {
+// The work as git sees it.
+export async function snapshot(root: string, scratch: Scratch, { untracked }: { untracked: boolean }): Promise<Snapshot> {
   const countEnv = scratch.env(true);
   const others = await git(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: root, env: countEnv, what: 'count untracked files' });
   const untrackedCount = others.split('\0').filter(Boolean).length;
@@ -113,8 +147,11 @@ export async function snapshot(root, scratch, { untracked }) {
 
 // The build context: tracked files under `context` at their working-tree
 // state, plus each input at its repo-relative path under the context root.
-// Returns { commit, tree, tag }.
-export async function buildContext(root, scratch, { context, inputs, dockerfileInContext }) {
+export async function buildContext(
+  root: string,
+  scratch: Scratch,
+  { context, inputs, dockerfileInContext }: { context: string; inputs: string[]; dockerfileInContext: string },
+): Promise<BuildContext> {
   const env = scratch.env(true);
   const contextPath = context === '.' ? '.' : context;
   await git(['add', '-u', '--', contextPath], { cwd: root, env, what: 'read the context folder' });
@@ -168,4 +205,16 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
   const commit = (await git(['commit-tree', tree, '-m', 'athanor build context'], { cwd: root, env: fixed, what: 'wrap the build context' })).trim();
   const hash = createHash('sha256').update(`${TAG_FORMAT}\n${tree}`).digest('hex');
   return { commit, tree, tag: `athanor:${hash.slice(0, 32)}`, hash: hash.slice(0, 32) };
+}
+
+// A tar stream of a commit or tree, for a Docker child's stdin. It comes from
+// athanor's own git folder, so it holds exactly the tree, with the archive
+// settings pinned here. Returns the git child; its stdout is the stream.
+export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf): Started {
+  const pinned = of === 'build context' ? [...ARCHIVE_CONFIG, ...BUILD_ARCHIVE_CONFIG] : ARCHIVE_CONFIG;
+  // proc is still JavaScript, so the type of start()'s options holds only the
+  // keys with defaults, and a literal naming cwd or env fails the check. A
+  // named object passes until proc is typed (TS move 4).
+  const options = { cwd: root, env: scratch.archiveEnv, capture: false };
+  return start(['git', ...pinned, 'archive', '--format=tar', id], options);
 }
