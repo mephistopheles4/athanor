@@ -13,7 +13,7 @@ import type { DockerCommand } from './docker.js';
 import { acquire, ask } from './slots.js';
 import type { Slot } from './slots.js';
 import { start, feed } from './proc.js';
-import { containerArgs, slotContainerName } from './container-settings.js';
+import { containerSettings } from './container-settings.js';
 import { runContainer } from './container-run.js';
 import type { Outcome, Sink } from './container-run.js';
 
@@ -213,13 +213,12 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     if (await settleImage(image, () => onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`))) {
       partial.image.built = true;
     }
-    const containerName = slotContainerName(prefix, slot.slot);
-    await clearSlotContainer(docker, containerName);
+    const container = containerSettings({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
+    await clearSlotContainer(docker, container.name);
     if (signal?.aborted) return interruptedResult(partial);
 
-    const args = containerArgs({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
     const ran = await runContainer({
-      docker, root, scratch, snapshotId: snap.id, name: containerName, args, timeLimitSeconds, stdout, stderr, signal,
+      docker, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
     });
     markUse(home, ctx.hash);
     return { schema: 1, ...partial, ...ran };

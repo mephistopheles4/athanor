@@ -9,6 +9,7 @@ import { readExit, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { start, feed } from './proc.js';
 import { MARKER } from './container-settings.js';
+import type { Container } from './container-settings.js';
 
 export type Outcome = 'pass' | 'fail' | 'timeout' | 'memory' | 'interrupted' | 'error';
 
@@ -22,9 +23,8 @@ export interface ContainerRun {
   root: string;
   scratch: Scratch;
   snapshotId: string;
-  // The container's name, and the arguments that start it (from the container settings).
-  name: string;
-  args: string[];
+  // The container's name and the arguments that start it, from the container settings.
+  container: Container;
   timeLimitSeconds: number;
   stdout: Sink | null;
   stderr: Sink | null;
@@ -65,14 +65,15 @@ export async function runContainer(o: ContainerRun): Promise<Ran> {
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
   const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
-  const container = start([...o.docker, ...o.args], {
+  const { name, args } = o.container;
+  const container = start([...o.docker, ...args], {
     stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
   feed(archive, container);
 
   let timedOut = false;
   let interrupted = false;
-  const stop = () => removeContainer(o.docker, o.name);
+  const stop = () => removeContainer(o.docker, name);
   const timer = setTimeout(() => { timedOut = true; stop(); }, o.timeLimitSeconds * 1000);
   const onAbort = () => { interrupted = true; stop(); };
   if (o.signal?.aborted) onAbort();
@@ -83,8 +84,8 @@ export async function runContainer(o: ContainerRun): Promise<Ran> {
   o.signal?.removeEventListener('abort', onAbort);
   filter.flush();
   const ranMs = Date.now() - started;
-  const state = interrupted || timedOut ? null : await readExit(o.docker, o.name);
-  await removeContainer(o.docker, o.name);
+  const state = interrupted || timedOut ? null : await readExit(o.docker, name);
+  await removeContainer(o.docker, name);
 
   const base = { ranMs };
   if (interrupted) return { ...base, outcome: 'interrupted', exitCode: EXIT.interrupted };

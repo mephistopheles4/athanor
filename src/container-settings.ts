@@ -34,16 +34,21 @@ export interface ContainerRequest {
   command: string[];
 }
 
-// The container's fixed name for slot n.
-export const slotContainerName = (prefix: string, slot: number): string => `${prefix}-slot-${slot}`;
+// The container's fixed name, and the arguments after the Docker command for
+// `docker run` that give it that name. They come together, so the name the
+// run stops the container by is always the one it started it with.
+export interface Container {
+  name: string;
+  args: string[];
+}
 
-// The arguments after the Docker command for `docker run`: the options, the
-// image, the boot script and the test command.
-export function containerArgs(r: ContainerRequest): string[] {
+// The options, the image, the boot script and the test command.
+export function containerSettings(r: ContainerRequest): Container {
+  const name = `${r.prefix}-slot-${r.slot}`;
   const graceLimit = Math.ceil(r.timeLimitSeconds + r.graceSeconds);
-  return [
+  const args = [
     'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
-    '--name', slotContainerName(r.prefix, r.slot), '--label', `athanor.slot=${r.slot}`,
+    '--name', name, '--label', `athanor.slot=${r.slot}`,
     '--network', 'none',
     '--memory', r.limits.memory, '--memory-swap', r.limits.memory,
     '--cpus', String(r.limits.cpus), '--pids-limit', '1024',
@@ -51,4 +56,5 @@ export function containerArgs(r: ContainerRequest): string[] {
     '-e', `ATHANOR_GRACE_LIMIT=${graceLimit}`,
     r.tag, 'sh', '-c', BOOT, 'athanor', ...r.command,
   ];
+  return { name, args };
 }
