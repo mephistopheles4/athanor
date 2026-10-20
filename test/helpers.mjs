@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { run } from '../src/index.mjs';
+import { run } from '../dist/index.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const bin = join(here, '..', 'bin', 'athanor.mjs');

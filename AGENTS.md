@@ -31,22 +31,33 @@ lasting decisions are in [docs/adr/](docs/adr/).
 
 ## Running the tests
 
-One runner, named tiers, from the repo root:
+Run `npm ci --ignore-scripts` first, once per worktree: it installs the
+compiler from the lockfile (ADR 0014) and runs no package's install scripts,
+as CI does. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
   Runs anywhere Node 24 and git run.
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
-- `node scripts/check-source.mjs` — the source check (no shell use).
+- `node scripts/check-source.mjs` — the source check (no shell use). It reads
+  every JavaScript and TypeScript source file, not `dist/`.
 
-CI runs `node --check` on every source file, the source check, both tiers and
-a pack-and-install check, on Linux and Node 24. Every test sets its own
-`ATHANOR_HOME` and name prefix, so tests never touch a live machine's slots,
-configuration or image marks.
+The tests run the compiled output in `dist/`. Each tier first clears `dist/`
+and builds it (`scripts/build.mjs`); a compile error ends the run with
+`result: <tier> fail`. Because each run clears `dist/`, run one test run at a
+time in a worktree.
+
+CI runs `npm ci`, a strict `tsc` check, `node --check` on every `.mjs` file,
+the source check, both tiers, and a pack-and-install check that also checks
+the packed file's contents and type-checks an import of the package by its
+name, on Linux and Node 24. Every test sets its own `ATHANOR_HOME` and name
+prefix, so tests never touch a live machine's slots, configuration or image
+marks.
 
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
-spec on issue 1). C22 (the Windows check) and the required-check half of C23
-are manual checks on the owner's machine.
+spec on issue 1; `T1` to `T14`, from the spec on issue 8). C22 (the Windows
+check), the required-check half of C23, and T14 (C22 and the fast tier on
+Windows) are manual checks on the owner's machine.
 
 ## The tracker
 

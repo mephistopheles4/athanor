@@ -7,8 +7,8 @@ import { writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync, statS
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { run } from '../../src/index.mjs';
-import { ask } from '../../src/slots.mjs';
+import { run } from '../../dist/index.mjs';
+import { ask } from '../../dist/slots.mjs';
 import {
   makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, collector, tarFile, tarNames, gitState, git, tempDir, writeFiles,
 } from '../helpers.mjs';

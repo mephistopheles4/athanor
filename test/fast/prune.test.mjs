@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { mkdirSync, writeFileSync, utimesSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { run, prune } from '../../src/index.mjs';
-import { lockPath } from '../../src/slots.mjs';
+import { run, prune } from '../../dist/index.mjs';
+import { lockPath } from '../../dist/slots.mjs';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.mjs';
 
 const hex = (c) => c.repeat(32);
