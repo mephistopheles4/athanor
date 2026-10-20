@@ -145,7 +145,7 @@ function printSummary(command, result) {
     for (const s of result.slots) {
       say(s.pid === undefined
         ? `slot ${s.slot}: free.`
-        : `slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${new Date(s.started).toISOString()}, limit ${s.limit} (as the holder reports).`);
+        : `slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${Number.isFinite(new Date(s.started).getTime()) ? new Date(s.started).toISOString() : 'an unknown time'}, limit ${s.limit} (as the holder reports).`);
     }
     for (const c of result.containers) say(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
     if (result.containers.length === 0) say('no athanor containers.');

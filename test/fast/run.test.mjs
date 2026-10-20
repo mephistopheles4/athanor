@@ -3,7 +3,7 @@
 // One top-level test per acceptance claim.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { writeFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -212,7 +212,7 @@ test('C16 a command with shell characters reaches the container as the same lite
   await t.test('the source check', async (t) => {
     const clean = check();
     assert.equal(clean.status, 0, clean.stderr);
-  
+
     const bad = [
       "spawn('docker', [], { shell: true });",
       "spawnSync('git', args, {shell:true})",
@@ -220,6 +220,9 @@ test('C16 a command with shell characters reaches the container as the same lite
       "child_process.execSync('ls')",
       "execFile('git', ['x'], { shell: 'bash' })",
       "execFileSync('git', [], { shell: true })",
+      "const o = {}; o.shell = true; spawn('docker', args, o);",
+      "const o = {}; o['shell'] = '/bin/sh';",
+      "spawn('docker', [], {\n  shell:\n    true });",
     ];
     for (const line of bad) {
       await t.test(line, () => {
@@ -227,7 +230,7 @@ test('C16 a command with shell characters reaches the container as the same lite
         writeFiles(dir, { 'src/bad.mjs': `${line}\n` });
         const r = check(join(dir, 'src'));
         assert.equal(r.status, 1, `expected a failure for: ${line}`);
-        assert.match(r.stderr, /bad\.mjs:1/);
+        assert.match(r.stderr, /bad\.mjs:\d+: /);
       });
     }
   });
@@ -237,20 +240,18 @@ test('C19 no host environment value, host folder or socket reaches the container
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t);
-  const result = await runWith(t, repo, docker);
+  const prefix = uniquePrefix();
+  const result = await run({ cwd: repo, docker: docker.docker, prefix });
   const options = runOptions(callsOf(docker.calls(), 'run')[0].args, result.image.tag);
-  assert.ok(options.includes('--log-driver') && options[options.indexOf('--log-driver') + 1] === 'none');
-  for (const banned of ['--env', '-v', '--volume', '--mount', '--privileged', '--env-file', '--net', '--add-host']) {
-    assert.equal(options.includes(banned), false, banned);
-  }
-  const networks = options.flatMap((o, i) => (o === '--network' ? [options[i + 1]] : []));
-  assert.deepEqual(networks, ['none']);
-  const envs = options.flatMap((o, i) => (o === '-e' ? [options[i + 1]] : []));
-  assert.equal(envs.length, 1);
-  assert.match(envs[0], /^ATHANOR_GRACE_LIMIT=\d+$/);
-  for (const [flag, value] of [['--pids-limit', '1024'], ['--security-opt', 'no-new-privileges'], ['--memory', '2g'], ['--memory-swap', '2g'], ['--cpus', '2'], ['--pull', 'never']]) {
-    assert.equal(options[options.indexOf(flag) + 1], value, flag);
-  }
+  // The whole option list, so no flag can slip in under any spelling.
+  assert.deepEqual(options, [
+    'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
+    '--name', `${prefix}-slot-1`, '--label', 'athanor.slot=1',
+    '--network', 'none',
+    '--memory', '2g', '--memory-swap', '2g', '--cpus', '2', '--pids-limit', '1024',
+    '--security-opt', 'no-new-privileges',
+    '-e', 'ATHANOR_GRACE_LIMIT=1860',
+  ]);
 });
 
 test('C21 a run changes nothing in the repo and leaves no temporary index behind', async (t) => {
@@ -259,12 +260,17 @@ test('C21 a run changes nothing in the repo and leaves no temporary index behind
   writeFileSync(join(repo, 'a.txt'), 'changed\n');
   writeFiles(repo, { 'loose.txt': 'x\n' });
   const before = gitState(repo);
+  // Every file in the git folder, by name and size, so a stray file shows.
+  const gitFolder = () => readdirSync(join(repo, '.git'), { recursive: true })
+    .map((f) => `${f}:${statSync(join(repo, '.git', f)).size}`).sort();
+  const filesBefore = gitFolder();
   const docker = fake(t);
   for (const untracked of [false, true]) {
     const result = await runWith(t, repo, docker, { untracked });
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
   }
   assert.deepEqual(gitState(repo), before);
+  assert.deepEqual(gitFolder(), filesBefore, 'no file is added to or changed in size in the git folder');
   assert.deepEqual(readdirSync(join(home, 'runs')), [], 'no temporary index or object folder is left');
 });
 
@@ -276,11 +282,14 @@ test('C25 a run never passes on a partial snapshot, and each failure gets its ou
     { name: 'no marker: the image breaks the contract', run: { marker: false, exitCode: 0 }, outcome: 'error', exitCode: 125, says: /image contract/ },
     { name: 'the memory limit', run: { exitCode: 137, oom: true }, outcome: 'memory', exitCode: 137 },
     { name: 'docker inspect fails', run: { exitCode: 0 }, inspectFails: true, outcome: 'error', exitCode: 125 },
+    { name: 'git archive fails: the container closes its input early', run: { exitCode: 0, skipStdin: true }, big: true, outcome: 'error', exitCode: 125, says: /git archive of the snapshot failed/ },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
       isolate(t);
-      const repo = makeRepo(t, { athanor: baseConfig });
+      // A file far larger than a pipe buffer, so git archive is still writing when the input closes.
+      const files = row.big ? { 'big.bin': 'x'.repeat(4 * 1024 * 1024) } : {};
+      const repo = makeRepo(t, { athanor: baseConfig, files });
       const docker = fake(t, { run: row.run, inspectFails: row.inspectFails });
       const result = await runWith(t, repo, docker);
       assert.equal(result.outcome, row.outcome, JSON.stringify(result));

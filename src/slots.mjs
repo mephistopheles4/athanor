@@ -10,8 +10,9 @@ export function lockPath(prefix, slot) {
 
 const sleep = (ms, signal) =>
   new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+    const onAbort = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 
 // Try to hold one slot. Resolves to a net.Server, or null when it is held.
@@ -52,7 +53,7 @@ export async function acquire({ prefix, limit, info, signal, onWait }) {
 
 const isHolderAnswer = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
-  Number.isInteger(v.slot) && Number.isInteger(v.pid) && typeof v.started === 'number' &&
+  Number.isInteger(v.slot) && Number.isInteger(v.pid) && Number.isFinite(new Date(v.started).getTime()) && typeof v.started === 'number' &&
   typeof v.repo === 'string' && Number.isInteger(v.limit);
 
 // Ask slot n's holder. Resolves to { held: false }, { held: true }, or

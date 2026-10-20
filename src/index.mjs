@@ -183,6 +183,20 @@ async function warnOnOtherLimits(prefix, slot, limit, onProgress) {
   }
 }
 
+// Pipe git archive into a Docker child. If the child stops reading (it exits,
+// or its input closes), end the archive too, so it fails rather than blocks.
+function feed(archive, consumer) {
+  const out = archive.child.stdout;
+  out.pipe(consumer.child.stdin);
+  const stopArchive = () => {
+    out.unpipe(consumer.child.stdin);
+    out.destroy();
+    if (archive.child.exitCode === null) archive.child.kill();
+  };
+  consumer.child.stdin.on('error', stopArchive);
+  consumer.child.once('exit', stopArchive);
+}
+
 async function build(docker, root, scratch, ctx, dockerfileInContext, stderr, signal) {
   const archive = start(['git', ...ARCHIVE_CONFIG, '-c', 'tar.umask=0022', 'archive', '--format=tar', ctx.commit], {
     cwd: root, env: scratch.archiveEnv, capture: false,
@@ -190,9 +204,9 @@ async function build(docker, root, scratch, ctx, dockerfileInContext, stderr, si
   const builder = start([...docker, 'build', '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
     stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
   });
-  archive.child.stdout.pipe(builder.child.stdin);
-  builder.child.stdin.on('error', () => {});
-  const onAbort = () => builder.child.kill();
+  feed(archive, builder);
+  const onAbort = () => { builder.child.kill(); archive.child.kill(); };
+  if (signal?.aborted) onAbort();
   signal?.addEventListener('abort', onAbort, { once: true });
   const [a, b] = await Promise.all([archive.done, builder.done]);
   signal?.removeEventListener('abort', onAbort);
@@ -246,8 +260,7 @@ async function runContainer(o) {
   const container = start([...o.docker, ...args], {
     stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
-  archive.child.stdout.pipe(container.child.stdin);
-  container.child.stdin.on('error', () => {});
+  feed(archive, container);
 
   let timedOut = false;
   let interrupted = false;

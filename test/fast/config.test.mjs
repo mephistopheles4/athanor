@@ -3,7 +3,7 @@
 // acceptance claim, with its cases as rows.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, symlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '../../src/index.mjs';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.mjs';
@@ -24,17 +24,17 @@ function assertSetupError(result, calls, pattern) {
 test('C18 bad configuration and bad command lines exit 125 naming the problem; -- overrides the named command', async (t) => {
   const configRows = [
     { name: 'missing key', athanor: undefined, says: /no "athanor" key in package\.json.*add one/is },
-    { name: 'unknown command name', athanor: baseConfig, runName: 'lint', says: /no command named "lint".*test/s },
-    { name: 'string command', athanor: { ...baseConfig, commands: { test: 'npm test' } }, says: /commands\.test must be an array of strings/ },
-    { name: 'array with a number', athanor: { ...baseConfig, commands: { test: ['node', 3] } }, says: /commands\.test must be an array of strings/ },
-    { name: 'empty array', athanor: { ...baseConfig, commands: { test: [] } }, says: /commands\.test must be an array of strings/ },
-    { name: 'no dockerfile', athanor: { commands: baseConfig.commands }, says: /"dockerfile" is required/ },
-    { name: 'unknown key', athanor: { ...baseConfig, image: 'x' }, says: /unknown key "image"/ },
-    { name: 'bad memory', athanor: { ...baseConfig, memory: '2gb' }, says: /memory must be digits followed by m or g/ },
+    { name: 'unknown command name', athanor: baseConfig, runName: 'lint', says: /no command named "lint".*Its commands are: test/s },
+    { name: 'string command', athanor: { ...baseConfig, commands: { test: 'npm test' } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
+    { name: 'array with a number', athanor: { ...baseConfig, commands: { test: ['node', 3] } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
+    { name: 'empty array', athanor: { ...baseConfig, commands: { test: [] } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
+    { name: 'no dockerfile', athanor: { commands: baseConfig.commands }, says: /"dockerfile" is required.*the repo-relative path of the Dockerfile/ },
+    { name: 'unknown key', athanor: { ...baseConfig, image: 'x' }, says: /unknown key "image". Its keys are: dockerfile/ },
+    { name: 'bad memory', athanor: { ...baseConfig, memory: '2gb' }, says: /memory must be digits followed by m or g, such as 512m or 2g/ },
     { name: 'bad cpus', athanor: { ...baseConfig, cpus: 0 }, says: /cpus must be a number greater than 0/ },
     { name: 'bad timeout', athanor: { ...baseConfig, timeoutMinutes: '5' }, says: /timeoutMinutes must be a number greater than 0/ },
-    { name: 'inputs not a list', athanor: { ...baseConfig, inputs: 'a' }, says: /inputs must be a list of repo-relative paths/ },
-    { name: 'no commits yet', athanor: baseConfig, commit: false, says: /no commits yet/ },
+    { name: 'inputs not a list', athanor: { ...baseConfig, inputs: 'a' }, says: /inputs must be a list of repo-relative paths, such as \["package-lock\.json"\]/ },
+    { name: 'no commits yet', athanor: baseConfig, commit: false, says: /no commits yet.*Make a first commit, then run again/s },
   ];
   for (const row of configRows) {
     await t.test(row.name, async (t) => {
@@ -46,16 +46,16 @@ test('C18 bad configuration and bad command lines exit 125 naming the problem; -
   }
 
   const lineRows = [
-    { args: [], says: /run, status, prune/ },
+    { args: [], says: /No subcommand given. The subcommands are: run, status, prune/ },
     { args: ['frobnicate'], says: /unknown subcommand "frobnicate".*run, status, prune/s },
-    { args: ['run', '--bogus'], says: /unknown flag "--bogus"/ },
-    { args: ['status', '--untracked'], says: /unknown flag "--untracked"/ },
-    { args: ['prune', '--days', '0'], says: /--days must be a positive whole number/ },
-    { args: ['prune', '--days', 'x'], says: /--days must be a positive whole number/ },
-    { args: ['prune', '--days', '1.5'], says: /--days must be a positive whole number/ },
-    { args: ['prune', '--days'], says: /--days must be a positive whole number/ },
-    { args: ['run', 'a', 'b'], says: /one command name/ },
-    { args: ['run', '--'], says: /nothing after --/ },
+    { args: ['run', '--bogus'], says: /unknown flag "--bogus" for athanor run. Its flags are: --json, --untracked/ },
+    { args: ['status', '--untracked'], says: /unknown flag "--untracked" for athanor status. Its flags are: --json./ },
+    { args: ['prune', '--days', '0'], says: /--days must be a positive whole number of days, such as --days 30/ },
+    { args: ['prune', '--days', 'x'], says: /--days must be a positive whole number of days, such as --days 30/ },
+    { args: ['prune', '--days', '1.5'], says: /--days must be a positive whole number of days, such as --days 30/ },
+    { args: ['prune', '--days'], says: /--days must be a positive whole number of days, such as --days 30/ },
+    { args: ['run', 'a', 'b'], says: /one command name.*put it after --/s },
+    { args: ['run', '--'], says: /nothing after --. Give the command to run after it/ },
   ];
   for (const row of lineRows) {
     await t.test(`athanor ${row.args.join(' ')}`, async () => {
@@ -94,6 +94,19 @@ test('C17 a path outside the repo root exits 125 before any Docker call', async 
       assert.equal(calls.length, 0, 'no Docker call at all');
     });
   }
+
+  await t.test('a sibling folder whose name starts with the repo name is outside', async (t) => {
+    isolate(t);
+    const repo = makeRepo(t, { athanor: baseConfig });
+    const sibling = repo + 'x';
+    mkdirSync(sibling);
+    t.after(() => rmSync(sibling, { recursive: true, force: true }));
+    writeFileSync(join(sibling, 'Dockerfile'), 'FROM alpine\n');
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ athanor: { ...baseConfig, dockerfile: join(sibling, 'Dockerfile') } }));
+    const { result, calls } = await runIn(t, repo);
+    assertSetupError(result, calls, /dockerfile.*outside the repo/);
+    assert.equal(calls.length, 0);
+  });
 });
 
 test('C31 a repo value above a machine ceiling exits 125 naming the key and the ceiling', async (t) => {
@@ -122,6 +135,8 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     { content: JSON.stringify({ pruneDays: 1.5 }), says: /config\.json.*pruneDays must be a positive whole number/ },
     { content: JSON.stringify({ maxCpus: -1 }), says: /config\.json.*maxCpus must be a number greater than 0/ },
     { content: JSON.stringify([1]), says: /config\.json must hold one JSON object/ },
+    { content: '{"constructor": 1}', says: /config\.json.*unknown key "constructor"/ },
+    { content: '{"__proto__": {}}', says: /config\.json.*unknown key "__proto__"/ },
   ];
   for (const row of badRows) {
     await t.test(row.content, async (t) => {

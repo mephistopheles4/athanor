@@ -51,7 +51,7 @@ export function readMachineConfig(home) {
   }
   if (!isObject(parsed)) throw new AthanorError(`${where} must hold one JSON object.`);
   for (const [key, value] of Object.entries(parsed)) {
-    if (!(key in TYPES)) {
+    if (!Object.hasOwn(TYPES, key)) {
       throw new AthanorError(`${where} has an unknown key "${key}". Its keys are: ${Object.keys(TYPES).join(', ')}.`);
     }
     const [ok, rule] = TYPES[key];

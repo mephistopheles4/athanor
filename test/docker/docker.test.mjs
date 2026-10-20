@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run, status } from '../../src/index.mjs';
 import { ask } from '../../src/slots.mjs';
-import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir } from '../helpers.mjs';
+import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.mjs';
 
 const driver = join(dirname(fileURLToPath(import.meta.url)), 'driver.mjs');
 const FIXTURE = {
@@ -146,7 +146,7 @@ test('C8 with the default limit, three runs never have more than two containers 
   })();
   let midStatus;
   const runs = progress.map((lines) => runReal(t, repo, { prefix, command: ['sleep', '3'], onProgress: (l) => lines.push(l) }));
-  await sleep(1500);
+  await until(() => runningCount(prefix) === 2, 60000, 'two containers to run');
   midStatus = await status({ prefix });
   const results = await Promise.all(runs);
   sampling = false;
@@ -209,19 +209,42 @@ test('C11 the time limit ends a run with 124, and a hard-killed caller\'s contai
   docker(['rm', '-f', `${prefix2}-slot-1`]);
 });
 
-test('C12 an interrupt removes the container, frees the slot and exits 130', { skip: process.platform === 'win32' ? 'a test cannot send Ctrl-C to a child process on Windows; the manual check in C22 covers it' : false }, async (t) => {
+test('C12 Ctrl-C to the CLI removes the container, frees the slot and exits 130 promptly', { skip: process.platform === 'win32' ? 'a test cannot send Ctrl-C to a child process on Windows; the manual check in C22 covers it' : false }, async (t) => {
+  // The CLI has no prefix option, so this uses athanor's real slot names; CI runs it on Linux with no other caller.
   const home = isolate(t);
-  const prefix = uniquePrefix();
   const repo = fixtureRepo(t);
   await runReal(t, repo);
-  const caller = startDriver({ cwd: repo, prefix, home, command: ['sleep', '60'] });
-  await until(() => runningCount(prefix) === 1, 60000, 'the container to start');
-  caller.child.kill('SIGINT');
-  const done = await caller.done;
-  assert.equal(done.code, 130, done.err);
-  assert.equal(JSON.parse(done.out).outcome, 'interrupted');
-  assert.equal(docker(['ps', '-a', '--filter', `name=^${prefix}-slot-`, '-q']).stdout.trim(), '');
-  assert.equal((await ask(prefix, 1)).held, false);
+  const child = spawn(process.execPath, [bin, 'run', '--json', '--', 'sleep', '60'], { cwd: repo, env: { ...process.env, ATHANOR_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (c) => (out += c));
+  child.stderr.on('data', (c) => (err += c));
+  const done = new Promise((resolve) => child.on('close', (code) => resolve(code)));
+  await until(() => runningCount('athanor') >= 1, 60000, 'the container to start');
+  const at = Date.now();
+  child.kill('SIGINT');
+  const code = await done;
+  assert.ok(Date.now() - at < 10000, 'the interrupt stops the run promptly');
+  assert.equal(code, 130, err);
+  assert.equal(JSON.parse(out).outcome, 'interrupted');
+  const slot = JSON.parse(out).slot;
+  assert.equal(docker(['ps', '-a', '--filter', `name=^athanor-slot-${slot}$`, '-q']).stdout.trim(), '');
+  assert.equal((await ask('athanor', slot)).held, false);
+});
+
+test('C25 a failing tar in the container ends the run as error before the test starts', async (t) => {
+  isolate(t);
+  // An image whose tar always fails, so the boot script must stop before its marker.
+  const dockerfile = [
+    'FROM alpine:3.20',
+    "RUN printf '#!/bin/sh\\nexit 1\\n' > /usr/local/bin/tar && chmod +x /usr/local/bin/tar",
+    '',
+  ].join('\n');
+  const repo = makeRepo(t, { athanor: config, files: { 'test/Dockerfile': dockerfile } });
+  const r = await runReal(t, repo, { command: ['echo', 'should-not-run'] });
+  assert.equal(r.result.outcome, 'error', JSON.stringify(r.result) + r.stderr);
+  assert.equal(r.result.exitCode, 125);
+  assert.equal(r.stdout.includes('should-not-run'), false);
 });
 
 test('C15 with --json, stdout holds exactly one JSON object and everything else goes to stderr', async (t) => {
@@ -240,6 +263,10 @@ test('C15 with --json, stdout holds exactly one JSON object and everything else 
   assert.equal(result.snapshot.untracked, false);
   assert.match(r.stderr, /to-stdout/);
   assert.match(r.stderr, /to-stderr/);
+
+  const failing = await cli(['run', '--json', '--', 'sh', '-c', 'exit 3'], { cwd: repo, env: { ATHANOR_HOME: home } });
+  assert.equal(failing.code, 3, failing.stderr);
+  assert.equal(JSON.parse(failing.stdout).outcome, 'fail');
 
   const s = await cli(['status', '--json'], { cwd: repo, env: { ATHANOR_HOME: home } });
   assert.equal(s.code, 0);

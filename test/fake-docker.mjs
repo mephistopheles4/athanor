@@ -154,6 +154,13 @@ async function main() {
       return 125;
     }
     writeFileSync(path, JSON.stringify({ name, labels, image, running: true }));
+    if (plan.skipStdin) {
+      // Exit without reading the snapshot, closing the pipe under git archive.
+      record();
+      if (plan.marker) process.stderr.write('athanor-boot-ok\n');
+      finish(path, plan.exitCode, false);
+      process.exit(plan.exitCode);
+    }
     const input = await readStdin();
     record({ tar: readTar(input) });
     if (plan.tarFails) { console.error('tar: short read'); finish(path, 2, false); return 2; }
