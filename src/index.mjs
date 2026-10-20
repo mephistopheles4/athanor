@@ -5,10 +5,9 @@ import { mkdirSync, existsSync, utimesSync, writeFileSync, statSync, chmodSync }
 import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.mjs';
-import { readMachineConfig, readRepoConfig, resolveRunLimit, resolveLimits, DEFAULTS } from './config.mjs';
-import { insideRepo, isUnder } from './paths.mjs';
+import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, ARCHIVE_CONFIG } from './git.mjs';
-import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.mjs';
+import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
 import { acquire, ask } from './slots.mjs';
 import { start } from './proc.mjs';
 
@@ -90,31 +89,13 @@ async function runInner(options, partial) {
   const machine = readMachineConfig(home);
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
-  const config = readRepoConfig(root);
-
-  const dockerfile = insideRepo(root, config.dockerfile, 'dockerfile');
-  const context = config.context !== undefined
-    ? insideRepo(root, config.context, 'context')
-    : (dockerfile.includes('/') ? dockerfile.slice(0, dockerfile.lastIndexOf('/')) : '.');
-  const inputs = (config.inputs ?? []).map((p) => insideRepo(root, p, 'inputs'));
-  if (!isUnder(context, dockerfile)) {
-    throw new AthanorError(`The Dockerfile "${config.dockerfile}" is outside the context folder "${context}". Move it into the context, or widen the context.`);
-  }
-  const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
-  const limits = resolveLimits(config, machine);
-  const commandName = name ?? 'test';
-  // Own keys only, so a name such as "constructor" is not found on the prototype.
-  const command = override ?? (Object.hasOwn(config.commands, commandName) ? config.commands[commandName] : undefined);
-  if (command === undefined) {
-    throw new AthanorError(`There is no command named "${commandName}" in the "athanor" key. Its commands are: ${Object.keys(config.commands).join(', ')}.`);
-  }
-  const timeLimitSeconds = options.timeLimitSeconds ?? limits.timeoutMinutes * 60;
+  const config = resolveRunConfig(root, machine, { name, command: override });
+  const { context, inputs, dockerfileInContext } = config.build;
+  const { limits, command } = config;
+  const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  const { driver } = await prepareDocker(docker, env, {
-    allowPlainTcp: machine.allowPlainTcp === true,
-    machineFile: join(home, 'config.json'),
-  });
+  const { driver } = await prepareDocker(docker, env, config.docker);
   // A docker-container builder keeps its result in the build cache unless told to load it.
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
@@ -125,7 +106,7 @@ async function runInner(options, partial) {
     const ctx = await buildContext(root, scratch, { context, inputs, dockerfileInContext });
     partial.image = { tag: ctx.tag, built: false };
     if (!(await imageExists(docker, ctx.tag))) {
-      onProgress(`building the test image ${ctx.tag} from ${config.dockerfile}.`);
+      onProgress(`building the test image ${ctx.tag} from ${config.dockerfileAsSet}.`);
       await build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal);
       partial.image.built = true;
     }
@@ -351,7 +332,7 @@ export async function prune(options = {}) {
   const home = stateFolder();
   clearStale(home);
   const machine = readMachineConfig(home);
-  const days = options.days ?? machine.pruneDays ?? DEFAULTS.pruneDays;
+  const days = options.days ?? machine.values.pruneDays ?? DEFAULTS.pruneDays;
   const inUse = new Set((await listSlotContainers(docker)).map((c) => c.image));
   const removed = [];
   const kept = [];
