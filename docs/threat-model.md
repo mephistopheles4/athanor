@@ -1,9 +1,9 @@
 # Threat model
 
-**Status: draft for the owner's approval.** Nothing on this page is an
-accepted risk yet. Each item under "Accepted-risk candidates" stays a
-candidate until the owner decides it. A session records those decisions in a
-separate change, never in the change that reviews them.
+**Status: decided by the owner on 2026-10-20.** The owner accepted the risks
+under "Accepted risks" below, each with its date, the finding it came from and
+how the owner's word arrived. A change that would ease a path an accepted risk
+names, or remove a control it relies on, is raised in full at review.
 
 This page explains how athanor could break, what it does about each way, and
 which risks it would accept. A change that alters a defence named here
@@ -29,17 +29,17 @@ writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`).
   the test suite runs in the container. athanor is for repos the owner
   trusts to build.
 - **Another local program** running as any user on the machine, which can
-  connect to or squat on the slot names (candidates 2, 3 and 9).
+  connect to or squat on the slot names (accepted risks 2, 3 and 9).
 - **A process that can write the owner's home folder,** which can change the
   machine configuration or the Docker configuration, as it could the
   environment.
 - **Whoever runs the Docker engine or builder the user has configured**
-  (candidate 7).
+  (accepted risk 7).
 - **Other users of a Docker engine shared between machines or people**
-  (candidate 8).
-- **Someone on the network path to a remote engine** (candidate 10).
+  (accepted risk 8).
+- **Someone on the network path to a remote engine** (accepted risk 10).
 - **An authenticated network user who can reach the Windows slot pipe**
-  (candidate 3).
+  (accepted risk 3).
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -57,7 +57,7 @@ above; the software they run is not.
   value, no Docker socket, no privileged mode (ADR 0005, C6, C19). This, and
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
-  decides (candidate 7).
+  decides (accepted risk 7).
 - **Fixed limits on each run:** memory and memory-swap, CPUs, a process limit
   of 1024, `no-new-privileges`, a host-side time limit and an in-container
   timer (C7, C11). The machine configuration's ceilings bound what any repo
@@ -88,31 +88,31 @@ above; the software they run is not.
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.
-  The slot locks are open to any local program (candidates 2, 3 and 9). It
+  The slot locks are open to any local program (accepted risks 2, 3 and 9). It
   relies on the operating system's user separation for the state folder
   (mode 0700 on Linux; on Windows, the home folder's own access rules), and on
   whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; a remote engine's access control is its
-  operator's (candidates 7 and 8).
+  operator's (accepted risks 7 and 8).
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
-  (candidate 1). With a remote engine or builder, those copies go to that
-  machine (candidate 7), and a remote builder can ask this machine for the
-  owner's registry credentials (candidate 7). Plain tcp transport is refused
-  by default (ADR 0013; candidate 10 for the opt-out). Test output can hold
+  (accepted risk 1). With a remote engine or builder, those copies go to that
+  machine (accepted risk 7), and a remote builder can ask this machine for the
+  owner's registry credentials (accepted risk 7). Plain tcp transport is refused
+  by default (ADR 0013; accepted risk 10 for the opt-out). Test output can hold
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
   output goes on to that session's model provider, as it does when tests run
   on the host.
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
-  its image (candidate 8). Temporary names use Node's crypto random source.
+  its image (accepted risk 8). Temporary names use Node's crypto random source.
   athanor encrypts nothing itself; transport to a remote engine is ssh or TLS
   unless the owner opts out (ADR 0013). Image layers, the build cache and a
   container's writable layer sit unencrypted on the engine's or builder's
   disk: on this machine they rely on its disk encryption; on a remote one, on
-  that machine's owner (candidate 7). `prune` does not clear Docker's build
+  that machine's owner (accepted risk 7). `prune` does not clear Docker's build
   cache; the README names the commands that do.
 - **Input validation.** Repo configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
@@ -122,38 +122,45 @@ above; the software they run is not.
 - **Data migrations.** None. The state folder holds only marks, temporary
   indexes and per-run object folders, which are safe to delete.
 
-## Accepted-risk candidates
+## Accepted risks
 
-None of these is accepted. The owner decides each when approving this draft.
+The owner decided each of these on 2026-10-20. Each keeps the number it had as a
+candidate, so other work can point at it.
 
 1. **The image build has the network.** The image build runs the repo's own
    Dockerfile with network access, so a repo from someone else can run code
    that reaches the internet, and a `FROM` line can pull the owner's private
    images with the owner's registry login and send their content out.
-   Proposed because athanor is for repos the owner trusts to build, and most
+   Accepted because athanor is for repos the owner trusts to build, and most
    Dockerfiles need the network to install packages.
+   Accepted 2026-10-20. From: Spec revision 5, S9 and T4; the security review of the first build (adversarial-lens F8, data-lens F6). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 2. **The slot names are open to local programs.** Any local program can take
    the slot names to block runs, or answer `status` with false holder
-   details. Proposed because limiting the Windows pipe to the owner's account
+   details. Accepted because limiting the Windows pipe to the owner's account
    needs a native package, which "no dependencies" rules out.
+   Accepted 2026-10-20. From: The spec review (adversarial-lens: the slot locks trust any local process); the security review of the first build. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 3. **Holder details are readable by local programs, and possibly over the
    network.** The pid, start time, repo folder name and limit a holder reports
    can be read by any local program, and, on Windows, possibly by an
    authenticated network user, since the pipe does not refuse remote clients
-   (the probe's "another machine" criterion was not tried). Proposed because
+   (the probe's "another machine" criterion was not tried). Accepted because
    the details are low in value and the pipe's access rules need a native
    package.
+   Accepted 2026-10-20. From: The spec review (adversarial-lens and data-lens: holder details disclosed); the security review of the first build (adversarial-lens F5, data-lens F7). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 4. **A hostile test can outlive a hard-killed caller.** A test that kills the
    in-container timer, together with a hard-killed caller, leaves one
-   container running until its slot is next used. Proposed because the next
+   container running until its slot is next used. Accepted because the next
    run on the slot removes it.
+   Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 5. **Linux capabilities are not dropped, and the run limit has no upper
-   bound.** Proposed because the container already has no network, no host
+   bound.** Accepted because the container already has no network, no host
    folders and `no-new-privileges`, and the run limit is the owner's own
    setting.
+   Accepted 2026-10-20. From: Spec revision 5, S9; follow-up issue #4 (try --cap-drop ALL) stands against it. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 6. **The folder lock's shared count.** This candidate does not arise: the
    probe selected the OS lock, and the folder lock was not built. It is kept
-   here so the owner can see it was considered.
+   here so the owner can see it was considered. The owner confirmed on
+   2026-10-20 that it does not arise.
 7. **The configured engine or builder's operator has full control of a run.**
    athanor uses the Docker engine and builder the user has configured,
    including one on another machine or a cloud builder. Whoever runs it
@@ -162,25 +169,29 @@ None of these is accepted. The owner decides each when approving this draft.
    cache. It also decides the result athanor reports, whether "no network" and
    the limits are enforced, and the text streamed back into the session; and,
    as a builder, it can ask this machine for the owner's registry credentials.
-   Proposed because the owner chose to let athanor run against any Docker the
+   Accepted because the owner chose to let athanor run against any Docker the
    user sets up, and the user chooses whom to trust with that.
+   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F1, data-lens F2), after the owner removed C29. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 8. **A shared engine's other users can read and change runs.** The slot lock
    is per machine, but the container names `athanor-slot-<n>`, the images and
    their tags are per engine. Anyone else who can use the engine can put their
    own image under the tag athanor runs, read the snapshot in a running
    container and the build context in an image, and remove containers, which
-   also breaks the run limit across machines. Proposed because the README and
+   also breaks the run limit across machines. Accepted because the README and
    SECURITY.md say not to share an engine with people you don't trust; this
    is decided under the security bar, not the Hardening budget.
+   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F3, data-lens F3). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 9. **A squatter on a slot name can impersonate the owner on Windows.** Every
    run connects as a client to the other slot names, and `status` does too. A
    local program that owns one of those names and holds the Windows privilege
    to impersonate clients can act with the owner's identity for that
-   connection. Proposed because a process with that privilege can usually
+   connection. Accepted because a process with that privilege can usually
    reach SYSTEM by other means, so the gain is marginal, and the fix would drop
    a spec'd warning.
+   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F4); the owner's q10 A. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 10. **Plain tcp, when the owner opts in.** With `"allowPlainTcp": true` in the
     machine configuration, the snapshot, the build context and the test output
     cross the network unencrypted, readable and changeable by anyone on the
-    path. Proposed because the opt-out is for networks the owner trusts, and
+    path. Accepted because the opt-out is for networks the owner trusts, and
     only the machine configuration can set it.
+    Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F2, data-lens F1); the owner's q8 A2. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
