@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { mkdirSync, writeFileSync, utimesSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { run, prune } from '../../dist/index.mjs';
+import { run, prune } from '../../dist/index.js';
 import { lockPath } from '../../dist/slots.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.mjs';
 

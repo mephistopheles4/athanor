@@ -7,31 +7,100 @@ import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream } from './git.js';
-import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
+import type { Scratch, BuildContext } from './git.js';
+import { prepareDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
+import type { DockerCommand } from './docker.js';
 import { acquire, ask } from './slots.js';
-import { start } from './proc.mjs';
+import type { Slot } from './slots.js';
+import { start, feed } from './proc.js';
+import { containerArgs, slotContainerName } from './container-settings.js';
+import { runContainer } from './container-run.js';
+import type { Outcome, Sink } from './container-run.js';
 
 export { AthanorError };
+export { BOOT } from './container-settings.js';
+export type { Outcome, Sink };
 
-const MARKER = 'athanor-boot-ok';
 const TAG_PATTERN = /^athanor:([0-9a-f]{32})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// The boot script, joined with \n so no checkout's line endings can reach sh -c.
-export const BOOT = [
-  'set -e',
-  'mkdir -p "$HOME/work"; cd "$HOME/work"',
-  'tar -xm',
-  'if command -v git >/dev/null 2>&1; then',
-  '  git init -q; git add -A',
-  '  git -c user.name=athanor -c user.email=athanor@localhost commit -qm athanor',
-  'fi',
-  '( sleep "$ATHANOR_GRACE_LIMIT"; kill -s KILL -1 ) &',
-  `echo ${MARKER} >&2`,
-  'exec "$@"',
-].join('\n');
+export interface RunOptions {
+  // The folder to run in, inside the repo to test (default: the current folder).
+  cwd?: string;
+  // A command name from the repo configuration's commands, or `command` to give one.
+  name?: string;
+  command?: string[];
+  untracked?: boolean;
+  signal?: AbortSignal;
+  onProgress?: (line: string) => void;
+  stdout?: Sink | null;
+  stderr?: Sink | null;
+  /** @internal For tests (ADR 0003): the Docker command as an argument-array prefix. */
+  docker?: DockerCommand;
+  /** @internal For tests (ADR 0003): the name prefix for pipes and containers. */
+  prefix?: string;
+  /** @internal For tests (ADR 0003): the time limit, in seconds. */
+  timeLimitSeconds?: number;
+  /** @internal For tests (ADR 0003): the grace the in-container timer adds, in seconds. */
+  graceSeconds?: number;
+}
 
-function stateFolder() {
+export interface RunResult {
+  schema: 1;
+  outcome: Outcome;
+  exitCode: number;
+  image?: { tag: string; built: boolean };
+  snapshot?: { id: string; untracked: boolean };
+  untrackedLeftOut?: number;
+  waitedMs?: number;
+  slot?: number;
+  ranMs?: number;
+  message?: string;
+}
+
+// What a run has learned so far, for a result that ends it early.
+type SoFar = Omit<RunResult, 'schema' | 'outcome' | 'exitCode'>;
+
+export interface StatusOptions {
+  /** @internal For tests (ADR 0003): the Docker command as an argument-array prefix. */
+  docker?: DockerCommand;
+  /** @internal For tests (ADR 0003): the name prefix for pipes and containers. */
+  prefix?: string;
+}
+
+export interface SlotStatus {
+  slot: number;
+  // As the holder reports them.
+  pid?: number;
+  started?: number;
+  repo?: string;
+  limit?: number;
+  held?: true;
+}
+
+export interface StatusResult {
+  schema: 1;
+  limit: number;
+  limitSource: 'environment' | 'file' | 'default';
+  slots: SlotStatus[];
+  containers: { name: string; slot: number; orphan: boolean }[];
+}
+
+export interface PruneOptions {
+  dryRun?: boolean;
+  days?: number;
+  /** @internal For tests (ADR 0003): the Docker command as an argument-array prefix. */
+  docker?: DockerCommand;
+}
+
+export interface PruneResult {
+  schema: 1;
+  dryRun: boolean;
+  removed: string[];
+  kept: string[];
+}
+
+function stateFolder(): string {
   const home = process.env.ATHANOR_HOME !== undefined && process.env.ATHANOR_HOME !== ''
     ? process.env.ATHANOR_HOME
     : join(homedir(), '.athanor');
@@ -40,7 +109,7 @@ function stateFolder() {
   return home;
 }
 
-function markUse(home, hash) {
+function markUse(home: string, hash: string): void {
   const dir = join(home, 'images');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, hash);
@@ -52,14 +121,18 @@ function markUse(home, hash) {
 // An interrupt that arrived while a step other than the container was running.
 class Interrupted extends Error {}
 
-function errorResult(message, partial = {}) {
+function errorResult(message: string, partial: SoFar = {}): RunResult {
   return { schema: 1, outcome: 'error', exitCode: EXIT.setup, ...partial, message };
+}
+
+function interruptedResult(partial: SoFar): RunResult {
+  return { schema: 1, outcome: 'interrupted', exitCode: EXIT.interrupted, ...partial };
 }
 
 // Run the named command (or `command`) in a fresh container. Returns the run
 // result; athanor's own failures come back as outcome "error", exit 125.
-export async function run(options = {}) {
-  const partial = {};
+export async function run(options: RunOptions = {}): Promise<RunResult> {
+  const partial: SoFar = {};
   try {
     return await runInner(options, partial);
   } catch (error) {
@@ -69,7 +142,9 @@ export async function run(options = {}) {
   }
 }
 
-async function runInner(options, partial) {
+// The Run: settle the image, take a snapshot, wait for a slot, run the
+// container, and return its outcome.
+async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult> {
   const {
     cwd = process.cwd(),
     name,
@@ -90,7 +165,6 @@ async function runInner(options, partial) {
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
   const config = resolveRunConfig(root, machine, { name, command: override });
-  const { context, inputs, dockerfileInContext } = config.build;
   const { limits, command } = config;
   const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;
@@ -100,14 +174,13 @@ async function runInner(options, partial) {
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
   const scratch = await makeScratch(home, root);
-  let slot = null;
+  let slot: Slot | null = null;
   try {
     // The image: found, or built before waiting for a slot (T1).
-    const ctx = await buildContext(root, scratch, { context, inputs, dockerfileInContext });
+    const ctx = await buildContext(root, scratch, config.build);
+    const image: ImageBuild = { docker, root, scratch, ctx, dockerfile: config.build.dockerfileInContext, buildOptions, stderr, signal };
     partial.image = { tag: ctx.tag, built: false };
-    if (!(await imageExists(docker, ctx.tag))) {
-      onProgress(`building the test image ${ctx.tag} from ${config.dockerfileAsSet}.`);
-      await build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal);
+    if (await settleImage(image, () => onProgress(`building the test image ${ctx.tag} from ${config.dockerfileAsSet}.`))) {
       partial.image.built = true;
     }
     markUse(home, ctx.hash);
@@ -134,18 +207,16 @@ async function runInner(options, partial) {
     await warnOnOtherLimits(prefix, slot.slot, limit, onProgress);
 
     // A prune may have removed the tag while this run waited.
-    if (!(await imageExists(docker, ctx.tag))) {
-      onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`);
-      await build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal);
+    if (await settleImage(image, () => onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`))) {
       partial.image.built = true;
     }
-    const containerName = `${prefix}-slot-${slot.slot}`;
+    const containerName = slotContainerName(prefix, slot.slot);
     await clearSlotContainer(docker, containerName);
     if (signal?.aborted) return interruptedResult(partial);
 
+    const args = containerArgs({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
     const ran = await runContainer({
-      docker, root, scratch, snapshotId: snap.id, containerName, slot: slot.slot, tag: ctx.tag,
-      limits, command, timeLimitSeconds, graceSeconds, stdout, stderr, signal,
+      docker, root, scratch, snapshotId: snap.id, name: containerName, args, timeLimitSeconds, stdout, stderr, signal,
     });
     markUse(home, ctx.hash);
     return { schema: 1, ...partial, ...ran };
@@ -155,46 +226,50 @@ async function runInner(options, partial) {
   }
 }
 
-function interruptedResult(partial) {
-  return { schema: 1, outcome: 'interrupted', exitCode: EXIT.interrupted, ...partial };
-}
-
-async function warnOnOtherLimits(prefix, slot, limit, onProgress) {
+async function warnOnOtherLimits(prefix: string, slot: number, limit: number, onProgress: (line: string) => void): Promise<void> {
   const checks = [];
   for (let n = 1; n <= limit + 1; n++) if (n !== slot) checks.push(ask(prefix, n).then((r) => ({ n, ...r })));
   const answers = await Promise.all(checks);
   const above = answers.find((a) => a.n === limit + 1 && a.held);
-  const differs = answers.find((a) => a.answer && a.answer.limit !== limit);
+  const differs = answers.map((a) => (a.held ? a.answer : undefined)).find((answer) => answer !== undefined && answer.limit !== limit);
   if (above || differs) {
-    onProgress(`warning: another caller uses a different run limit (this run uses ${limit}${differs ? `, a holder reports ${differs.answer.limit}` : `, but slot ${limit + 1} is held`}). Set the same ATHANOR_MAX_RUNS or maxRuns for every caller.`);
+    onProgress(`warning: another caller uses a different run limit (this run uses ${limit}${differs ? `, a holder reports ${differs.limit}` : `, but slot ${limit + 1} is held`}). Set the same ATHANOR_MAX_RUNS or maxRuns for every caller.`);
   }
 }
 
-// Pipe git's tar stream into a Docker child. If the child stops reading (it exits,
-// or its input closes), end the archive too, so it fails rather than blocks.
-function feed(archive, consumer) {
-  const out = archive.child.stdout;
-  out.pipe(consumer.child.stdin);
-  const stopArchive = () => {
-    out.unpipe(consumer.child.stdin);
-    out.destroy();
-    if (archive.child.exitCode === null) archive.child.kill();
-  };
-  consumer.child.stdin.on('error', stopArchive);
-  consumer.child.once('exit', stopArchive);
+// What building the run's image needs.
+interface ImageBuild {
+  docker: DockerCommand;
+  root: string;
+  scratch: Scratch;
+  ctx: BuildContext;
+  // The Dockerfile's path inside the build context.
+  dockerfile: string;
+  buildOptions: string[];
+  stderr: Sink | null;
+  signal?: AbortSignal;
 }
 
-async function build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal) {
+// Build the image unless Docker already has it; onBuild says so first.
+// Returns whether it built.
+async function settleImage(b: ImageBuild, onBuild: () => void): Promise<boolean> {
+  if (await imageExists(b.docker, b.ctx.tag)) return false;
+  onBuild();
+  await build(b);
+  return true;
+}
+
+async function build({ docker, root, scratch, ctx, dockerfile, buildOptions, stderr, signal }: ImageBuild): Promise<void> {
   const archive = tarStream(root, scratch, ctx.commit, 'build context');
-  const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
+  const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfile, '-'], {
     stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
   });
   feed(archive, builder);
   // On an interrupt, stop waiting once docker has exited: a buildx plugin it
   // started can hold the output open until the build ends (S4 leaves the build
   // to Docker).
-  let onAbort;
-  const aborted = new Promise((resolve) => {
+  let onAbort = () => {};
+  const aborted = new Promise<void>((resolve) => {
     onAbort = () => {
       builder.child.kill();
       archive.child.kill();
@@ -221,97 +296,19 @@ async function build(docker, root, scratch, ctx, dockerfileInContext, buildOptio
   }
 }
 
-// Strips the boot marker from the container's stderr and notes that it came.
-function markerFilter(write) {
-  let seen = false;
-  let pending = '';
-  return {
-    get seen() { return seen; },
-    push(chunk) {
-      if (seen) { write(chunk); return; }
-      pending += chunk.toString('utf8');
-      let i;
-      while (!seen && (i = pending.indexOf('\n')) !== -1) {
-        const line = pending.slice(0, i + 1);
-        pending = pending.slice(i + 1);
-        if (line.replace(/\r?\n$/, '') === MARKER) seen = true;
-        else write(line);
-      }
-      if (seen && pending) { write(pending); pending = ''; }
-    },
-    flush() { if (pending) write(pending); pending = ''; },
-  };
-}
-
-async function runContainer(o) {
-  const graceLimit = Math.ceil(o.timeLimitSeconds + o.graceSeconds);
-  const args = [
-    'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
-    '--name', o.containerName, '--label', `athanor.slot=${o.slot}`,
-    '--network', 'none',
-    '--memory', o.limits.memory, '--memory-swap', o.limits.memory,
-    '--cpus', String(o.limits.cpus), '--pids-limit', '1024',
-    '--security-opt', 'no-new-privileges',
-    '-e', `ATHANOR_GRACE_LIMIT=${graceLimit}`,
-    o.tag, 'sh', '-c', BOOT, 'athanor', ...o.command,
-  ];
-  const write = (stream) => (c) => stream?.write(c);
-  const filter = markerFilter(write(o.stderr));
-  const started = Date.now();
-  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
-  const container = start([...o.docker, ...args], {
-    stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
-  });
-  feed(archive, container);
-
-  let timedOut = false;
-  let interrupted = false;
-  const stop = () => removeContainer(o.docker, o.containerName);
-  const timer = setTimeout(() => { timedOut = true; stop(); }, o.timeLimitSeconds * 1000);
-  const onAbort = () => { interrupted = true; stop(); };
-  if (o.signal?.aborted) onAbort();
-  o.signal?.addEventListener('abort', onAbort, { once: true });
-
-  const [a, c] = await Promise.all([archive.done, container.done]);
-  clearTimeout(timer);
-  o.signal?.removeEventListener('abort', onAbort);
-  filter.flush();
-  const ranMs = Date.now() - started;
-  const state = interrupted || timedOut ? null : await readExit(o.docker, o.containerName);
-  await removeContainer(o.docker, o.containerName);
-
-  const base = { ranMs };
-  if (interrupted) return { ...base, outcome: 'interrupted', exitCode: EXIT.interrupted };
-  if (timedOut) return { ...base, outcome: 'timeout', exitCode: EXIT.timeout };
-  if (a.code !== 0) {
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: `git archive of the snapshot failed (exit ${a.code}), so the test did not run on the whole snapshot.` };
-  }
-  if (!filter.seen) {
-    const why = c.code === 125
-      ? 'docker run failed before the test started. Its message is above.'
-      : 'the container did not print athanor\'s start marker. Either the snapshot could not be unpacked, or the image breaks athanor\'s image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.';
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: `The test never started: ${why}` };
-  }
-  if (!state) {
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: 'athanor could not read how the container ended (docker inspect failed). Check that Docker is still running.' };
-  }
-  if (state.oom) return { ...base, outcome: 'memory', exitCode: EXIT.memory };
-  return { ...base, outcome: state.exitCode === 0 ? 'pass' : 'fail', exitCode: state.exitCode };
-}
-
 // Who holds each slot, and which athanor containers exist. Starts nothing.
-export async function status(options = {}) {
+export async function status(options: StatusOptions = {}): Promise<StatusResult> {
   const { docker = ['docker'], prefix = 'athanor' } = options;
   const home = stateFolder();
   const machine = readMachineConfig(home);
   const { limit, source } = resolveRunLimit(process.env, machine);
-  const slots = [];
-  const held = new Set();
+  const slots: SlotStatus[] = [];
+  const held = new Set<number>();
   for (let n = 1; n <= limit; n++) {
     const r = await ask(prefix, n);
     if (r.held) held.add(n);
-    const entry = { slot: n };
-    if (r.answer) Object.assign(entry, { pid: r.answer.pid, started: r.answer.started, repo: r.answer.repo, limit: r.answer.limit });
+    const entry: SlotStatus = { slot: n };
+    if (r.held && r.answer) Object.assign(entry, { pid: r.answer.pid, started: r.answer.started, repo: r.answer.repo, limit: r.answer.limit });
     if (r.held) entry.held = true;
     slots.push(entry);
   }
@@ -323,15 +320,15 @@ export async function status(options = {}) {
 }
 
 // Remove athanor image tags whose last use is older than `days` days.
-export async function prune(options = {}) {
+export async function prune(options: PruneOptions = {}): Promise<PruneResult> {
   const { docker = ['docker'], dryRun = false } = options;
   const home = stateFolder();
   clearStale(home);
   const machine = readMachineConfig(home);
   const days = options.days ?? machine.values.pruneDays ?? DEFAULTS.pruneDays;
   const inUse = new Set((await listSlotContainers(docker)).map((c) => c.image));
-  const removed = [];
-  const kept = [];
+  const removed: string[] = [];
+  const kept: string[] = [];
   const now = Date.now();
   for (const tag of await listAthanorImages(docker)) {
     const match = tag.match(TAG_PATTERN);
@@ -351,4 +348,3 @@ export async function prune(options = {}) {
   }
   return { schema: 1, dryRun, removed, kept };
 }
-

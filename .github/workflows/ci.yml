@@ -3,7 +3,7 @@
 # source check, both test tiers (each builds dist/ first; the docker tier uses
 # the runner's own Docker engine), and npm pack followed by a check of what the
 # packed file holds, an install of it into a temporary prefix, and a type check
-# of a file that imports it by its name. Locked down for a public repo: a read-only token,
+# of a file that imports it by its name and sees no test-only option. Locked down for a public repo: a read-only token,
 # no secrets, each action pinned to a full commit SHA, and the checkout's
 # token not left in the clone.
 name: ci
@@ -58,7 +58,7 @@ jobs:
           packed=$(tar -tzf "$tgz")
           unexpected=$(printf '%s\n' "$packed" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
           test -z "$unexpected" || { echo "unexpected files in the package: $unexpected"; exit 1; }
-          printf '%s\n' "$packed" | grep -qx 'package/dist/index.d.mts'
+          printf '%s\n' "$packed" | grep -qx 'package/dist/index.d.ts'
           prefix="$RUNNER_TEMP/athanor-prefix"
           npm install --global --prefix "$prefix" "$tgz"
           expected=$(node -p "require('./package.json').version")
@@ -73,7 +73,10 @@ jobs:
           cd "$project"
           echo '{ "name": "athanor-typed", "private": true, "type": "module" }' > package.json
           npm install --ignore-scripts --no-audit --no-fund "$tgz"
-          printf '%s\n' "import { run, status, prune } from '@mephistopheles4/athanor';" "export const used = [run, status, prune];" > check.mts
+          # The test-only options (ADR 0003) are left out of the declarations, so
+          # a typed caller that names one gets an error.
+          printf '%s\n' "import { run, status, prune } from '@mephistopheles4/athanor';" "export const used = [run, status, prune];" \
+            "// @ts-expect-error docker is a test-only option." "export const hidden = () => run({ docker: ['docker'] });" > check.mts
           node "$GITHUB_WORKSPACE/node_modules/typescript/bin/tsc" --noEmit --strict \
             --module nodenext --moduleResolution nodenext \
             --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts

@@ -4,12 +4,11 @@
 import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
-import { call, start } from './proc.mjs';
+import { call, start } from './proc.js';
+import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
 
 type Env = NodeJS.ProcessEnv;
-// A child as start() returns it: the process and the promise of its end.
-type Started = ReturnType<typeof start>;
 
 // A run's scratch folder and the git environments that use it.
 export interface Scratch {
@@ -212,9 +211,5 @@ export async function buildContext(
 // settings pinned here. Returns the git child; its stdout is the stream.
 export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf): Started {
   const pinned = of === 'build context' ? [...ARCHIVE_CONFIG, ...BUILD_ARCHIVE_CONFIG] : ARCHIVE_CONFIG;
-  // proc is still JavaScript, so the type of start()'s options holds only the
-  // keys with defaults, and a literal naming cwd or env fails the check. A
-  // named object passes until proc is typed (TS move 4).
-  const options = { cwd: root, env: scratch.archiveEnv, capture: false };
-  return start(['git', ...pinned, 'archive', '--format=tar', id], options);
+  return start(['git', ...pinned, 'archive', '--format=tar', id], { cwd: root, env: scratch.archiveEnv, capture: false });
 }
