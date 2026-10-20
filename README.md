@@ -1,4 +1,4 @@
-![athanor: run a repo's tests in a fresh container with no network, at most N at once on the machine](docs/brand/athanor-banner.png)
+![athanor: your tests, sealed](docs/brand/athanor-social.png)
 
 # athanor
 
