@@ -24,7 +24,8 @@ Triage sets it. An issue with no tier label is not yet triaged.
 By default, auth, secrets, crypto, input validation and data migrations are
 sensitive work: the session recommends `tier:thorough` with the security pair,
 and the owner takes it or not. In athanor, a change to what reaches the
-container, to path checks, or to the local-Docker check is input validation.
+container, to path checks, or to how athanor handles the Docker endpoint is
+input validation.
 
 ## Creating the labels
 

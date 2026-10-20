@@ -54,7 +54,8 @@ export async function acquire({ prefix, limit, info, signal, onWait }) {
 const isHolderAnswer = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Number.isInteger(v.slot) && Number.isInteger(v.pid) && Number.isFinite(new Date(v.started).getTime()) && typeof v.started === 'number' &&
-  typeof v.repo === 'string' && Number.isInteger(v.limit);
+  // No control characters, so an answer cannot draw on the terminal that shows it.
+  typeof v.repo === 'string' && !/[\u0000-\u001f\u007f-\u009f]/.test(v.repo) && Number.isInteger(v.limit);
 
 // Ask slot n's holder. Resolves to { held: false }, { held: true }, or
 // { held: true, answer } when it answered with one well-formed JSON line.

@@ -25,6 +25,7 @@ test('C18 bad configuration and bad command lines exit 125 naming the problem; -
   const configRows = [
     { name: 'missing key', athanor: undefined, says: /no "athanor" key in package\.json.*add one/is },
     { name: 'unknown command name', athanor: baseConfig, runName: 'lint', says: /no command named "lint".*Its commands are: test/s },
+    { name: 'a name that is a built-in object member', athanor: baseConfig, runName: 'constructor', says: /no command named "constructor".*Its commands are: test/s },
     { name: 'string command', athanor: { ...baseConfig, commands: { test: 'npm test' } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
     { name: 'array with a number', athanor: { ...baseConfig, commands: { test: ['node', 3] } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
     { name: 'empty array', athanor: { ...baseConfig, commands: { test: [] } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },

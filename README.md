@@ -101,6 +101,10 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
 above a `max*` ceiling is an error.
 
+The state folder holds copies of your uncommitted files while a run lasts, and
+for up to a day after a run that was killed hard. If you set `ATHANOR_HOME`,
+point it at a folder only you can read.
+
 ## Disk
 
 `athanor prune` removes athanor's own images. It does not clear Docker's
@@ -109,6 +113,16 @@ build cache, which can hold copies of build contexts. Clear it with:
 ```bash
 docker builder prune
 ```
+
+With a named buildx builder, clear its cache with
+`docker buildx prune --builder <name>`. With a remote engine or builder, these
+copies sit on that machine.
+
+## Secrets
+
+Keep secrets out of the files a run sends: everything tracked in the repo goes
+into the container, and everything tracked under `context` plus each `inputs`
+file goes into the image build, which has network access.
 
 ## More
 

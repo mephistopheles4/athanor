@@ -103,7 +103,8 @@ async function runInner(options, partial) {
   const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
   const limits = resolveLimits(config, machine);
   const commandName = name ?? 'test';
-  const command = override ?? config.commands[commandName];
+  // Own keys only, so a name such as "constructor" is not found on the prototype.
+  const command = override ?? (Object.hasOwn(config.commands, commandName) ? config.commands[commandName] : undefined);
   if (command === undefined) {
     throw new AthanorError(`There is no command named "${commandName}" in the "athanor" key. Its commands are: ${Object.keys(config.commands).join(', ')}.`);
   }

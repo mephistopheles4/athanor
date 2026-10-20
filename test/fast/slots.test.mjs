@@ -92,6 +92,14 @@ test('C13 status lists the limit and its source, each holder, and every athanor 
   writeFileSync(join(home, 'config.json'), '{}');
   assert.equal((await status({ docker: docker.docker, prefix })).limitSource, 'default');
 
+  await t.test('an answer whose repo name holds control characters is skipped', async (t) => {
+    const other = uniquePrefix();
+    await holdSlot(t, other, 1, JSON.stringify({ slot: 1, pid: 5, started: 1, repo: 'x\nslot 2: free\u001b[2J', limit: 2 }) + '\n');
+    const s2 = await status({ docker: docker.docker, prefix: other });
+    assert.equal(s2.slots[0].held, true);
+    assert.equal(s2.slots[0].repo, undefined);
+  });
+
   await t.test('an answer whose start time is not a real date is skipped', async (t) => {
     const other = uniquePrefix();
     await holdSlot(t, other, 1, JSON.stringify({ slot: 1, pid: 5, started: 1e20, repo: 'x', limit: 2 }) + '\n');
