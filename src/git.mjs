@@ -130,12 +130,15 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
     await git(['read-tree', tree], { cwd: root, env: inputEnv, what: 'read the context tree' });
     for (const input of inputs) {
       // Only files git tracks reach the build: never an ignored or untracked one.
-      const tracked = (await git(['ls-files', '-s', '--', input], { cwd: root, env: indexEnv, what: `check the inputs file "${input}"` })).trim();
-      if (tracked === '') {
+      // -z, so a name git would quote (such as one with an accent) comes back as written.
+      const entries = (await git(['ls-files', '-s', '-z', '--', input], { cwd: root, env: indexEnv, what: `check the inputs file "${input}"` }))
+        .split('\0').filter(Boolean);
+      if (entries.length === 0) {
         throw new AthanorError(`The inputs file "${input}" is not tracked by git, so athanor will not send it to the build. Add it to git, or remove it from inputs.`);
       }
       // One entry for exactly this path; anything else means a folder.
-      if (tracked.includes('\n') || tracked.slice(tracked.indexOf('\t') + 1) !== input) {
+      const tracked = entries[0];
+      if (entries.length > 1 || tracked.slice(tracked.indexOf('\t') + 1) !== input) {
         throw new AthanorError(`The inputs entry "${input}" is a folder. List each file the build needs in inputs.`);
       }
       const taken = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });

@@ -402,6 +402,14 @@ test('C28 only the hashed set reaches the build', async (t) => {
     assert.match(f.message, /inputs entry "cfg" is a folder/);
   });
 
+  await t.test('a tracked input whose name git would quote is accepted', async (t) => {
+    const named = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['café.json'] }, files: { 'café.json': '{}\n' } });
+    const d = fake(t);
+    const r = await runWith(t, named, d);
+    assert.equal(r.outcome, 'pass', JSON.stringify(r));
+    assert.equal(tarFile(lastBuildTar(d), 'café.json'), '{}\n');
+  });
+
   await t.test('an input keeps the executable bit git records for it', async (t) => {
     const exec = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['tool.sh'] }, files: { 'tool.sh': 'echo hi\n' } });
     git(exec, ['update-index', '--chmod=+x', 'tool.sh']);
