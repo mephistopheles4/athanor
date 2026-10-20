@@ -53,9 +53,10 @@ jobs:
           tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
           # Only bin/, dist/ (compiled JavaScript and its declarations), the
           # README, the LICENSE and package.json ship.
-          unexpected=$(tar -tzf "$tgz" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
+          packed=$(tar -tzf "$tgz")
+          unexpected=$(printf '%s\n' "$packed" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
           test -z "$unexpected" || { echo "unexpected files in the package: $unexpected"; exit 1; }
-          tar -tzf "$tgz" | grep -qx 'package/dist/index.d.mts'
+          printf '%s\n' "$packed" | grep -qx 'package/dist/index.d.mts'
           prefix="$RUNNER_TEMP/athanor-prefix"
           npm install --global --prefix "$prefix" "$tgz"
           expected=$(node -p "require('./package.json').version")

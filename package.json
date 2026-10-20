@@ -33,5 +33,9 @@
     "test": "node test/run.mjs fast",
     "test:docker": "node test/run.mjs docker",
     "check": "node scripts/check-source.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
   }
 }
