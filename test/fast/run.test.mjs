@@ -96,6 +96,19 @@ test('C4 an uncommitted edit reaches the container and git\'s state is unchanged
   assert.equal(tarFile(tar, 'b.txt'), 'staged\n');
   const after = gitState(repo);
   for (const key of ['stash', 'stage', 'status', 'refs']) assert.equal(after[key], before[key], key);
+
+  await t.test('export-ignore and export-subst do not change what reaches the container', async (t) => {
+    const marked = makeRepo(t, {
+      athanor: baseConfig,
+      files: { '.gitattributes': 'tests/ export-ignore\nver.txt export-subst\n', 'tests/a.test.mjs': 'old\n', 'ver.txt': '$Format:%H$\n' },
+    });
+    writeFileSync(join(marked, 'tests/a.test.mjs'), 'edited\n');
+    const d = fake(t);
+    const r = await runWith(t, marked, d);
+    assert.equal(r.outcome, 'pass', JSON.stringify(r));
+    assert.equal(tarFile(lastRunTar(d), 'tests/a.test.mjs'), 'edited\n');
+    assert.equal(tarFile(lastRunTar(d), 'ver.txt'), '$Format:%H$\n');
+  });
 });
 
 test('C5 untracked files are left out and counted by default, included with --untracked; ignored ones never', async (t) => {
@@ -305,6 +318,17 @@ test('C28 only the hashed set reaches the build', async (t) => {
     assert.equal(result.exitCode, 125);
     assert.match(result.message, /already is/);
   });
+
+  await t.test('a file marked export-ignore in the context still reaches the build', async (t) => {
+    const marked = makeRepo(t, {
+      athanor: { ...baseConfig, context: 'test' },
+      files: { 'test/.gitattributes': 'x.txt export-ignore\n', 'test/x.txt': 'x\n', 'test/Dockerfile': 'FROM alpine\nCOPY x.txt /\n' },
+    });
+    const d = fake(t);
+    const result = await runWith(t, marked, d);
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.equal(tarFile(lastBuildTar(d), 'x.txt'), 'x\n');
+  });
 });
 
 test('C29 a remote engine, context or builder exits 125 naming the setting, with no build or run', async (t) => {
@@ -314,6 +338,9 @@ test('C29 a remote engine, context or builder exits 125 naming the setting, with
     { name: 'remote builder', env: { BUILDX_BUILDER: 'far' }, scenario: { builderDriver: 'remote', builderEndpoint: 'tcp://10.0.0.5:1234' }, says: /BUILDX_BUILDER/ },
     { name: 'cloud builder', env: { BUILDX_BUILDER: 'cloud-x' }, scenario: { builderDriver: 'cloud' }, says: /BUILDX_BUILDER/ },
     { name: 'docker-container builder on tcp', scenario: { builderDriver: 'docker-container', builderEndpoint: 'tcp://10.0.0.5:2376' }, says: /builder/ },
+    { name: 'docker-driver builder backed by a tcp context', env: { BUILDX_BUILDER: 'far-ctx' }, scenario: { builderDriver: 'docker', builderEndpoints: ['far-ctx'], contexts: { 'far-ctx': 'tcp://10.0.0.5:2376' } }, says: /BUILDX_BUILDER/ },
+    { name: 'docker-container builder with a later remote node', scenario: { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock', 'tcp://10.0.0.5:2376'] }, says: /builder/ },
+    { name: 'Docker not running: buildx shows no driver', scenario: { builderDriver: '' }, says: /Docker is not reachable/ },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
@@ -329,6 +356,7 @@ test('C29 a remote engine, context or builder exits 125 naming the setting, with
   await t.test('local settings pass: npipe host, docker-container on a local endpoint, no buildx', async (t) => {
     for (const [env, scenario] of [
       [{ DOCKER_HOST: 'npipe:////./pipe/docker_engine' }, {}],
+      [{}, { builderDriver: 'docker', builderEndpoints: ['desktop-linux'], contexts: { 'desktop-linux': 'npipe:////./pipe/dockerDesktopLinuxEngine' } }],
       [{}, { builderDriver: 'docker-container', builderEndpoint: 'unix:///var/run/docker.sock' }],
       [{}, { buildx: 'missing' }],
     ]) {

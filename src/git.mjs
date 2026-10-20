@@ -51,6 +51,14 @@ export async function makeScratch(home, root) {
   const repoObjects = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { cwd: root, what: 'find the object store' })).trim();
   writeFileSync(join(objects, 'info', 'alternates'), resolve(repoObjects) + '\n');
   const realIndex = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'], { cwd: root, what: 'find the index' })).trim();
+  // A git folder of athanor's own for every archive: its info/attributes,
+  // which outranks the tree's .gitattributes, unsets export-ignore and
+  // export-subst, so the archive holds exactly the tree. The tree's eol
+  // attributes still apply.
+  const archiveDir = join(dir, 'archive.git');
+  await git(['init', '--bare', '-q', archiveDir], { cwd: dir, what: 'make a folder for archives' });
+  mkdirSync(join(archiveDir, 'info'), { recursive: true });
+  writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst\n');
   let copies = 0;
   return {
     dir,
@@ -61,6 +69,7 @@ export async function makeScratch(home, root) {
       return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects };
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects },
+    archiveEnv: { ...process.env, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects },
     remove() {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     },

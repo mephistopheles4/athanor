@@ -31,16 +31,27 @@ export async function checkLocal(docker, env) {
     throw new AthanorError(`${setting} points at "${host}", which is not a local engine. athanor only uses a local Docker engine: switch to a local context.`);
   }
   const builder = await call([...docker, 'buildx', 'inspect']);
-  if (builder.code !== 0) return; // no buildx: the classic builder runs in the local engine
-  const driver = builder.stdout.match(/^Driver:\s*(\S+)/m)?.[1];
-  const endpoint = builder.stdout.match(/^Endpoint:\s*(\S+)/m)?.[1];
-  const setting = env.BUILDX_BUILDER !== undefined ? `BUILDX_BUILDER ("${env.BUILDX_BUILDER}")` : 'the active buildx builder';
-  if (driver === 'docker') return;
-  if (driver === 'docker-container') {
-    if (isLocalEndpoint(endpoint)) return;
-    if (endpoint && !endpoint.includes('://') && isLocalEndpoint(await contextHost(docker, endpoint).catch(() => ''))) return;
+  if (builder.code !== 0) {
+    if (/is not a docker command|unknown command/i.test(builder.stderr)) return; // no buildx: the classic builder runs in the local engine
+    throw new AthanorError(`Docker is not reachable: docker buildx inspect failed (${firstLine(builder.stderr) || `exit ${builder.code}`}). Start Docker, then run again.`);
   }
-  throw new AthanorError(`${setting} uses the "${driver ?? 'unknown'}" driver${endpoint ? ` at "${endpoint}"` : ''}, which is not a local builder. athanor only builds locally: use the docker driver, or docker-container on a local endpoint.`);
+  // [ \t] so an empty value never reads on into the next line.
+  const driver = builder.stdout.match(/^Driver:[ \t]*(\S*)/m)?.[1] ?? '';
+  const endpoints = [...builder.stdout.matchAll(/^Endpoint:[ \t]*(\S*)/gm)].map((m) => m[1]);
+  if (driver === '' || /^Error:/m.test(builder.stdout)) {
+    throw new AthanorError('Docker is not reachable: docker buildx inspect shows no builder driver, so athanor cannot confirm the builder is local. Start Docker, then run again.');
+  }
+  const setting = env.BUILDX_BUILDER !== undefined ? `BUILDX_BUILDER ("${env.BUILDX_BUILDER}")` : 'the active buildx builder';
+  const notLocal = (detail) =>
+    new AthanorError(`${setting} ${detail}, which is not a local builder. athanor only builds locally: use the docker driver, or docker-container, on a local engine.`);
+  if (driver !== 'docker' && driver !== 'docker-container') throw notLocal(`uses the "${driver}" driver`);
+  if (endpoints.length === 0) throw notLocal('lists no node endpoint');
+  // Every node must be local: a pipe or socket, or a context whose engine is one.
+  for (const endpoint of endpoints) {
+    if (isLocalEndpoint(endpoint)) continue;
+    if (endpoint !== '' && !endpoint.includes('://') && isLocalEndpoint(await contextHost(docker, endpoint).catch(() => ''))) continue;
+    throw notLocal(`has a node at "${endpoint}"`);
+  }
 }
 
 export async function imageExists(docker, tag) {

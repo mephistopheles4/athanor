@@ -181,7 +181,7 @@ async function warnOnOtherLimits(prefix, slot, limit, onProgress) {
 
 async function build(docker, root, scratch, ctx, dockerfileInContext, stderr, signal) {
   const archive = start(['git', ...ARCHIVE_CONFIG, '-c', 'tar.umask=0022', 'archive', '--format=tar', ctx.commit], {
-    cwd: root, env: scratch.objectsEnv, capture: false,
+    cwd: root, env: scratch.archiveEnv, capture: false,
   });
   const builder = start([...docker, 'build', '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
     stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
@@ -236,7 +236,7 @@ async function runContainer(o) {
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
   const archive = start(['git', ...ARCHIVE_CONFIG, 'archive', '--format=tar', o.snapshotId], {
-    cwd: o.root, env: o.scratch.objectsEnv, capture: false,
+    cwd: o.root, env: o.scratch.archiveEnv, capture: false,
   });
   const container = start([...o.docker, ...args], {
     stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),

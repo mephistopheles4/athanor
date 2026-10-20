@@ -62,7 +62,11 @@ async function main() {
   const [a, b] = args;
   if (a === 'context' && b === 'inspect') {
     record();
-    console.log(JSON.stringify([{ Name: 'fake', Endpoints: { docker: { Host: scenario.contextHost ?? 'unix:///var/run/docker.sock' } } }]));
+    const named = args[2];
+    const host = named && scenario.contexts?.[named] !== undefined
+      ? scenario.contexts[named]
+      : scenario.contextHost ?? 'unix:///var/run/docker.sock';
+    console.log(JSON.stringify([{ Name: named ?? 'fake', Endpoints: { docker: { Host: host } } }]));
     return 0;
   }
   if (a === 'buildx' && b === 'inspect') {
@@ -72,8 +76,10 @@ async function main() {
       return 1;
     }
     const driver = scenario.builderDriver ?? 'docker';
-    const endpoint = scenario.builderEndpoint ?? 'default';
-    console.log(`Name:          fake\nDriver:        ${driver}\nLast Activity: 2026-10-19 20:31:02 +0000 UTC\n\nNodes:\nName:             fake0\nEndpoint:         ${endpoint}\nStatus:           running\n`);
+    const endpoints = scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
+    // The shape of real `docker buildx inspect` output, one block per node.
+    const nodes = endpoints.map((e, i) => `Name:             fake${i}\nEndpoint:         ${e}\nStatus:           running\n`).join('\n');
+    console.log(`Name:          fake\nDriver:        ${driver}\nLast Activity: 2026-10-19 20:31:02 +0000 UTC\n\nNodes:\n${nodes}`);
     return 0;
   }
   if (a === 'image' && b === 'inspect') {
