@@ -1,6 +1,6 @@
 # 0008. Local Docker only
 
-Date: 2026-10-19 · Status: accepted · Source: spec revision 5 on issue 1 (S4, C29)
+Date: 2026-10-19 · Status: superseded by 0012 (the owner removed C29) · Source: spec revision 5 on issue 1 (S4, C29)
 
 Before any build or run, athanor checks three settings:
 

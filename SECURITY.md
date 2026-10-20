@@ -16,11 +16,13 @@ report; say where they are instead.
 [The threat model](docs/threat-model.md) says what athanor defends and which
 risks it accepts. Read it before you report. A hole is a boundary that
 doesn't hold: for example, a host folder, host environment value or network
-reaching the test container, a configured path escaping the repo, a command
-reaching a shell on the host, or a remote Docker engine accepted as local.
+reaching the test container, a configured path escaping the repo, or a
+command reaching a shell on the host.
 
 athanor is for repos you trust to build: the image build runs the repo's own
-Dockerfile with network access. That is by design, not a hole.
+Dockerfile with network access. That is by design, not a hole. So is sending
+the build context and snapshot to whatever Docker engine you have configured,
+local or remote.
 
 Docker, Docker Desktop, git and Node are outside athanor. Report a hole in one
 of them to its maker.

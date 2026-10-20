@@ -32,8 +32,11 @@ test command. It writes only to its state folder (`~/.athanor`, or
   connect to or squat on the slot names.
 - **A process that can write the owner's home folder,** which can change the
   machine configuration, as it could the environment.
-- **Someone who controls a remote Docker engine or cloud builder** that a
-  setting points at.
+- **Whoever runs the Docker engine or builder the user has configured.**
+  athanor uses Docker as configured, local or remote (ADR 0012), so that
+  party receives the build context and the snapshot (candidate 7).
+- **Another machine using the same Docker engine,** whose runs share the
+  engine but not the slot lock (candidate 8).
 
 **Out of scope.** Docker, Docker Desktop and its VM, git, Node and the
 operating system. A machine already compromised as the owner's user.
@@ -60,8 +63,10 @@ operating system. A machine already compromised as the owner's user.
   ignored file and no git folder (ADR 0006, C28).
 - **The repo is never written.** Snapshots use a copy of the index and a
   per-run object folder (ADR 0007, C21, C30).
-- **Docker stays local.** A remote engine, a remote context or a cloud or
-  remote builder exits 125 before any build or run (ADR 0008, C29).
+- **Docker as configured.** athanor no longer checks where the engine or the
+  builder runs (ADR 0012, which supersedes ADR 0008; C29 is removed). It
+  checks only that the engine answers. Where the build context and the
+  snapshot go is the user's Docker configuration (candidate 7).
 - **The run limit holds through a hard kill.** The slot is an OS lock that the
   OS frees when the process ends, and a run removes its slot's labelled
   container before starting its own (ADR 0004, C8, C10).
@@ -117,3 +122,17 @@ None of these is accepted. The owner decides each when approving this draft.
 6. **The folder lock's shared count.** This candidate does not arise: the
    probe selected the OS lock, and the folder lock was not built. It is kept
    here so the owner can see it was considered.
+7. **The build context and the snapshot go wherever Docker is configured.**
+   athanor uses the user's Docker engine and builder as configured, including
+   one on another machine or a cloud builder. That machine then receives the
+   build context and the snapshot, uncommitted changes and any committed
+   secret included, and holds copies in its image layers and build cache.
+   Accepted because the owner chose to let athanor run against any Docker the
+   user sets up; checking the endpoint's location was removed by the owner's
+   decision.
+8. **Runs from several machines can collide on a shared engine.** The slot
+   lock is per machine, but the container names `athanor-slot-<n>` and the
+   images are per engine. When two machines use one engine, a run can treat
+   another machine's container on its slot as a leftover, and the run limit
+   counts each machine apart. Accepted as a consequence of candidate 7; no
+   guard is built (Hardening is 0).

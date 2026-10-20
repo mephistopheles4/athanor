@@ -8,7 +8,7 @@ import { AthanorError, EXIT } from './errors.mjs';
 import { readMachineConfig, readRepoConfig, resolveRunLimit, resolveLimits, DEFAULTS } from './config.mjs';
 import { insideRepo, isUnder } from './paths.mjs';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, ARCHIVE_CONFIG } from './git.mjs';
-import { checkLocal, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.mjs';
+import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.mjs';
 import { acquire, ask } from './slots.mjs';
 import { start } from './proc.mjs';
 
@@ -110,7 +110,7 @@ async function runInner(options, partial) {
   const timeLimitSeconds = options.timeLimitSeconds ?? limits.timeoutMinutes * 60;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  const { driver } = await checkLocal(docker, env);
+  const { driver } = await prepareDocker(docker);
   // A docker-container builder keeps its result in the build cache unless told to load it.
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 

@@ -36,7 +36,7 @@ One runner, named tiers, from the repo root:
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
   Runs anywhere Node 24 and git run.
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
-  local Docker engine.
+  Docker engine.
 - `node scripts/check-source.mjs` — the source check (no shell use).
 
 CI runs `node --check` on every source file, the source check, both tiers and

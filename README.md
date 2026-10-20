@@ -13,8 +13,12 @@ Dockerfile with network access.
 
 ## Install
 
-Needs Node 24 or later, git, and a local Docker engine (Docker Desktop on
-Windows).
+Needs Node 24 or later, git, and a Docker engine (Docker Desktop on Windows).
+
+athanor uses Docker as you have it configured (`DOCKER_HOST`, the Docker
+context and the buildx builder), local or remote. With a remote engine or
+builder, your build context and your snapshot, uncommitted changes included,
+go to that machine.
 
 ```bash
 npm install --save-dev @mephistopheles4/athanor

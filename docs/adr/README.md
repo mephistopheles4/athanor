@@ -12,7 +12,8 @@ changed one gets a new record that names the one it replaces.
 | [0005](0005-the-container-gets-nothing-from-the-host.md) | The container gets nothing from the host |
 | [0006](0006-the-image-is-built-from-the-hashed-set.md) | The image is built from exactly the files that key its tag |
 | [0007](0007-snapshots-never-write-the-repo.md) | Snapshots never write the repo |
-| [0008](0008-local-docker-only.md) | Local Docker only |
+| [0008](0008-local-docker-only.md) | Local Docker only (superseded by 0012) |
 | [0009](0009-machine-configuration-and-ceilings.md) | Machine configuration, with ceilings |
 | [0010](0010-inputs-keep-their-repo-relative-path.md) | An inputs file keeps its repo-relative path |
 | [0011](0011-the-state-folder.md) | The state folder is .athanor in home |
+| [0012](0012-docker-as-configured.md) | Docker as configured |

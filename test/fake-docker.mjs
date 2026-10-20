@@ -61,6 +61,15 @@ function option(name) {
 
 async function main() {
   const [a, b] = args;
+  if (a === 'version') {
+    record();
+    if (scenario.engineDown) {
+      console.error('Cannot connect to the Docker daemon. Is the docker daemon running?');
+      return 1;
+    }
+    console.log('29.8.2');
+    return 0;
+  }
   if (a === 'context' && b === 'inspect') {
     record();
     const named = args[2];

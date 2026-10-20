@@ -439,18 +439,12 @@ test('C28 only the hashed set reaches the build', async (t) => {
   });
 });
 
-test('C29 a remote engine, context or builder exits 125 naming the setting, with no build or run', async (t) => {
+test('S4 athanor uses Docker as configured: a remote engine, context or builder is not refused', async (t) => {
+  // The owner removed C29's local-Docker check; see the spec amendment on issue 1.
   const rows = [
-    { name: 'DOCKER_HOST tcp', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, says: /DOCKER_HOST/ },
-    { name: 'context with a tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2376' }, says: /DOCKER_CONTEXT/ },
-    { name: 'remote builder', env: { BUILDX_BUILDER: 'far' }, scenario: { builderDriver: 'remote', builderEndpoint: 'tcp://10.0.0.5:1234' }, says: /BUILDX_BUILDER/ },
-    { name: 'cloud builder', env: { BUILDX_BUILDER: 'cloud-x' }, scenario: { builderDriver: 'cloud' }, says: /BUILDX_BUILDER/ },
-    { name: 'docker-container builder on tcp', scenario: { builderDriver: 'docker-container', builderEndpoint: 'tcp://10.0.0.5:2376' }, says: /builder/ },
-    { name: 'docker-driver builder backed by a tcp context', env: { BUILDX_BUILDER: 'far-ctx' }, scenario: { builderDriver: 'docker', builderEndpoints: ['far-ctx'], contexts: { 'far-ctx': 'tcp://10.0.0.5:2376' } }, says: /BUILDX_BUILDER/ },
-    { name: 'docker-container builder with a later remote node', scenario: { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock', 'tcp://10.0.0.5:2376'] }, says: /builder/ },
-    { name: 'Docker not running: buildx shows no driver', scenario: { builderDriver: '' }, says: /Docker is not reachable/ },
-    { name: 'BUILDX_BUILDER on an unreachable remote: no driver', env: { BUILDX_BUILDER: 'gone' }, scenario: { builderDriver: '' }, says: /BUILDX_BUILDER \("gone"\)/ },
-    { name: 'BUILDX_BUILDER naming no builder', env: { BUILDX_BUILDER: 'nosuch' }, scenario: { buildxFails: true }, says: /BUILDX_BUILDER \("nosuch"\)/ },
+    { name: 'a tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' } },
+    { name: 'a context with a tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2376' } },
+    { name: 'a remote builder', env: { BUILDX_BUILDER: 'far' }, scenario: { builderDriver: 'remote', builderEndpoint: 'tcp://10.0.0.5:1234' } },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
@@ -458,23 +452,19 @@ test('C29 a remote engine, context or builder exits 125 naming the setting, with
       const repo = makeRepo(t, { athanor: baseConfig });
       const docker = fake(t, row.scenario ?? {});
       const result = await runWith(t, repo, docker);
-      assert.equal(result.exitCode, 125, JSON.stringify(result));
-      assert.match(result.message, row.says);
-      assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      assert.equal(callsOf(docker.calls(), 'build').length, 1);
+      assert.equal(callsOf(docker.calls(), 'run').length, 1);
     });
   }
-  await t.test('local settings pass: npipe host, docker-container on a local endpoint, no buildx', async (t) => {
-    for (const [env, scenario] of [
-      [{ DOCKER_HOST: 'npipe:////./pipe/docker_engine' }, {}],
-      [{}, { builderDriver: 'docker', builderEndpoints: ['desktop-linux'], contexts: { 'desktop-linux': 'npipe:////./pipe/dockerDesktopLinuxEngine' } }],
-      [{}, { builderDriver: 'docker-container', builderEndpoint: 'unix:///var/run/docker.sock' }],
-      [{}, { buildx: 'missing' }],
-    ]) {
-      isolate(t, env);
-      const repo = makeRepo(t, { athanor: baseConfig });
-      const result = await runWith(t, repo, fake(t, scenario));
-      assert.equal(result.outcome, 'pass', JSON.stringify(result));
-    }
+  await t.test('an engine that does not answer exits 125 saying Docker is not reachable', async (t) => {
+    isolate(t);
+    const repo = makeRepo(t, { athanor: baseConfig });
+    const docker = fake(t, { engineDown: true });
+    const result = await runWith(t, repo, docker);
+    assert.equal(result.exitCode, 125, JSON.stringify(result));
+    assert.match(result.message, /Docker is not reachable.*Start Docker/s);
+    assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
   });
 });
 

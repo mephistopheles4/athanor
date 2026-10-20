@@ -4,61 +4,19 @@ import { call } from './proc.mjs';
 import { AthanorError } from './errors.mjs';
 
 const firstLine = (text) => String(text).trim().split('\n')[0]?.trim() ?? '';
-const isLocalEndpoint = (host) => /^(npipe|unix):\/\//i.test(host ?? '');
 const noSuch = (text) => /no such (container|object|image)/i.test(text);
 
-async function contextHost(docker, name) {
-  const args = name ? ['context', 'inspect', name] : ['context', 'inspect'];
-  const r = await call([...docker, ...args]);
-  if (r.code !== 0) {
-    throw new AthanorError(`Docker is not reachable: docker context inspect failed (${firstLine(r.stderr) || `exit ${r.code}`}). Start Docker, then run again.`);
+// athanor uses Docker as the user has it configured, local or remote (ADR 0012).
+// It checks only that the engine answers, and reads the builder's driver so a
+// docker-container builder can be told to load its image into the engine.
+export async function prepareDocker(docker) {
+  const version = await call([...docker, 'version', '--format', '{{.Server.Version}}']);
+  if (version.code !== 0) {
+    throw new AthanorError(`Docker is not reachable: docker version failed (${firstLine(version.stderr) || `exit ${version.code}`}). Start Docker, then run again.`);
   }
-  try {
-    return JSON.parse(r.stdout)[0].Endpoints.docker.Host;
-  } catch {
-    throw new AthanorError('Docker is not reachable: docker context inspect gave output athanor cannot read. Check your Docker install.');
-  }
-}
-
-// Refuse a remote engine, a remote context or a remote or cloud builder (ADR 0008).
-export async function checkLocal(docker, env) {
-  if (env.DOCKER_HOST !== undefined && !isLocalEndpoint(env.DOCKER_HOST)) {
-    throw new AthanorError(`DOCKER_HOST is "${env.DOCKER_HOST}", which is not a local pipe or socket. athanor only uses a local Docker engine: unset DOCKER_HOST, or set it to an npipe:// or unix:// address.`);
-  }
-  const host = await contextHost(docker);
-  if (!isLocalEndpoint(host)) {
-    const setting = env.DOCKER_CONTEXT !== undefined ? `DOCKER_CONTEXT ("${env.DOCKER_CONTEXT}")` : 'the active Docker context';
-    throw new AthanorError(`${setting} points at "${host}", which is not a local engine. athanor only uses a local Docker engine: switch to a local context.`);
-  }
-  const setting = env.BUILDX_BUILDER !== undefined ? `BUILDX_BUILDER ("${env.BUILDX_BUILDER}")` : 'the active buildx builder';
   const builder = await call([...docker, 'buildx', 'inspect']);
-  if (builder.code !== 0) {
-    // No buildx: the classic builder runs in the local engine.
-    if (/is not a docker command|unknown command/i.test(builder.stderr)) return { driver: null };
-    if (env.BUILDX_BUILDER !== undefined) {
-      throw new AthanorError(`${setting} could not be read (${firstLine(builder.stderr) || `exit ${builder.code}`}), so athanor cannot confirm the builder is local. Name a builder that exists, or unset BUILDX_BUILDER.`);
-    }
-    throw new AthanorError(`Docker is not reachable: docker buildx inspect failed (${firstLine(builder.stderr) || `exit ${builder.code}`}). Start Docker, then run again.`);
-  }
   // [ \t] so an empty value never reads on into the next line.
-  const driver = builder.stdout.match(/^Driver:[ \t]*(\S*)/m)?.[1] ?? '';
-  const endpoints = [...builder.stdout.matchAll(/^Endpoint:[ \t]*(\S*)/gm)].map((m) => m[1]);
-  if (driver === '' || /^Error:/m.test(builder.stdout)) {
-    if (env.BUILDX_BUILDER !== undefined) {
-      throw new AthanorError(`${setting} shows no builder driver: its builder is unreachable or does not exist, so athanor cannot confirm it is local. Name a local builder, or unset BUILDX_BUILDER.`);
-    }
-    throw new AthanorError('Docker is not reachable: docker buildx inspect shows no builder driver, so athanor cannot confirm the builder is local. Start Docker, then run again.');
-  }
-  const notLocal = (detail) =>
-    new AthanorError(`${setting} ${detail}, which is not a local builder. athanor only builds locally: use the docker driver, or docker-container, on a local engine.`);
-  if (driver !== 'docker' && driver !== 'docker-container') throw notLocal(`uses the "${driver}" driver`);
-  if (endpoints.length === 0) throw notLocal('lists no node endpoint');
-  // Every node must be local: a pipe or socket, or a context whose engine is one.
-  for (const endpoint of endpoints) {
-    if (isLocalEndpoint(endpoint)) continue;
-    if (endpoint !== '' && !endpoint.includes('://') && isLocalEndpoint(await contextHost(docker, endpoint).catch(() => ''))) continue;
-    throw notLocal(`has a node at "${endpoint}"`);
-  }
+  const driver = builder.code === 0 ? builder.stdout.match(/^Driver:[ \t]*(\S*)/m)?.[1] || null : null;
   return { driver };
 }
 
