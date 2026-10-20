@@ -61,10 +61,13 @@ export interface RunResult {
 // What a run has learned so far, for a result that ends it early.
 type SoFar = Omit<RunResult, 'schema' | 'outcome' | 'exitCode'>;
 
+// Every status option is for tests, so the shipped declarations give status()
+// no options at all: an empty options type would accept any key.
+/** @internal */
 export interface StatusOptions {
-  /** @internal For tests (ADR 0003): the Docker command as an argument-array prefix. */
+  /** For tests (ADR 0003): the Docker command as an argument-array prefix. */
   docker?: DockerCommand;
-  /** @internal For tests (ADR 0003): the name prefix for pipes and containers. */
+  /** For tests (ADR 0003): the name prefix for pipes and containers. */
   prefix?: string;
 }
 
@@ -297,6 +300,9 @@ async function build({ docker, root, scratch, ctx, dockerfile, buildOptions, std
 }
 
 // Who holds each slot, and which athanor containers exist. Starts nothing.
+export function status(): Promise<StatusResult>;
+/** @internal */
+export function status(options: StatusOptions): Promise<StatusResult>;
 export async function status(options: StatusOptions = {}): Promise<StatusResult> {
   const { docker = ['docker'], prefix = 'athanor' } = options;
   const home = stateFolder();
