@@ -1,8 +1,9 @@
 // The build (spec on issue 8, ADR 0014): clears dist/, then compiles src/ to
 // it with tsc. The test runner and prepack both call it, so no test runs on a
 // stale build. The compiler is started as Node itself with shell: false,
-// because a .cmd file on Windows needs a shell (ADR 0002). It is taken from
-// this repo's node_modules, whichever project root it builds.
+// because a .cmd file on Windows needs a shell (ADR 0002). The compiler and
+// Node's types are taken from this repo's node_modules, whichever project root
+// it builds.
 //   node scripts/build.mjs [project root]   (default: this repo)
 import { spawnSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
@@ -18,7 +19,7 @@ if (!existsSync(tsc)) {
   process.exit(1);
 }
 rmSync(join(root, 'dist'), { recursive: true, force: true, maxRetries: 5 });
-const r = spawnSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json')], { cwd: root, stdio: 'inherit', shell: false });
+const r = spawnSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json'), '--typeRoots', join(here, 'node_modules', '@types')], { cwd: root, stdio: 'inherit', shell: false });
 if (r.status !== 0) {
   console.error('build: the compile failed. Fix the errors above, then run again.');
   process.exit(1);

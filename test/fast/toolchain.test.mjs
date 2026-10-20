@@ -27,7 +27,9 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
   });
   const r = spawnSync(process.execPath, [build, copy], { encoding: 'utf8', shell: false });
   assert.notEqual(r.status, 0, 'the build fails');
-  assert.match(r.stdout + r.stderr, /planted\.ts.*error TS\d+/);
+  const errors = (r.stdout + r.stderr).match(/^.*error TS\d+.*$/gm) ?? [];
+  assert.equal(errors.length, 1, `only the planted error: ${errors.join('\n')}`);
+  assert.match(errors[0], /planted\.ts.*error TS2322/);
   assert.equal(existsSync(join(copy, 'dist', 'stale.mjs')), false, 'the copy\'s dist/ was cleared first');
   assert.deepEqual(listing(), before.names);
   assert.deepEqual(readFileSync(join(dist, 'index.mjs')), before.index);

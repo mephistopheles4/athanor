@@ -21,7 +21,7 @@ if (built.status !== 0) {
   console.log(`result: ${tier} fail`);
   process.exit(1);
 }
-const files =readdirSync(tiers[tier])
+const files = readdirSync(tiers[tier])
   .filter((f) => f.endsWith('.test.mjs') && (!filter || f.includes(filter)))
   .sort()
   .map((f) => join(tiers[tier], f));
