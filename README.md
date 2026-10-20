@@ -1,3 +1,5 @@
+![athanor: your tests, sealed](docs/brand/athanor-social.png)
+
 # athanor
 
 Run a repo's tests on your current work in a fresh Linux container with no
