@@ -1,0 +1,21 @@
+{
+  // Type check of the tests (spec on issue 8, S4): tsc --noEmit only. The tests
+  // import the core as #dist/..., which Node resolves to the compiled dist/
+  // (package.json "imports"). Here the same names map to src/, so the tests
+  // see the options marked @internal that the shipped declarations leave out.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "paths": { "#dist/*": ["../src/*"] },
+    "skipLibCheck": false
+  },
+  "include": ["."]
+}

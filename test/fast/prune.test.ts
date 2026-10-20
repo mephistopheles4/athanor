@@ -1,17 +1,18 @@
 // prune's choices, and what athanor leaves alone. One top-level test per claim.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { mkdirSync, writeFileSync, utimesSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { run, prune } from '../../dist/index.js';
-import { lockPath } from '../../dist/slots.js';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.mjs';
+import { run, prune } from '#dist/index.js';
+import { lockPath } from '#dist/slots.js';
+import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.ts';
 
-const hex = (c) => c.repeat(32);
+const hex = (c: string) => c.repeat(32);
 const DAY = 24 * 60 * 60 * 1000;
 
-function mark(home, hash, ageDays) {
+function mark(home: string, hash: string, ageDays: number) {
   mkdirSync(join(home, 'images'), { recursive: true });
   const file = join(home, 'images', hash);
   writeFileSync(file, '');
@@ -66,7 +67,7 @@ test('C26 athanor leaves alone what is not its own or is in use, and a prune bef
     docker.addContainer(`${prefix}-slot-1`, { other: 'x' });
     const result = await run({ cwd: repo, docker: docker.docker, prefix });
     assert.equal(result.exitCode, 125);
-    assert.match(result.message, /without athanor's label/);
+    assert.match(result.message!, /without athanor's label/);
     assert.equal(callsOf(docker.calls(), 'rm').length, 0);
     assert.equal(callsOf(docker.calls(), 'run').length, 0);
   });
@@ -75,11 +76,11 @@ test('C26 athanor leaves alone what is not its own or is in use, and a prune bef
     isolate(t, { ATHANOR_MAX_RUNS: '1' });
     const prefix = uniquePrefix();
     const holder = net.createServer((s) => s.end('{}\n'));
-    await new Promise((r) => holder.listen(lockPath(prefix, 1), r));
+    await new Promise<void>((r) => holder.listen(lockPath(prefix, 1), r));
     const repo = makeRepo(t, { athanor: baseConfig });
     const docker = fake(t);
-    let waiting;
-    const isWaiting = new Promise((r) => { waiting = r; });
+    let waiting: () => void = () => {};
+    const isWaiting = new Promise<void>((r) => { waiting = r; });
     const pending = run({ cwd: repo, docker: docker.docker, prefix, onProgress: (l) => /waiting/.test(l) && waiting() });
     await isWaiting;
     for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));

@@ -8,14 +8,15 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run } from '../../dist/index.js';
-import { isolate, makeRepo, fake, uniquePrefix, baseConfig, callsOf, tarFile, tempDir } from '../helpers.mjs';
+import type { TarEntry } from '../helpers.ts';
+import { run } from '#dist/index.js';
+import { isolate, makeRepo, fake, uniquePrefix, baseConfig, callsOf, tarFile, tempDir } from '../helpers.ts';
 
 const dist = fileURLToPath(new URL('../../dist', import.meta.url));
 
 test('T11 git keeps its archive settings private, and the core gets the tar stream of a commit from git', async (t) => {
   isolate(t);
-  const git = await import('../../dist/git.js');
+  const git = await import('#dist/git.js');
   assert.deepEqual(Object.keys(git).sort(), ['buildContext', 'clearStale', 'makeScratch', 'repoRoot', 'snapshot', 'tarStream'],
     'git exports these functions and no archive setting; a new export must keep the settings private');
   assert.equal(typeof git.tarStream, 'function');
@@ -49,11 +50,11 @@ test('T11 the tar streams keep their pinned line endings and file modes against 
   const docker = fake(t);
   const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix() });
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
-  const snapshot = callsOf(docker.calls(), 'run').at(-1).tar;
-  const build = callsOf(docker.calls(), 'build').at(-1).tar;
+  const snapshot = callsOf(docker.calls(), 'run').at(-1)!.tar!;
+  const build = callsOf(docker.calls(), 'build').at(-1)!.tar!;
   assert.equal(tarFile(snapshot, 'run.sh'), 'a\nb\n', 'the snapshot keeps LF');
   assert.equal(tarFile(build, 'lf.sh'), 'one\ntwo\n', 'the build context keeps LF');
-  const modes = (entries) => entries.filter((e) => e.type === '0').map((e) => e.mode);
+  const modes = (entries: TarEntry[]) => entries.filter((e) => e.type === '0').map((e) => e.mode);
   assert.ok(modes(build).every((m) => /644$/.test(m)), `the build context pins its file modes (ADR 0006): ${modes(build)}`);
   assert.ok(modes(snapshot).every((m) => /664$/.test(m)), `the snapshot takes git's umask, unpinned: ${modes(snapshot)}`);
 });

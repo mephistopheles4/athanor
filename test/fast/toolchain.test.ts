@@ -7,13 +7,13 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isolate, tempDir, writeFiles } from '../helpers.mjs';
+import { isolate, tempDir, writeFiles } from '../helpers.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const dist = join(root, 'dist');
 const build = join(root, 'scripts', 'build.mjs');
 const sourceCheck = fileURLToPath(new URL('../../scripts/check-source.mjs', import.meta.url));
-const check = (...dirs) => spawnSync(process.execPath, [sourceCheck, ...dirs], { encoding: 'utf8', shell: false });
+const check = (...dirs: string[]) => spawnSync(process.execPath, [sourceCheck, ...dirs], { encoding: 'utf8', shell: false });
 
 test('T4 a compile error fails the build of a copy, which clears its dist/ first, and the run ends as a failure; the repo\'s dist/ is untouched', (t) => {
   isolate(t);
@@ -23,7 +23,9 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
   cpSync(join(root, 'tsconfig.json'), join(copy, 'tsconfig.json'));
   cpSync(join(root, 'src'), join(copy, 'src'), { recursive: true });
   writeFiles(copy, {
-    'src/planted.ts': "export const planted: number = 'not a number';\n",
+    // Without it the copy's .ts files build as CommonJS, and cli.ts's import.meta adds a second error.
+    'package.json': '{ "type": "module" }\n',
+    'src/planted.ts':"export const planted: number = 'not a number';\n",
     'dist/stale.mjs': 'export {};\n',
   });
   const r = spawnSync(process.execPath, [build, copy], { encoding: 'utf8', shell: false });
@@ -50,7 +52,7 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
 
 test('T13 the boot script in the compiled output has no carriage return', async (t) => {
   isolate(t);
-  const { BOOT } = await import('../../dist/index.js');
+  const { BOOT } = await import('#dist/index.js');
   assert.match(BOOT, /^set -e\n/);
   assert.equal(BOOT.includes('\r'), false);
   assert.equal(readFileSync(join(dist, 'container-settings.js'), 'latin1').includes('\r'), false, 'dist/container-settings.js, which holds the boot script, has LF line endings');
@@ -72,7 +74,7 @@ test('T5 a shell use planted in a .ts file fails the source check', async (t) =>
       assert.match(r.stderr, /bad\.ts:\d+: /);
     });
   }
-  // Every other extension tsc compiles under allowJs is read too.
+  // Every other JavaScript and TypeScript extension the source check reads is read too.
   for (const ext of ['mts', 'cts', 'tsx', 'jsx']) {
     await t.test(`a .${ext} file`, () => {
       const dir = tempDir(t);

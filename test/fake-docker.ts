@@ -1,41 +1,43 @@
 // A fake Docker CLI for the fast tier. The core is given
-// [process.execPath, this file, <scenario dir>] as its Docker command.
+// [process.execPath, --disable-warning=ExperimentalWarning, this file, <scenario dir>] as its Docker command.
 // It appends every argument array to <dir>/calls.jsonl and plays back what
 // <dir>/scenario.json says. Images and containers live as one file each under
 // <dir>/images and <dir>/containers, so concurrent fakes don't race.
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import type { TarEntry } from './helpers.ts';
 
-const [dir, ...args] = process.argv.slice(2);
-const scenario = existsSync(join(dir, 'scenario.json')) ? JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8')) : {};
+const [dir, ...args] = process.argv.slice(2) as [string, ...string[]];
+// The scenario file is JSON written by the test; its keys are read as they come.
+const scenario: Record<string, any> = existsSync(join(dir, 'scenario.json')) ? JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8')) : {};
 const imagesDir = join(dir, 'images');
 const containersDir = join(dir, 'containers');
 mkdirSync(imagesDir, { recursive: true });
 mkdirSync(containersDir, { recursive: true });
 
-const record = (extra = {}) => appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, ...extra }) + '\n');
-const fileFor = (base, name) => join(base, encodeURIComponent(name) + '.json');
-const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const record = (extra: Record<string, unknown> = {}): void => appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, ...extra }) + '\n');
+const fileFor = (base: string, name: string | undefined): string => join(base, encodeURIComponent(String(name)) + '.json');
+const readJson = (path: string): any => JSON.parse(readFileSync(path, 'utf8'));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function readStdin() {
+function readStdin(): Promise<Buffer> {
   return new Promise((resolve) => {
-    const chunks = [];
+    const chunks: Buffer[] = [];
     process.stdin.on('data', (c) => chunks.push(c));
     process.stdin.on('end', () => resolve(Buffer.concat(chunks)));
   });
 }
 
 // A small tar reader: returns [{ name, type, content }] for regular files and folders.
-function readTar(buffer) {
-  const entries = [];
+function readTar(buffer: Buffer): TarEntry[] {
+  const entries: TarEntry[] = [];
   let offset = 0;
-  let longName = null;
+  let longName: string | null = null;
   while (offset + 512 <= buffer.length) {
     const header = buffer.subarray(offset, offset + 512);
     if (header.every((b) => b === 0)) break;
-    const field = (start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
+    const field = (start: number, length: number): string => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
     const size = parseInt(field(124, 12).trim() || '0', 8);
     const type = field(156, 1) || '0';
     const prefix = field(345, 155);
@@ -44,7 +46,7 @@ function readTar(buffer) {
     offset += 512 + Math.ceil(size / 512) * 512;
     if (type === 'x') {
       const match = /\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
-      if (match) longName = match[1];
+      if (match) longName = match[1] as string;
       continue;
     }
     if (type === 'g') continue;
@@ -54,7 +56,7 @@ function readTar(buffer) {
   return entries;
 }
 
-function option(name) {
+function option(name: string): string | undefined {
   const i = args.indexOf(name);
   return i === -1 ? undefined : args[i + 1];
 }
@@ -67,18 +69,18 @@ const RUN_VALUED = new Set([
   '--cpus', '--pids-limit', '--security-opt', '-e',
 ]);
 
-function parseRun(runArgs) {
-  const options = new Map();
+function parseRun(runArgs: string[]): { error: string } | { options: Map<string, string>; image: string } {
+  const options = new Map<string, string>();
   let i = 0;
-  for (; i < runArgs.length && runArgs[i].startsWith('-'); i++) {
-    const name = runArgs[i];
+  for (; i < runArgs.length && (runArgs[i] as string).startsWith('-'); i++) {
+    const name = runArgs[i] as string;
     if (RUN_FLAGS.has(name)) continue;
     if (!RUN_VALUED.has(name)) return { error: `fake docker: unknown run option ${name}` };
-    if (i + 1 >= runArgs.length || runArgs[i + 1].startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
-    options.set(name, runArgs[++i]);
+    if (i + 1 >= runArgs.length || (runArgs[i + 1] as string).startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
+    options.set(name, runArgs[++i] as string);
   }
   if (i >= runArgs.length) return { error: 'fake docker: run has no image' };
-  return { options, image: runArgs[i] };
+  return { options, image: runArgs[i] as string };
 }
 
 async function main() {
@@ -118,7 +120,7 @@ async function main() {
     const driver = scenario.builderDriver ?? 'docker';
     const endpoints = scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
     // The shape of real `docker buildx inspect` output, one block per node.
-    const nodes = endpoints.map((e, i) => `Name:             fake${i}\nEndpoint:         ${e}\nStatus:           running\n`).join('\n');
+    const nodes = endpoints.map((e: string, i: number) => `Name:             fake${i}\nEndpoint:         ${e}\nStatus:           running\n`).join('\n');
     console.log(`Name:          fake\nDriver:        ${driver}\nLast Activity: 2026-10-19 20:31:02 +0000 UTC\n\nNodes:\n${nodes}`);
     return 0;
   }
@@ -191,7 +193,7 @@ async function main() {
   }
   if (a === 'run') {
     const parsed = parseRun(args.slice(1));
-    if (parsed.error) {
+    if ('error' in parsed) {
       record();
       console.error(parsed.error);
       return 125;
@@ -237,7 +239,7 @@ async function main() {
   return 1;
 }
 
-function finish(path, exitCode, oom) {
+function finish(path: string, exitCode: number, oom: boolean): void {
   const state = readJson(path);
   writeFileSync(path, JSON.stringify({ ...state, running: false, exitCode, oom }));
 }

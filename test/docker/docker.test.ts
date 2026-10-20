@@ -2,32 +2,34 @@
 // own state folder and name prefix, so no live session's slots are touched.
 // One top-level test per acceptance claim.
 import { test, after } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run, status } from '../../dist/index.js';
-import { ask } from '../../dist/slots.js';
-import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.mjs';
+import { run, status } from '#dist/index.js';
+import type { RunOptions } from '#dist/index.js';
+import { ask } from '#dist/slots.js';
+import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.ts';
 
-const driver = join(dirname(fileURLToPath(import.meta.url)), 'driver.mjs');
+const driver = join(dirname(fileURLToPath(import.meta.url)), 'driver.ts');
 const FIXTURE = {
   'test/Dockerfile': 'FROM alpine:3.20\nRUN apk add --no-cache git\n',
 };
 const config = { dockerfile: 'test/Dockerfile', commands: { test: ['sh', '-c', 'echo fixture-ok'] } };
-const builtTags = new Set();
+const builtTags = new Set<string>();
 after(() => {
   for (const tag of builtTags) spawnSync('docker', ['rmi', '-f', tag], { shell: false });
 });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function fixtureRepo(t, files = {}) {
+function fixtureRepo(t: TestContext, files: Record<string, string> = {}) {
   return makeRepo(t, { athanor: config, files: { ...FIXTURE, ...files } });
 }
 
-async function runReal(t, repo, extra = {}) {
+async function runReal(t: TestContext, repo: string, extra: RunOptions = {}) {
   const stdout = collector();
   const stderr = collector();
   const result = await run({ cwd: repo, prefix: extra.prefix ?? uniquePrefix(), stdout, stderr, ...extra });
@@ -35,17 +37,17 @@ async function runReal(t, repo, extra = {}) {
   return { result, stdout: stdout.text(), stderr: stderr.text() };
 }
 
-function docker(args) {
+function docker(args: string[]) {
   return spawnSync('docker', args, { encoding: 'utf8', shell: false });
 }
 
-function runningCount(prefix) {
+function runningCount(prefix: string) {
   const r = docker(['ps', '--filter', `name=^${prefix}-slot-`, '--format', '{{.Names}}']);
   return r.stdout.split('\n').filter(Boolean).length;
 }
 
-function startDriver(options) {
-  const child = spawn(process.execPath, [driver, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+function startDriver(options: Record<string, unknown>) {
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', driver, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
   let out = '';
   let err = '';
   child.stdout.on('data', (d) => (out += d));
@@ -54,7 +56,7 @@ function startDriver(options) {
   return { child, done, err: () => err };
 }
 
-async function until(check, timeoutMs, what) {
+async function until(check: () => unknown, timeoutMs: number, what: string): Promise<void> {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
     if (await check()) return;
@@ -82,8 +84,8 @@ test('C2 a warm run makes no build and adds at most 5 seconds to the container\'
   const started = Date.now();
   const warm = await runReal(t, repo);
   const wall = Date.now() - started;
-  assert.equal(warm.result.image.built, false);
-  assert.ok(wall - warm.result.ranMs <= 5000, `wall ${wall} ms, container ${warm.result.ranMs} ms`);
+  assert.equal(warm.result.image!.built, false);
+  assert.ok(wall - warm.result.ranMs! <= 5000, `wall ${wall} ms, container ${warm.result.ranMs} ms`);
 });
 
 test('C4 an uncommitted edit reaches the container', async (t) => {
@@ -114,7 +116,7 @@ test('C7 the container gets the memory, CPU, process and privilege limits', asyn
   const repo = fixtureRepo(t);
   const pending = runReal(t, repo, { prefix, command: ['sleep', '6'] });
   const name = `${prefix}-slot-1`;
-  let inspected;
+  let inspected: any;
   await until(() => {
     const r = docker(['inspect', '--format', '{{json .HostConfig}}', name]);
     if (r.status === 0) inspected = JSON.parse(r.stdout);
@@ -135,7 +137,7 @@ test('C8 with the default limit, three runs never have more than two containers 
   const prefix = uniquePrefix();
   const repo = fixtureRepo(t);
   await runReal(t, repo); // build first, so all three start together
-  const progress = [[], [], []];
+  const progress: string[][] = [[], [], []];
   let most = 0;
   let sampling = true;
   const sampler = (async () => {

@@ -3,9 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cli } from '../helpers.mjs';
+import { cli } from '../helpers.ts';
 
-const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url)));
+const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 
 test('C20 no dependencies, Node >=24, and --version prints the package version', async () => {
   assert.equal(pkg.dependencies, undefined);

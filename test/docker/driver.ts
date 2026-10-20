@@ -1,8 +1,8 @@
 // A caller for docker-tier tests that must be killed or interrupted: it runs
 // the core with a test prefix and state folder, turns SIGINT/SIGTERM into an
 // abort as the CLI does, prints the result as JSON and exits with its code.
-//   node driver.mjs '<json options>'
-import { run } from '../../dist/index.js';
+//   node driver.ts '<json options>'
+import { run } from '#dist/index.js';
 
 const options = JSON.parse(process.argv[2]);
 process.env.ATHANOR_HOME = options.home;

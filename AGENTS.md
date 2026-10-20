@@ -16,7 +16,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   build on any of these (ADR 0002).
 - **The core never prints, exits or registers signal handlers.** It takes
   options, returns results, and reports progress through a callback. Only
-  `src/cli.mjs` prints, sets the exit code and handles signals (ADR 0003).
+  `src/cli.ts` prints, sets the exit code and handles signals (ADR 0003).
 - **The public interface is stable.** The JSON fields, the exit codes, the
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
@@ -39,16 +39,22 @@ as CI does. Then one runner, named tiers, from the repo root:
   Runs anywhere Node 24 and git run.
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
+- `node node_modules/typescript/bin/tsc -p test/tsconfig.json` — the type check
+  of the tests (no emit). `tsc -p tsconfig.json --noEmit` checks `src/`.
 - `node scripts/check-source.mjs` — the source check (no shell use). It reads
   every JavaScript and TypeScript source file, not `dist/`.
 
 The tests run the compiled output in `dist/`. Each tier first clears `dist/`
 and builds it (`scripts/build.mjs`); a compile error ends the run with
 `result: <tier> fail`. Because each run clears `dist/`, run one test run at a
-time in a worktree.
+time in a worktree. The tests and the fake Docker are `.ts` files with erasable
+syntax only, which Node runs directly. They import the core as `#dist/...`
+(`package.json` `imports`), which is `dist/` at run time and `src/` for
+`test/tsconfig.json`, so that the type check sees the test-only options (marked `@internal`, ADR 0003).
 
-CI runs `npm ci`, a strict `tsc` check, `node --check` on every `.mjs` file,
-the source check, both tiers, and a pack-and-install check that also checks
+CI runs `npm ci`, a strict `tsc` check of `src/` and of `test/`
+(`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file, the
+source check, both tiers, and a pack-and-install check that also checks
 the packed file's contents and type-checks an import of the package by its
 name, on Linux and Node 24. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image

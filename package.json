@@ -18,6 +18,9 @@
       "default": "./dist/index.js"
     }
   },
+  "imports": {
+    "#dist/*": "./dist/*"
+  },
   "files": [
     "bin/",
     "dist/"
