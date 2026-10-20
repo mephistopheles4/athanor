@@ -1,3 +1,5 @@
+![athanor: run a repo's tests in a fresh container with no network, at most N at once on the machine](docs/brand/athanor-banner.png)
+
 # athanor
 
 Run a repo's tests on your current work in a fresh Linux container with no
