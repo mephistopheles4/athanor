@@ -31,8 +31,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
 
 ## Running the tests
 
-Run `npm ci` first, once per worktree: it installs the compiler from the
-lockfile (ADR 0014). Then one runner, named tiers, from the repo root:
+Run `npm ci --ignore-scripts` first, once per worktree: it installs the
+compiler from the lockfile (ADR 0014) and runs no package's install scripts,
+as CI does. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
   Runs anywhere Node 24 and git run.

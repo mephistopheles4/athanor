@@ -15,7 +15,7 @@ const root = resolve(process.argv[2] ?? here);
 const tsc = join(here, 'node_modules', 'typescript', 'bin', 'tsc');
 
 if (!existsSync(tsc)) {
-  console.error('build: the TypeScript compiler is not installed. Run npm ci at the repo root, then run again.');
+  console.error('build: the TypeScript compiler is not installed. Run npm ci --ignore-scripts at the repo root, then run again.');
   process.exit(1);
 }
 try {
@@ -26,7 +26,7 @@ try {
 }
 const r = spawnSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json'), '--typeRoots', join(here, 'node_modules', '@types')], { cwd: root, stdio: 'inherit', shell: false });
 if (r.error) {
-  console.error(`build: the compiler could not start (${r.error.code ?? r.error.message}). Run npm ci at the repo root, then run again.`);
+  console.error(`build: the compiler could not start (${r.error.code ?? r.error.message}). Run npm ci --ignore-scripts at the repo root, then run again.`);
   process.exit(1);
 }
 if (r.status !== 0) {
