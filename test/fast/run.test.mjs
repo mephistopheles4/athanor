@@ -171,12 +171,32 @@ test('C12 an interrupt removes the container, frees the slot and returns 130', a
   const pending = run({ cwd: repo, docker: docker.docker, prefix, signal: controller.signal, stderr });
   while (callsOf(docker.calls(), 'run').length === 0) await new Promise((r) => setTimeout(r, 50));
   await new Promise((r) => setTimeout(r, 300));
+  const abortedAt = Date.now();
   controller.abort();
   const result = await pending;
+  assert.ok(Date.now() - abortedAt < 5000, 'the interrupt stops the container promptly');
   assert.equal(result.outcome, 'interrupted');
   assert.equal(result.exitCode, 130);
   assert.equal(readdirSync(join(docker.dir, 'containers')).length, 0, 'the container is gone');
   assert.equal((await ask(prefix, 1)).held, false, 'the slot is free');
+
+  await t.test('an interrupt during the image build returns 130, not a build failure', async (t) => {
+    isolate(t);
+    const cold = makeRepo(t, { athanor: baseConfig });
+    const d = fake(t, { buildHangMs: 20000 });
+    const c = new AbortController();
+    const lines = [];
+    const waiting = run({ cwd: cold, docker: d.docker, prefix: uniquePrefix(), signal: c.signal, onProgress: (l) => lines.push(l) });
+    while (!lines.some((l) => /building/.test(l))) await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 300));
+    const at = Date.now();
+    c.abort();
+    const r = await waiting;
+    assert.ok(Date.now() - at < 5000, 'promptly');
+    assert.equal(r.outcome, 'interrupted', JSON.stringify(r));
+    assert.equal(r.exitCode, 130);
+    assert.equal(callsOf(d.calls(), 'run').length, 0);
+  });
 });
 
 test('C16 a command with shell characters reaches the container as the same literal arguments, and the source check finds no shell use', async (t) => {
@@ -317,6 +337,23 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const result = await runWith(t, clash, d);
     assert.equal(result.exitCode, 125);
     assert.match(result.message, /already is/);
+  });
+
+  await t.test('an input keeps the executable bit git records for it', async (t) => {
+    const exec = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['tool.sh'] }, files: { 'tool.sh': 'echo hi\n' } });
+    git(exec, ['update-index', '--chmod=+x', 'tool.sh']);
+    git(exec, ['commit', '-q', '-m', 'exec']);
+    const d = fake(t);
+    const result = await runWith(t, exec, d);
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.match(lastBuildTar(d).find((e) => e.name === 'tool.sh').mode, /755$/);
+  });
+
+  await t.test('on Windows, a context spelled in another case is the same folder', { skip: process.platform !== 'win32' && 'case-insensitive paths are Windows only' }, async (t) => {
+    const upper = makeRepo(t, { athanor: { ...baseConfig, context: 'TEST' } });
+    const d = fake(t);
+    const result = await runWith(t, upper, d);
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
   });
 
   await t.test('a file marked export-ignore in the context still reaches the build', async (t) => {

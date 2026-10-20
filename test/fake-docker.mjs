@@ -92,6 +92,7 @@ async function main() {
     const input = await readStdin();
     const entries = readTar(input);
     record({ tar: entries });
+    if (scenario.buildHangMs) await sleep(scenario.buildHangMs);
     if (scenario.buildFails) { console.error('ERROR: failed to solve: process did not complete successfully'); return 1; }
     writeFileSync(fileFor(imagesDir, option('-t')), JSON.stringify({ tag: option('-t') }));
     console.error('#1 building fake image');

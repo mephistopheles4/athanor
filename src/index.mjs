@@ -50,6 +50,9 @@ function markUse(home, hash) {
   else writeFileSync(file, '');
 }
 
+// An interrupt that arrived while a step other than the container was running.
+class Interrupted extends Error {}
+
 function errorResult(message, partial = {}) {
   return { schema: 1, outcome: 'error', exitCode: EXIT.setup, ...partial, message };
 }
@@ -61,6 +64,7 @@ export async function run(options = {}) {
   try {
     return await runInner(options, partial);
   } catch (error) {
+    if (error instanceof Interrupted) return interruptedResult(partial);
     if (error instanceof AthanorError) return errorResult(error.message, partial);
     throw error;
   }
@@ -192,6 +196,7 @@ async function build(docker, root, scratch, ctx, dockerfileInContext, stderr, si
   signal?.addEventListener('abort', onAbort, { once: true });
   const [a, b] = await Promise.all([archive.done, builder.done]);
   signal?.removeEventListener('abort', onAbort);
+  if (signal?.aborted) throw new Interrupted();
   if (a.code !== 0) throw new AthanorError(`git archive of the build context failed (exit ${a.code}).`);
   if (b.code !== 0) {
     throw new AthanorError(`The image build failed (docker build exit ${b.code}). Its output is above; fix the Dockerfile or the context, then run again.`);

@@ -30,7 +30,8 @@ export function insideRepo(root, value, key) {
   if (!isInside(realRoot, real)) {
     throw new AthanorError(`${key} "${value}" is outside the repo: it leads through a link to a place outside the repo root.`);
   }
-  const rel = relative(realRoot, target).split(sep).join('/');
+  // From the real path, so Windows gives the folder's own spelling, as git has it.
+  const rel = relative(realRoot, real).split(sep).join('/');
   return rel === '' ? '.' : rel;
 }
 

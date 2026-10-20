@@ -124,6 +124,7 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
   let tree = contextTree.stdout.trim();
   if (inputs.length > 0) {
     const inputEnv = scratch.env(false);
+    const indexEnv = scratch.env(true);
     await git(['read-tree', tree], { cwd: root, env: inputEnv, what: 'read the context tree' });
     for (const input of inputs) {
       const taken = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });
@@ -131,7 +132,9 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
         throw new AthanorError(`The inputs file "${input}" would land on "${input}" in the build context, where a file under context already is. Rename one of them.`);
       }
       const blob = (await git(['hash-object', '-w', `--path=${input}`, '--', input], { cwd: root, env: inputEnv, what: `read the inputs file "${input}"` })).trim();
-      const mode = statSync(join(root, input)).mode & 0o111 ? '100755' : '100644';
+      // The mode git records, where it tracks the file; Windows reports no executable bits.
+      const tracked = (await git(['ls-files', '-s', '--', input], { cwd: root, env: indexEnv, what: `read the mode of "${input}"` })).trim();
+      const mode = tracked ? tracked.split(' ')[0] : (statSync(join(root, input)).mode & 0o111 ? '100755' : '100644');
       await git(['update-index', '--add', '--cacheinfo', `${mode},${blob},${input}`], { cwd: root, env: inputEnv, what: `add the inputs file "${input}"` });
     }
     tree = (await git(['write-tree'], { cwd: root, env: inputEnv, what: 'write the build context tree' })).trim();
