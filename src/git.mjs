@@ -127,14 +127,21 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
     const indexEnv = scratch.env(true);
     await git(['read-tree', tree], { cwd: root, env: inputEnv, what: 'read the context tree' });
     for (const input of inputs) {
+      // Only files git tracks reach the build: never an ignored or untracked one.
+      const tracked = (await git(['ls-files', '-s', '--', input], { cwd: root, env: indexEnv, what: `check the inputs file "${input}"` })).trim();
+      if (tracked === '') {
+        throw new AthanorError(`The inputs file "${input}" is not tracked by git, so athanor will not send it to the build. Add it to git, or remove it from inputs.`);
+      }
+      if (tracked.includes('\n')) {
+        throw new AthanorError(`The inputs entry "${input}" is a folder. List each file the build needs in inputs.`);
+      }
       const taken = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });
       if (taken.trim() !== '') {
         throw new AthanorError(`The inputs file "${input}" would land on "${input}" in the build context, where a file under context already is. Rename one of them.`);
       }
       const blob = (await git(['hash-object', '-w', `--path=${input}`, '--', input], { cwd: root, env: inputEnv, what: `read the inputs file "${input}"` })).trim();
-      // The mode git records, where it tracks the file; Windows reports no executable bits.
-      const tracked = (await git(['ls-files', '-s', '--', input], { cwd: root, env: indexEnv, what: `read the mode of "${input}"` })).trim();
-      const mode = tracked ? tracked.split(' ')[0] : (statSync(join(root, input)).mode & 0o111 ? '100755' : '100644');
+      // The mode git records; Windows reports no executable bits.
+      const mode = tracked.split(' ')[0];
       await git(['update-index', '--add', '--cacheinfo', `${mode},${blob},${input}`], { cwd: root, env: inputEnv, what: `add the inputs file "${input}"` });
     }
     tree = (await git(['write-tree'], { cwd: root, env: inputEnv, what: 'write the build context tree' })).trim();

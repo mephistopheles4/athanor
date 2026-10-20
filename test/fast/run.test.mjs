@@ -254,7 +254,7 @@ test('C19 no host environment value, host folder or socket reaches the container
   ]);
 });
 
-test('C21 a run changes nothing in the repo and leaves no temporary index behind', async (t) => {
+test('C21 a run changes no file\'s content and adds no file outside the state folder, and leaves no temporary index behind', async (t) => {
   const home = isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig, files: { 'a.txt': 'a\n' } });
   writeFileSync(join(repo, 'a.txt'), 'changed\n');
@@ -346,6 +346,21 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const result = await runWith(t, clash, d);
     assert.equal(result.exitCode, 125);
     assert.match(result.message, /already is/);
+  });
+
+  await t.test('an inputs file git does not track, ignored or untracked, exits 125 before any build', async (t) => {
+    for (const [name, files, extra] of [
+      ['ignored', { '.gitignore': 'secret.env\n' }, { 'secret.env': 'KEY=1\n' }],
+      ['untracked', {}, { 'secret.env': 'KEY=1\n' }],
+    ]) {
+      const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret.env'] }, files });
+      writeFiles(repo, extra);
+      const d = fake(t);
+      const result = await runWith(t, repo, d);
+      assert.equal(result.exitCode, 125, `${name}: ${JSON.stringify(result)}`);
+      assert.match(result.message, /inputs file "secret\.env" is not tracked by git.*Add it to git, or remove it from inputs/);
+      assert.equal(callsOf(d.calls(), 'build').length, 0);
+    }
   });
 
   await t.test('an input keeps the executable bit git records for it', async (t) => {

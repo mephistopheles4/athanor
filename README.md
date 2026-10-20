@@ -43,8 +43,8 @@ Add an `athanor` key to the `package.json` at the repo root:
 - `dockerfile` (required) and `context` (default: the Dockerfile's folder)
   are repo-relative paths. Every tracked file under `context` keys the image,
   so keep it small.
-- `inputs` lists files outside `context` that the build needs. Each keeps its
-  repo-relative path under the context root.
+- `inputs` lists files outside `context` that the build needs. Each must be
+  tracked by git, and keeps its repo-relative path under the context root.
 - `commands` maps names to argument arrays. A string is an error.
 - `memory` (`512m`, `2g`), `cpus` and `timeoutMinutes` default to the machine
   configuration, else 2g, 2 and 30.
