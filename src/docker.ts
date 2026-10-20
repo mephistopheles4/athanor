@@ -1,7 +1,7 @@
 // Calls to the Docker CLI. `docker` is the command as an argument-array
 // prefix (default ['docker']); tests stand a fake in its place.
 import { call } from './proc.mjs';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 
 // The Docker command as an argument-array prefix, such as ['docker'].
 export type DockerCommand = string[];

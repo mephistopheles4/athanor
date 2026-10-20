@@ -5,7 +5,7 @@ import net from 'node:net';
 import { writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { run, status } from '../../dist/index.mjs';
-import { lockPath } from '../../dist/slots.mjs';
+import { lockPath } from '../../dist/slots.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, together, waited } from '../helpers.mjs';
 
 // Hold a slot from this process with any answer line; returns a closer.

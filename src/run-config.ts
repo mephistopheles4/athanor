@@ -3,7 +3,7 @@
 // source of each value, so every message names the file to fix.
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
 
 export const DEFAULTS = Object.freeze({

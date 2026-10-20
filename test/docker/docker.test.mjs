@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run, status } from '../../dist/index.mjs';
-import { ask } from '../../dist/slots.mjs';
+import { ask } from '../../dist/slots.js';
 import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.mjs';
 
 const driver = join(dirname(fileURLToPath(import.meta.url)), 'driver.mjs');

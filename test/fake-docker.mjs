@@ -59,6 +59,28 @@ function option(name) {
   return i === -1 ? undefined : args[i + 1];
 }
 
+// The `run` options athanor uses. Any other option is a typo in the container's
+// options, so the fake refuses it. The image is the first argument after them.
+const RUN_FLAGS = new Set(['-i', '--init']);
+const RUN_VALUED = new Set([
+  '--pull', '--log-driver', '--name', '--label', '--network', '--memory', '--memory-swap',
+  '--cpus', '--pids-limit', '--security-opt', '-e',
+]);
+
+function parseRun(runArgs) {
+  const options = new Map();
+  let i = 0;
+  for (; i < runArgs.length && runArgs[i].startsWith('-'); i++) {
+    const name = runArgs[i];
+    if (RUN_FLAGS.has(name)) continue;
+    if (!RUN_VALUED.has(name)) return { error: `fake docker: unknown run option ${name}` };
+    if (i + 1 >= runArgs.length || runArgs[i + 1].startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
+    options.set(name, runArgs[++i]);
+  }
+  if (i >= runArgs.length) return { error: 'fake docker: run has no image' };
+  return { options, image: runArgs[i] };
+}
+
 async function main() {
   const [a, b] = args;
   if (a === 'version') {
@@ -168,10 +190,16 @@ async function main() {
     return 0;
   }
   if (a === 'run') {
-    const name = option('--name');
-    const labelArg = option('--label');
+    const parsed = parseRun(args.slice(1));
+    if (parsed.error) {
+      record();
+      console.error(parsed.error);
+      return 125;
+    }
+    const { image } = parsed;
+    const name = parsed.options.get('--name');
+    const labelArg = parsed.options.get('--label');
     const labels = labelArg ? { [labelArg.split('=')[0]]: labelArg.split('=')[1] } : {};
-    const image = args[args.indexOf('sh') - 1];
     const path = fileFor(containersDir, name);
     const plan = { exitCode: 0, marker: true, ...(scenario.run ?? {}) };
     if (plan.runFails) {
