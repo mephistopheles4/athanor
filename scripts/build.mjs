@@ -18,8 +18,17 @@ if (!existsSync(tsc)) {
   console.error('build: the TypeScript compiler is not installed. Run npm ci at the repo root, then run again.');
   process.exit(1);
 }
-rmSync(join(root, 'dist'), { recursive: true, force: true, maxRetries: 5 });
+try {
+  rmSync(join(root, 'dist'), { recursive: true, force: true, maxRetries: 5 });
+} catch (err) {
+  console.error(`build: could not clear dist/ (${err.code ?? err.message}). Close whatever holds a file in it, then run again.`);
+  process.exit(1);
+}
 const r = spawnSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.json'), '--typeRoots', join(here, 'node_modules', '@types')], { cwd: root, stdio: 'inherit', shell: false });
+if (r.error) {
+  console.error(`build: the compiler could not start (${r.error.code ?? r.error.message}). Run npm ci at the repo root, then run again.`);
+  process.exit(1);
+}
 if (r.status !== 0) {
   console.error('build: the compile failed. Fix the errors above, then run again.');
   process.exit(1);

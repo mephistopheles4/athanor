@@ -1,6 +1,7 @@
 // The source check (spec S5, ADR 0002): fails when a child process is started
 // with a shell, or when exec, execSync, or execFile with a shell appears.
-// It reads the JavaScript and TypeScript source, never the compiled dist/.
+// It reads every JavaScript and TypeScript file tsc can compile (.js, .mjs,
+// .cjs, .jsx, .ts, .mts, .cts, .tsx), never the compiled dist/.
 // Each file is checked as a whole, so a match split across lines still counts.
 //   node scripts/check-source.mjs [dir...]   (default: bin, src, scripts)
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -22,7 +23,7 @@ function* files(dir) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) yield* files(path);
-    else if (/\.(mjs|cjs|js|ts|mts|cts)$/.test(name) && path !== self) yield path;
+    else if (/\.[cm]?[jt]sx?$/i.test(name) && path !== self) yield path;
   }
 }
 

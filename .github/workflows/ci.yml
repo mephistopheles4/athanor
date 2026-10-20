@@ -49,6 +49,8 @@ jobs:
       - name: Pack and install
         run: |
           set -e
+          # The tiers left a dist/ behind; clear it so only prepack can build it.
+          rm -rf dist
           npm pack --pack-destination "$RUNNER_TEMP"
           tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
           # Only bin/, dist/ (compiled JavaScript and its declarations), the
