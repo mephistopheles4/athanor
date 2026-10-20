@@ -7,8 +7,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run, status } from '../../src/index.mjs';
-import { ask } from '../../src/slots.mjs';
+import { run, status } from '../../dist/index.mjs';
+import { ask } from '../../dist/slots.mjs';
 import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.mjs';
 
 const driver = join(dirname(fileURLToPath(import.meta.url)), 'driver.mjs');

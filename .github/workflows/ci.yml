@@ -1,7 +1,9 @@
-# One job on Linux and Node 24 (spec S4, C27): a syntax check of every source
-# file, the source check, both test tiers (the docker tier uses the runner's
-# own Docker engine), and npm pack followed by an install of the packed file
-# into a temporary prefix. Locked down for a public repo: a read-only token,
+# One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4): npm ci from
+# the lockfile, a strict tsc check, a syntax check of every .mjs file, the
+# source check, both test tiers (each builds dist/ first; the docker tier uses
+# the runner's own Docker engine), and npm pack followed by a check of what the
+# packed file holds, an install of it into a temporary prefix, and a type check
+# of a file that imports it by its name. Locked down for a public repo: a read-only token,
 # no secrets, each action pinned to a full commit SHA, and the checkout's
 # token not left in the clone.
 name: ci
@@ -30,7 +32,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-      - name: Syntax check of every source file
+      - name: Install the compiler from the lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Strict type check
+        run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Syntax check of every .mjs file
         run: |
           set -e
           git ls-files '*.mjs' | while read -r f; do node --check "$f"; done
@@ -44,8 +50,27 @@ jobs:
         run: |
           set -e
           npm pack --pack-destination "$RUNNER_TEMP"
+          tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
+          # Only bin/, dist/ (compiled JavaScript and its declarations), the
+          # README, the LICENSE and package.json ship.
+          unexpected=$(tar -tzf "$tgz" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
+          test -z "$unexpected" || { echo "unexpected files in the package: $unexpected"; exit 1; }
+          tar -tzf "$tgz" | grep -qx 'package/dist/index.d.mts'
           prefix="$RUNNER_TEMP/athanor-prefix"
-          npm install --global --prefix "$prefix" "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz
+          npm install --global --prefix "$prefix" "$tgz"
           expected=$(node -p "require('./package.json').version")
           actual=$("$prefix/bin/athanor" --version)
           test "$actual" = "$expected"
+      - name: Typed import by package name
+        run: |
+          set -e
+          tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
+          project="$RUNNER_TEMP/athanor-typed"
+          mkdir -p "$project"
+          cd "$project"
+          echo '{ "name": "athanor-typed", "private": true, "type": "module" }' > package.json
+          npm install --ignore-scripts --no-audit --no-fund "$tgz"
+          printf '%s\n' "import { run, status, prune } from '@mephistopheles4/athanor';" "export const used = [run, status, prune];" > check.mts
+          node "$GITHUB_WORKSPACE/node_modules/typescript/bin/tsc" --noEmit --strict \
+            --module nodenext --moduleResolution nodenext \
+            --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts
