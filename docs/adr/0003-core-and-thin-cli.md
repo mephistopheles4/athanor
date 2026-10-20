@@ -2,7 +2,7 @@
 
 Date: 2026-10-19 · Status: accepted · Source: spec revision 5 on issue 1 (S4, S5)
 
-`src/index.mjs` exports `run`, `status` and `prune`. The core never prints,
+`src/index.ts` exports `run`, `status` and `prune`. The core never prints,
 exits or registers signal handlers: it takes options, reports progress through
 an `onProgress` callback, takes an `AbortSignal` for interrupts, and returns a
 result. `src/cli.mjs` parses arguments, prints, handles signals and sets the

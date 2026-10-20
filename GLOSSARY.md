@@ -32,6 +32,14 @@
   stay inside the repo, its limits are held to the machine's ceilings, and
   each value keeps the file it came from, so a message names the file to fix.
   One table says which keys a repo may set and which only the machine may set.
+- **Container settings.** What reaches the container, worked out from the run
+  configuration, the slot, the image tag and the test command: the
+  `docker run` options, the boot script and the command after it. They hold
+  ADR 0005's rules: no network, no new privileges, no mounts, and no
+  environment variable but `ATHANOR_GRACE_LIMIT`.
+- **Container run.** Starting the container from its settings, piping the
+  snapshot in, ending it on an interrupt or at the time limit, finding the
+  boot marker, and reading how it ended into the run's outcome.
 - **Boot script.** The short `sh` script that unpacks the snapshot in the
   container, prints the boot marker, and runs the test command.
 - **Boot marker.** The line `athanor-boot-ok` the boot script prints on stderr

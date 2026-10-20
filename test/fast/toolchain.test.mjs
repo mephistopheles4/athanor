@@ -18,7 +18,7 @@ const check = (...dirs) => spawnSync(process.execPath, [sourceCheck, ...dirs], {
 test('T4 a compile error fails the build of a copy, which clears its dist/ first, and the run ends as a failure; the repo\'s dist/ is untouched', (t) => {
   isolate(t);
   const listing = () => readdirSync(dist).sort();
-  const before = { names: listing(), index: readFileSync(join(dist, 'index.mjs')) };
+  const before = { names: listing(), index: readFileSync(join(dist, 'index.js')) };
   const copy = tempDir(t);
   cpSync(join(root, 'tsconfig.json'), join(copy, 'tsconfig.json'));
   cpSync(join(root, 'src'), join(copy, 'src'), { recursive: true });
@@ -33,7 +33,7 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
   assert.match(errors[0], /planted\.ts.*error TS2322/);
   assert.equal(existsSync(join(copy, 'dist', 'stale.mjs')), false, 'the copy\'s dist/ was cleared first');
   assert.deepEqual(listing(), before.names);
-  assert.deepEqual(readFileSync(join(dist, 'index.mjs')), before.index);
+  assert.deepEqual(readFileSync(join(dist, 'index.js')), before.index);
 
   // The runner, copied in, ends the run as a failure. Its build step is a stand-in
   // that runs this repo's build script on the copy, so the compiler is found.
@@ -50,10 +50,10 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
 
 test('T13 the boot script in the compiled output has no carriage return', async (t) => {
   isolate(t);
-  const { BOOT } = await import('../../dist/index.mjs');
+  const { BOOT } = await import('../../dist/index.js');
   assert.match(BOOT, /^set -e\n/);
   assert.equal(BOOT.includes('\r'), false);
-  assert.equal(readFileSync(join(dist, 'index.mjs'), 'latin1').includes('\r'), false, 'dist/index.mjs has LF line endings');
+  assert.equal(readFileSync(join(dist, 'container-settings.js'), 'latin1').includes('\r'), false, 'dist/container-settings.js, which holds the boot script, has LF line endings');
 });
 
 test('T5 a shell use planted in a .ts file fails the source check', async (t) => {

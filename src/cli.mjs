@@ -1,7 +1,7 @@
 // The thin CLI: parses arguments, prints, handles signals, returns the exit code.
-// The core (index.mjs) does the work and never prints or exits.
+// The core (index.ts) does the work and never prints or exits.
 import { readFileSync } from 'node:fs';
-import { run, status, prune } from './index.mjs';
+import { run, status, prune } from './index.js';
 import { AthanorError, EXIT } from './errors.js';
 
 const SUBCOMMANDS = 'The subcommands are: run, status, prune. Use athanor --version for the version.';

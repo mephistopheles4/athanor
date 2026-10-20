@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run } from '../../dist/index.mjs';
+import { run } from '../../dist/index.js';
 import { isolate, makeRepo, fake, uniquePrefix, baseConfig, callsOf, tarFile, tempDir } from '../helpers.mjs';
 
 const dist = fileURLToPath(new URL('../../dist', import.meta.url));
