@@ -1,0 +1,51 @@
+# One job on Linux and Node 24 (spec S4, C27): a syntax check of every source
+# file, the source check, both test tiers (the docker tier uses the runner's
+# own Docker engine), and npm pack followed by an install of the packed file
+# into a temporary prefix. Locked down for a public repo: a read-only token,
+# no secrets, each action pinned to a full commit SHA, and the checkout's
+# token not left in the clone.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Syntax check of every source file
+        run: |
+          set -e
+          git ls-files '*.mjs' | while read -r f; do node --check "$f"; done
+      - name: Source check
+        run: node scripts/check-source.mjs
+      - name: Fast tier
+        run: node test/run.mjs fast
+      - name: Docker tier
+        run: node test/run.mjs docker
+      - name: Pack and install
+        run: |
+          set -e
+          npm pack --pack-destination "$RUNNER_TEMP"
+          prefix="$RUNNER_TEMP/athanor-prefix"
+          npm install --global --prefix "$prefix" "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz
+          expected=$(node -p "require('./package.json').version")
+          actual=$("$prefix/bin/athanor" --version)
+          test "$actual" = "$expected"
