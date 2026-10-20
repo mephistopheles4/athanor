@@ -1,7 +1,7 @@
 // Calls to the Docker CLI. `docker` is the command as an argument-array
 // prefix (default ['docker']); tests stand a fake in its place.
 import { call } from './proc.mjs';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 
 const firstLine = (text) => String(text).trim().split('\n')[0]?.trim() ?? '';
 const noSuch = (text) => /no such (container|object|image)/i.test(text);

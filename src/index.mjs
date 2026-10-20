@@ -4,12 +4,12 @@
 import { mkdirSync, existsSync, utimesSync, writeFileSync, statSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
-import { AthanorError, EXIT } from './errors.mjs';
+import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, readRepoConfig, resolveRunLimit, resolveLimits, DEFAULTS } from './config.mjs';
 import { insideRepo, isUnder } from './paths.mjs';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, ARCHIVE_CONFIG } from './git.mjs';
 import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.mjs';
-import { acquire, ask } from './slots.mjs';
+import { acquire, ask } from './slots.js';
 import { start } from './proc.mjs';
 
 export { AthanorError };

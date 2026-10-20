@@ -5,7 +5,7 @@ import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { call } from './proc.mjs';
-import { AthanorError } from './errors.mjs';
+import { AthanorError } from './errors.js';
 
 const TAG_FORMAT = 'athanor-image-v1';
 const STALE_MS = 24 * 60 * 60 * 1000;
