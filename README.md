@@ -17,7 +17,7 @@ Needs Node 24 or later, git, and a local Docker engine (Docker Desktop on
 Windows).
 
 ```bash
-npm install --save-dev athanor-testbox
+npm install --save-dev @mephistopheles4/athanor
 ```
 
 The command is `athanor`.

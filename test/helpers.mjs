@@ -47,9 +47,9 @@ export function git(cwd, args, env = {}) {
 }
 
 // A repo with one commit holding the given files, and an athanor key.
-export function makeRepo(t, { files = {}, athanor, commit = true, packageExtra = {} } = {}) {
+export function makeRepo(t, { files = {}, athanor, commit = true, packageExtra = {}, objectFormat } = {}) {
   const dir = tempDir(t, 'athanor-repo-');
-  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['init', '-q', '-b', 'main', ...(objectFormat ? [`--object-format=${objectFormat}`] : [])]);
   git(dir, ['config', 'user.name', 'test']);
   git(dir, ['config', 'user.email', 'test@localhost']);
   git(dir, ['config', 'core.autocrlf', 'false']);

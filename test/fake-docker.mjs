@@ -5,6 +5,7 @@
 // <dir>/images and <dir>/containers, so concurrent fakes don't race.
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 
 const [dir, ...args] = process.argv.slice(2);
 const scenario = existsSync(join(dir, 'scenario.json')) ? JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8')) : {};
@@ -71,6 +72,10 @@ async function main() {
   }
   if (a === 'buildx' && b === 'inspect') {
     record();
+    if (scenario.buildxFails) {
+      console.error('ERROR: no builder found');
+      return 1;
+    }
     if (scenario.buildx === 'missing') {
       console.error("docker: 'buildx' is not a docker command.");
       return 1;
@@ -92,8 +97,16 @@ async function main() {
     const input = await readStdin();
     const entries = readTar(input);
     record({ tar: entries });
+    if (scenario.buildGrandchild) {
+      // Like the buildx plugin: a child that keeps this process's output open.
+      spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: ['ignore', 'inherit', 'inherit'], shell: false });
+    }
     if (scenario.buildHangMs) await sleep(scenario.buildHangMs);
     if (scenario.buildFails) { console.error('ERROR: failed to solve: process did not complete successfully'); return 1; }
+    if (scenario.loadRequired && !args.includes('--load')) {
+      console.error('WARNING: No output specified with docker-container driver. Build result will only remain in the build cache.');
+      return 0;
+    }
     writeFileSync(fileFor(imagesDir, option('-t')), JSON.stringify({ tag: option('-t') }));
     console.error('#1 building fake image');
     return 0;

@@ -45,7 +45,7 @@ jobs:
           set -e
           npm pack --pack-destination "$RUNNER_TEMP"
           prefix="$RUNNER_TEMP/athanor-prefix"
-          npm install --global --prefix "$prefix" "$RUNNER_TEMP"/athanor-testbox-*.tgz
+          npm install --global --prefix "$prefix" "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz
           expected=$(node -p "require('./package.json').version")
           actual=$("$prefix/bin/athanor" --version)
           test "$actual" = "$expected"

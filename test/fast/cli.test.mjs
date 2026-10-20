@@ -11,6 +11,8 @@ test('C20 no dependencies, Node >=24, and --version prints the package version',
   assert.equal(pkg.dependencies, undefined);
   assert.equal(pkg.engines.node, '>=24');
   assert.equal(pkg.bin.athanor, 'bin/athanor.mjs');
+  assert.equal(pkg.name, '@mephistopheles4/athanor');
+  assert.equal(pkg.publishConfig.access, 'public', 'a scoped package publishes private unless told');
   const r = await cli(['--version']);
   assert.equal(r.code, 0);
   assert.equal(r.stdout.trim(), pkg.version);

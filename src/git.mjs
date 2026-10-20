@@ -56,7 +56,9 @@ export async function makeScratch(home, root) {
   // export-subst, so the archive holds exactly the tree. The tree's eol
   // attributes still apply.
   const archiveDir = join(dir, 'archive.git');
-  await git(['init', '--bare', '-q', archiveDir], { cwd: dir, what: 'make a folder for archives' });
+  // The same object format as the repo (sha1 or sha256), or it cannot read its objects.
+  const format = (await git(['rev-parse', '--show-object-format'], { cwd: root, what: 'read the object format' })).trim();
+  await git(['init', '--bare', '-q', `--object-format=${format}`, archiveDir], { cwd: dir, what: 'make a folder for archives' });
   mkdirSync(join(archiveDir, 'info'), { recursive: true });
   writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst\n');
   let copies = 0;
@@ -66,10 +68,10 @@ export async function makeScratch(home, root) {
     env(fromRealIndex = true) {
       const index = join(dir, `index-${++copies}`);
       if (fromRealIndex && existsSync(realIndex)) copyFileSync(realIndex, index);
-      return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects };
+      return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' };
     },
-    objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects },
-    archiveEnv: { ...process.env, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects },
+    objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
+    archiveEnv: { ...process.env, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
     remove() {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     },
@@ -132,7 +134,8 @@ export async function buildContext(root, scratch, { context, inputs, dockerfileI
       if (tracked === '') {
         throw new AthanorError(`The inputs file "${input}" is not tracked by git, so athanor will not send it to the build. Add it to git, or remove it from inputs.`);
       }
-      if (tracked.includes('\n')) {
+      // One entry for exactly this path; anything else means a folder.
+      if (tracked.includes('\n') || tracked.slice(tracked.indexOf('\t') + 1) !== input) {
         throw new AthanorError(`The inputs entry "${input}" is a folder. List each file the build needs in inputs.`);
       }
       const taken = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });

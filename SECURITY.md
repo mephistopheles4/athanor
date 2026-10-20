@@ -27,7 +27,7 @@ of them to its maker.
 
 ## Supported version
 
-The latest release of `athanor-testbox` on npm, and `main`.
+The latest release of `@mephistopheles4/athanor` on npm, and `main`.
 
 ## What to expect
 

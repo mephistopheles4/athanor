@@ -3,7 +3,7 @@
 // One top-level test per acceptance claim.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,28 @@ test('C1 a run builds on first use, streams output, and exits with the command\'
       assert.equal(stderr.text().includes('athanor-boot-ok'), false, 'the marker is consumed');
     });
   }
+
+  await t.test('a local docker-container builder loads its image into Docker', async (t) => {
+    isolate(t);
+    const repo = makeRepo(t, { athanor: baseConfig });
+    const docker = fake(t, { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock'], loadRequired: true });
+    const result = await runWith(t, repo, docker);
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.ok(callsOf(docker.calls(), 'build')[0].args.includes('--load'));
+    assert.equal(callsOf(docker.calls(), 'build').length, 1);
+  });
+
+  await t.test('a repo using the sha256 object format runs, in both snapshot modes', async (t) => {
+    isolate(t);
+    const repo = makeRepo(t, { athanor: baseConfig, objectFormat: 'sha256', files: { 'a.txt': 'a\n' } });
+    writeFileSync(join(repo, 'a.txt'), 'edited\n');
+    const docker = fake(t);
+    for (const untracked of [false, true]) {
+      const result = await runWith(t, repo, docker, { untracked });
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      assert.equal(tarFile(lastRunTar(docker), 'a.txt'), 'edited\n');
+    }
+  });
 });
 
 test('C2 a second run with unchanged inputs makes no build call', async (t) => {
@@ -183,7 +205,7 @@ test('C12 an interrupt removes the container, frees the slot and returns 130', a
   await t.test('an interrupt during the image build returns 130, not a build failure', async (t) => {
     isolate(t);
     const cold = makeRepo(t, { athanor: baseConfig });
-    const d = fake(t, { buildHangMs: 20000 });
+    const d = fake(t, { buildHangMs: 20000, buildGrandchild: true });
     const c = new AbortController();
     const lines = [];
     const waiting = run({ cwd: cold, docker: d.docker, prefix: uniquePrefix(), signal: c.signal, onProgress: (l) => lines.push(l) });
@@ -268,6 +290,8 @@ test('C21 a run changes no file\'s content and adds no file outside the state fo
   for (const untracked of [false, true]) {
     const result = await runWith(t, repo, docker, { untracked });
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.equal(readFileSync(join(repo, 'a.txt'), 'utf8'), 'changed\n');
+    assert.equal(readFileSync(join(repo, 'loose.txt'), 'utf8'), 'x\n');
   }
   assert.deepEqual(gitState(repo), before);
   assert.deepEqual(gitFolder(), filesBefore, 'no file is added to or changed in size in the git folder');
@@ -363,6 +387,21 @@ test('C28 only the hashed set reaches the build', async (t) => {
     }
   });
 
+  await t.test('an inputs name is a literal path, never a pattern, and a folder is refused', async (t) => {
+    const glob = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret[1].env'] }, files: { 'secret1.env': 'tracked\n' } });
+    writeFiles(glob, { 'secret[1].env': 'untracked\n' });
+    const d = fake(t);
+    const r = await runWith(t, glob, d);
+    assert.equal(r.exitCode, 125, JSON.stringify(r));
+    assert.match(r.message, /inputs file "secret\[1\]\.env" is not tracked by git/);
+    assert.equal(callsOf(d.calls(), 'build').length, 0);
+
+    const folder = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['cfg'] }, files: { 'cfg/a.json': '{}\n' } });
+    const f = await runWith(t, folder, fake(t));
+    assert.equal(f.exitCode, 125, JSON.stringify(f));
+    assert.match(f.message, /inputs entry "cfg" is a folder/);
+  });
+
   await t.test('an input keeps the executable bit git records for it', async (t) => {
     const exec = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['tool.sh'] }, files: { 'tool.sh': 'echo hi\n' } });
     git(exec, ['update-index', '--chmod=+x', 'tool.sh']);
@@ -402,6 +441,8 @@ test('C29 a remote engine, context or builder exits 125 naming the setting, with
     { name: 'docker-driver builder backed by a tcp context', env: { BUILDX_BUILDER: 'far-ctx' }, scenario: { builderDriver: 'docker', builderEndpoints: ['far-ctx'], contexts: { 'far-ctx': 'tcp://10.0.0.5:2376' } }, says: /BUILDX_BUILDER/ },
     { name: 'docker-container builder with a later remote node', scenario: { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock', 'tcp://10.0.0.5:2376'] }, says: /builder/ },
     { name: 'Docker not running: buildx shows no driver', scenario: { builderDriver: '' }, says: /Docker is not reachable/ },
+    { name: 'BUILDX_BUILDER on an unreachable remote: no driver', env: { BUILDX_BUILDER: 'gone' }, scenario: { builderDriver: '' }, says: /BUILDX_BUILDER \("gone"\)/ },
+    { name: 'BUILDX_BUILDER naming no builder', env: { BUILDX_BUILDER: 'nosuch' }, scenario: { buildxFails: true }, says: /BUILDX_BUILDER \("nosuch"\)/ },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {

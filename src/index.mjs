@@ -110,7 +110,9 @@ async function runInner(options, partial) {
   const timeLimitSeconds = options.timeLimitSeconds ?? limits.timeoutMinutes * 60;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  await checkLocal(docker, env);
+  const { driver } = await checkLocal(docker, env);
+  // A docker-container builder keeps its result in the build cache unless told to load it.
+  const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
   const scratch = await makeScratch(home, root);
   let slot = null;
@@ -120,7 +122,7 @@ async function runInner(options, partial) {
     partial.image = { tag: ctx.tag, built: false };
     if (!(await imageExists(docker, ctx.tag))) {
       onProgress(`building the test image ${ctx.tag} from ${config.dockerfile}.`);
-      await build(docker, root, scratch, ctx, dockerfileInContext, stderr, signal);
+      await build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal);
       partial.image.built = true;
     }
     markUse(home, ctx.hash);
@@ -148,8 +150,8 @@ async function runInner(options, partial) {
 
     // A prune may have removed the tag while this run waited.
     if (!(await imageExists(docker, ctx.tag))) {
-      onProgress(`the test image ${ctx.tag} was removed while this run waited; building it again.`);
-      await build(docker, root, scratch, ctx, dockerfileInContext, stderr, signal);
+      onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`);
+      await build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal);
       partial.image.built = true;
     }
     const containerName = `${prefix}-slot-${slot.slot}`;
@@ -197,23 +199,42 @@ function feed(archive, consumer) {
   consumer.child.once('exit', stopArchive);
 }
 
-async function build(docker, root, scratch, ctx, dockerfileInContext, stderr, signal) {
+async function build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal) {
   const archive = start(['git', ...ARCHIVE_CONFIG, '-c', 'tar.umask=0022', 'archive', '--format=tar', ctx.commit], {
     cwd: root, env: scratch.archiveEnv, capture: false,
   });
-  const builder = start([...docker, 'build', '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
+  const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
     stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
   });
   feed(archive, builder);
-  const onAbort = () => { builder.child.kill(); archive.child.kill(); };
+  // On an interrupt, stop waiting once docker has exited: a buildx plugin it
+  // started can hold the output open until the build ends (S4 leaves the build
+  // to Docker).
+  let onAbort;
+  const aborted = new Promise((resolve) => {
+    onAbort = () => {
+      builder.child.kill();
+      archive.child.kill();
+      if (builder.child.exitCode !== null || builder.child.signalCode !== null) resolve();
+      else builder.child.once('exit', () => resolve());
+    };
+  });
   if (signal?.aborted) onAbort();
   signal?.addEventListener('abort', onAbort, { once: true });
-  const [a, b] = await Promise.all([archive.done, builder.done]);
+  const settled = await Promise.race([Promise.all([archive.done, builder.done]), aborted.then(() => null)]);
   signal?.removeEventListener('abort', onAbort);
-  if (signal?.aborted) throw new Interrupted();
+  if (signal?.aborted || settled === null) {
+    builder.child.stdout.destroy();
+    builder.child.stderr.destroy();
+    throw new Interrupted();
+  }
+  const [a, b] = settled;
   if (a.code !== 0) throw new AthanorError(`git archive of the build context failed (exit ${a.code}).`);
   if (b.code !== 0) {
     throw new AthanorError(`The image build failed (docker build exit ${b.code}). Its output is above; fix the Dockerfile or the context, then run again.`);
+  }
+  if (!(await imageExists(docker, ctx.tag))) {
+    throw new AthanorError(`The image build finished, but the image ${ctx.tag} is not in Docker. Check that the buildx builder loads its images into the local engine.`);
   }
 }
 
