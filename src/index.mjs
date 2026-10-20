@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
-import { repoRoot, makeScratch, clearStale, snapshot, buildContext, ARCHIVE_CONFIG } from './git.mjs';
+import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream } from './git.js';
 import { prepareDocker, imageExists, clearSlotContainer, removeContainer, readExit, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
 import { acquire, ask } from './slots.js';
 import { start } from './proc.mjs';
@@ -170,7 +170,7 @@ async function warnOnOtherLimits(prefix, slot, limit, onProgress) {
   }
 }
 
-// Pipe git archive into a Docker child. If the child stops reading (it exits,
+// Pipe git's tar stream into a Docker child. If the child stops reading (it exits,
 // or its input closes), end the archive too, so it fails rather than blocks.
 function feed(archive, consumer) {
   const out = archive.child.stdout;
@@ -185,9 +185,7 @@ function feed(archive, consumer) {
 }
 
 async function build(docker, root, scratch, ctx, dockerfileInContext, buildOptions, stderr, signal) {
-  const archive = start(['git', ...ARCHIVE_CONFIG, '-c', 'tar.umask=0022', 'archive', '--format=tar', ctx.commit], {
-    cwd: root, env: scratch.archiveEnv, capture: false,
-  });
+  const archive = tarStream(root, scratch, ctx.commit, 'build context');
   const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfileInContext, '-'], {
     stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
   });
@@ -260,9 +258,7 @@ async function runContainer(o) {
   const write = (stream) => (c) => stream?.write(c);
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
-  const archive = start(['git', ...ARCHIVE_CONFIG, 'archive', '--format=tar', o.snapshotId], {
-    cwd: o.root, env: o.scratch.archiveEnv, capture: false,
-  });
+  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
   const container = start([...o.docker, ...args], {
     stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
