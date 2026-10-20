@@ -2,22 +2,25 @@
 // 125 with a plain message, before any Docker call. One top-level test per
 // acceptance claim, with its cases as rows.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { run } from '../../dist/index.js';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.mjs';
+import { run } from '#dist/index.js';
+import type { RunOptions, RunResult } from '#dist/index.js';
+import type { Call } from '../helpers.ts';
+import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.ts';
 
-async function runIn(t, repo, extra = {}) {
+async function runIn(t: TestContext, repo: string, extra: RunOptions = {}) {
   const docker = fake(t);
   const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix(), ...extra });
   return { result, calls: docker.calls() };
 }
 
-function assertSetupError(result, calls, pattern) {
+function assertSetupError(result: RunResult, calls: Call[], pattern: RegExp) {
   assert.equal(result.outcome, 'error', JSON.stringify(result));
   assert.equal(result.exitCode, 125);
-  assert.match(result.message, pattern);
+  assert.match(result.message!, pattern);
   assert.equal(callsOf(calls, 'build').length + callsOf(calls, 'run').length, 0, 'no build or run');
 }
 
@@ -185,15 +188,15 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     const { results, progress } = await together(t, 2, { hangMs: 800 });
     assert.deepEqual(results.map((r) => r.slot), [1, 1]);
     assert.equal(progress.filter(waited).length, 1);
-    assert.ok(results.some((r) => r.waitedMs >= 500));
+    assert.ok(results.some((r) => r.waitedMs! >= 500));
   });
 });
 
 test('T8 a configuration message names the file the bad value came from, in its present text', async (t) => {
-  const ceiling = (value, max, where) => `memory ${value} is above the machine ceiling maxMemory ${max}. Lower it in ${where}, or raise maxMemory in the machine configuration.`;
+  const ceiling = (value: string, max: string, where: string) => `memory ${value} is above the machine ceiling maxMemory ${max}. Lower it in ${where}, or raise maxMemory in the machine configuration.`;
   const rows = [
     { name: 'a repo value', athanor: { ...baseConfig, memory: '9g' }, says: () => ceiling('9g', '8g', 'the "athanor" key') },
-    { name: 'a machine file value', file: { memory: '9g' }, says: (home) => ceiling('9g', '8g', `the machine configuration file ${join(home, 'config.json')}`) },
+    { name: 'a machine file value', file: { memory: '9g' }, says: (home: string) => ceiling('9g', '8g', `the machine configuration file ${join(home, 'config.json')}`) },
     { name: 'the default value', file: { maxMemory: '1g' }, says: () => ceiling('2g', '1g', 'the "athanor" key') },
   ];
   for (const row of rows) {

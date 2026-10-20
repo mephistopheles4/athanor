@@ -22,7 +22,7 @@ if (built.status !== 0) {
   process.exit(1);
 }
 const files = readdirSync(tiers[tier])
-  .filter((f) => f.endsWith('.test.mjs') && (!filter || f.includes(filter)))
+  .filter((f) => f.endsWith('.test.ts') && (!filter || f.includes(filter)))
   .sort()
   .map((f) => join(tiers[tier], f));
 if (files.length === 0) {
@@ -30,7 +30,7 @@ if (files.length === 0) {
   console.log(`result: ${tier} fail`);
   process.exit(2);
 }
-const child = spawn(process.execPath, ['--test', '--test-concurrency=1', ...files], { stdio: 'inherit', shell: false });
+const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--test', '--test-concurrency=1', ...files], { stdio: 'inherit', shell: false });
 child.on('exit', (code) => {
   console.log(`result: ${tier} ${code === 0 ? 'pass' : 'fail'}`);
   process.exit(code ?? 1);

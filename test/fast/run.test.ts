@@ -2,28 +2,31 @@
 // container, the argument arrays, exit codes and outcomes, and git's state.
 // One top-level test per acceptance claim.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { run } from '../../dist/index.js';
-import { ask } from '../../dist/slots.js';
+import { run } from '#dist/index.js';
+import type { RunOptions } from '#dist/index.js';
+import { ask } from '#dist/slots.js';
 import {
   makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, collector, tarFile, tarNames, gitState, git, tempDir, writeFiles,
-} from '../helpers.mjs';
+} from '../helpers.ts';
+import type { TarEntry, Fake } from '../helpers.ts';
 
 const sourceCheck = fileURLToPath(new URL('../../scripts/check-source.mjs', import.meta.url));
-const check = (...dirs) => spawnSync(process.execPath, [sourceCheck, ...dirs], { encoding: 'utf8', shell: false });
+const check = (...dirs: string[]) => spawnSync(process.execPath, [sourceCheck, ...dirs], { encoding: 'utf8', shell: false });
 
-const runWith = (t, repo, docker, extra = {}) =>
+const runWith = (t: TestContext, repo: string, docker: Fake, extra: RunOptions = {}) =>
   run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix(), ...extra });
 
-const lastRunTar = (docker) => callsOf(docker.calls(), 'run').at(-1).tar;
-const lastBuildTar = (docker) => callsOf(docker.calls(), 'build').at(-1).tar;
+const lastRunTar = (docker: Fake): TarEntry[] => callsOf(docker.calls(), 'run').at(-1)!.tar!;
+const lastBuildTar = (docker: Fake): TarEntry[] => callsOf(docker.calls(), 'build').at(-1)!.tar!;
 
 // The options of a recorded docker run, up to the image tag.
-function runOptions(args, tag) {
+function runOptions(args: string[], tag: string) {
   return args.slice(0, args.indexOf(tag));
 }
 
@@ -38,7 +41,7 @@ test('C1 a run builds on first use, streams output, and exits with the command\'
       const result = await runWith(t, repo, docker, { stdout, stderr });
       assert.equal(result.exitCode, exitCode);
       assert.equal(result.outcome, exitCode === 0 ? 'pass' : 'fail');
-      assert.equal(result.image.built, true);
+      assert.equal(result.image!.built, true);
       assert.equal(callsOf(docker.calls(), 'build').length, 1);
       assert.equal(stdout.text(), 'from the test\n');
       assert.equal(stderr.text().includes('test stderr\n'), true);
@@ -75,9 +78,9 @@ test('C2 a second run with unchanged inputs makes no build call', async (t) => {
   const docker = fake(t);
   const first = await runWith(t, repo, docker);
   const second = await runWith(t, repo, docker);
-  assert.equal(first.image.built, true);
-  assert.equal(second.image.built, false);
-  assert.equal(second.image.tag, first.image.tag);
+  assert.equal(first.image!.built, true);
+  assert.equal(second.image!.built, false);
+  assert.equal(second.image!.tag, first.image!.tag);
   assert.equal(callsOf(docker.calls(), 'build').length, 1);
 });
 
@@ -86,7 +89,7 @@ test('C3 a clone and a worktree get the same tag; a changed input gives another'
   const athanor = { ...baseConfig, inputs: ['package-lock.json'] };
   const repo = makeRepo(t, { athanor, files: { 'package-lock.json': '{"v":1}\n' } });
   const docker = fake(t);
-  const original = (await runWith(t, repo, docker)).image.tag;
+  const original = (await runWith(t, repo, docker)).image!.tag;
 
   const clone = join(tempDir(t, 'athanor-clone-'), 'c');
   git(repo, ['clone', '-q', repo, clone]);
@@ -94,11 +97,11 @@ test('C3 a clone and a worktree get the same tag; a changed input gives another'
   git(repo, ['worktree', 'add', '-q', worktree]);
 
   assert.match(original, /^athanor:[0-9a-f]{32}$/);
-  assert.equal((await runWith(t, clone, docker)).image.tag, original);
-  assert.equal((await runWith(t, worktree, docker)).image.tag, original);
+  assert.equal((await runWith(t, clone, docker)).image!.tag, original);
+  assert.equal((await runWith(t, worktree, docker)).image!.tag, original);
 
   writeFileSync(join(repo, 'package-lock.json'), '{"v":2}\n');
-  assert.notEqual((await runWith(t, repo, docker)).image.tag, original);
+  assert.notEqual((await runWith(t, repo, docker)).image!.tag, original);
 });
 
 test('C4 an uncommitted edit reaches the container and git\'s state is unchanged', async (t) => {
@@ -117,7 +120,7 @@ test('C4 an uncommitted edit reaches the container and git\'s state is unchanged
   assert.equal(tarFile(tar, 'a.txt'), 'edited\n');
   assert.equal(tarFile(tar, 'b.txt'), 'staged\n');
   const after = gitState(repo);
-  for (const key of ['stash', 'stage', 'status', 'refs']) assert.equal(after[key], before[key], key);
+  for (const key of ['stash', 'stage', 'status', 'refs']) assert.equal(after[key as keyof typeof after], before[key as keyof typeof before], key);
 
   await t.test('export-ignore and export-subst do not change what reaches the container', async (t) => {
     const marked = makeRepo(t, {
@@ -142,13 +145,13 @@ test('C5 untracked files are left out and counted by default, included with --un
 
   const plain = await runWith(t, repo, docker);
   assert.equal(plain.untrackedLeftOut, 1);
-  assert.equal(plain.snapshot.untracked, false);
+  assert.equal(plain.snapshot!.untracked, false);
   assert.equal(tarFile(lastRunTar(docker), 'new.test.mjs'), undefined);
   assert.equal(tarFile(lastRunTar(docker), 'secret.env'), undefined);
   assert.equal(git(repo, ['ls-files', '--stage']), before);
 
   const withUntracked = await runWith(t, repo, docker, { untracked: true });
-  assert.equal(withUntracked.snapshot.untracked, true);
+  assert.equal(withUntracked.snapshot!.untracked, true);
   assert.equal(tarFile(lastRunTar(docker), 'new.test.mjs'), 'new\n');
   assert.equal(tarFile(lastRunTar(docker), 'secret.env'), undefined);
   assert.equal(git(repo, ['ls-files', '--stage']), before);
@@ -207,7 +210,7 @@ test('C12 an interrupt removes the container, frees the slot and returns 130', a
     const cold = makeRepo(t, { athanor: baseConfig });
     const d = fake(t, { buildHangMs: 20000, buildGrandchild: true });
     const c = new AbortController();
-    const lines = [];
+    const lines: string[] = [];
     const waiting = run({ cwd: cold, docker: d.docker, prefix: uniquePrefix(), signal: c.signal, onProgress: (l) => lines.push(l) });
     while (!lines.some((l) => /building/.test(l))) await new Promise((r) => setTimeout(r, 50));
     await new Promise((r) => setTimeout(r, 300));
@@ -264,7 +267,7 @@ test('C19 no host environment value, host folder or socket reaches the container
   const docker = fake(t);
   const prefix = uniquePrefix();
   const result = await run({ cwd: repo, docker: docker.docker, prefix });
-  const options = runOptions(callsOf(docker.calls(), 'run')[0].args, result.image.tag);
+  const options = runOptions(callsOf(docker.calls(), 'run')[0].args, result.image!.tag);
   // The whole option list, so no flag can slip in under any spelling.
   assert.deepEqual(options, [
     'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
@@ -283,7 +286,7 @@ test('C21 a run changes no file\'s content and adds no file outside the state fo
   writeFiles(repo, { 'loose.txt': 'x\n' });
   const before = gitState(repo);
   // Every file in the git folder, by name and size, so a stray file shows.
-  const gitFolder = () => readdirSync(join(repo, '.git'), { recursive: true })
+  const gitFolder = () => readdirSync(join(repo, '.git'), { recursive: true, encoding: 'utf8' })
     .map((f) => `${f}:${statSync(join(repo, '.git', f)).size}`).sort();
   const filesBefore = gitFolder();
   const docker = fake(t);
@@ -312,13 +315,13 @@ test('C25 a run never passes on a partial snapshot, and each failure gets its ou
     await t.test(row.name, async (t) => {
       isolate(t);
       // A file far larger than a pipe buffer, so git archive is still writing when the input closes.
-      const files = row.big ? { 'big.bin': 'x'.repeat(4 * 1024 * 1024) } : {};
+      const files: Record<string, string> = row.big ? { 'big.bin': 'x'.repeat(4 * 1024 * 1024) } : {};
       const repo = makeRepo(t, { athanor: baseConfig, files });
       const docker = fake(t, { run: row.run, inspectFails: row.inspectFails });
       const result = await runWith(t, repo, docker);
       assert.equal(result.outcome, row.outcome, JSON.stringify(result));
       assert.equal(result.exitCode, row.exitCode);
-      if (row.says) assert.match(result.message, row.says);
+      if (row.says) assert.match(result.message!, row.says);
     });
   }
 });
@@ -348,7 +351,7 @@ test('C28 only the hashed set reaches the build', async (t) => {
   docker.setScenario({});
   for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));
   const second = await runWith(t, repo, docker);
-  assert.equal(second.image.tag, first.image.tag);
+  assert.equal(second.image!.tag, first.image!.tag);
   const modes = lastBuildTar(docker).filter((e) => e.type === '0').map((e) => e.mode);
   assert.ok(modes.every((m) => /644$/.test(m)), `modes ${modes}`);
 
@@ -357,7 +360,7 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const d = fake(t);
     const result = await runWith(t, outside, d);
     assert.equal(result.exitCode, 125);
-    assert.match(result.message, /outside the context folder/);
+    assert.match(result.message!, /outside the context folder/);
     assert.equal(callsOf(d.calls(), 'build').length, 0);
   });
 
@@ -369,20 +372,20 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const d = fake(t);
     const result = await runWith(t, clash, d);
     assert.equal(result.exitCode, 125);
-    assert.match(result.message, /already is/);
+    assert.match(result.message!, /already is/);
   });
 
   await t.test('an inputs file git does not track, ignored or untracked, exits 125 before any build', async (t) => {
     for (const [name, files, extra] of [
       ['ignored', { '.gitignore': 'secret.env\n' }, { 'secret.env': 'KEY=1\n' }],
       ['untracked', {}, { 'secret.env': 'KEY=1\n' }],
-    ]) {
+    ] as [string, Record<string, string>, Record<string, string>][]) {
       const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret.env'] }, files });
       writeFiles(repo, extra);
       const d = fake(t);
       const result = await runWith(t, repo, d);
       assert.equal(result.exitCode, 125, `${name}: ${JSON.stringify(result)}`);
-      assert.match(result.message, /inputs file "secret\.env" is not tracked by git.*Add it to git, or remove it from inputs/);
+      assert.match(result.message!, /inputs file "secret\.env" is not tracked by git.*Add it to git, or remove it from inputs/);
       assert.equal(callsOf(d.calls(), 'build').length, 0);
     }
   });
@@ -393,13 +396,13 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const d = fake(t);
     const r = await runWith(t, glob, d);
     assert.equal(r.exitCode, 125, JSON.stringify(r));
-    assert.match(r.message, /inputs file "secret\[1\]\.env" is not tracked by git/);
+    assert.match(r.message!, /inputs file "secret\[1\]\.env" is not tracked by git/);
     assert.equal(callsOf(d.calls(), 'build').length, 0);
 
     const folder = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['cfg'] }, files: { 'cfg/a.json': '{}\n' } });
     const f = await runWith(t, folder, fake(t));
     assert.equal(f.exitCode, 125, JSON.stringify(f));
-    assert.match(f.message, /inputs entry "cfg" is a folder/);
+    assert.match(f.message!, /inputs entry "cfg" is a folder/);
   });
 
   await t.test('a tracked input whose name git would quote is accepted', async (t) => {
@@ -417,7 +420,7 @@ test('C28 only the hashed set reaches the build', async (t) => {
     const d = fake(t);
     const result = await runWith(t, exec, d);
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
-    assert.match(lastBuildTar(d).find((e) => e.name === 'tool.sh').mode, /755$/);
+    assert.match(lastBuildTar(d).find((e) => e.name === 'tool.sh')!.mode, /755$/);
   });
 
   await t.test('on Windows, a context spelled in another case is the same folder', { skip: process.platform !== 'win32' && 'case-insensitive paths are Windows only' }, async (t) => {
@@ -443,7 +446,7 @@ test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unl
   // The owner removed C29's local-Docker check, then chose q8 A2: plain tcp
   // without TLS is refused by default, with a machine-config opt-out.
   const tls = { 'docker': ['ca.pem', 'cert.pem', 'key.pem'] };
-  const passes = [
+  const passes: { name: string; env?: Record<string, string>; scenario?: Record<string, unknown>; machine?: Record<string, unknown> }[] = [
     { name: 'a tcp DOCKER_HOST with TLS verification', env: { DOCKER_HOST: 'tcp://10.0.0.5:2376', DOCKER_TLS_VERIFY: '1' } },
     { name: 'an ssh DOCKER_HOST', env: { DOCKER_HOST: 'ssh://builder@10.0.0.5' } },
     { name: 'a loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://127.0.0.1:2375' } },
@@ -465,7 +468,7 @@ test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unl
     });
   }
 
-  const refusals = [
+  const refusals: { name: string; env?: Record<string, string>; scenario?: Record<string, unknown>; machine?: Record<string, unknown>; athanor?: unknown; says: RegExp }[] = [
     { name: 'a plain tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, says: /DOCKER_HOST \("tcp:\/\/10\.0\.0\.5:2375"\).*without TLS.*allowPlainTcp/s },
     { name: 'a context with a plain tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2375' }, says: /DOCKER_CONTEXT \("remote"\).*without TLS.*allowPlainTcp/s },
     { name: 'a context whose TLS verification is skipped', scenario: { contextHost: 'tcp://10.0.0.5:2376', contextTls: tls, contextSkipTls: true }, says: /active Docker context.*without TLS/s },
@@ -480,7 +483,7 @@ test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unl
       const docker = fake(t, row.scenario ?? {});
       const result = await runWith(t, repo, docker);
       assert.equal(result.exitCode, 125, JSON.stringify(result));
-      assert.match(result.message, row.says);
+      assert.match(result.message!, row.says);
       assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
     });
   }
@@ -491,7 +494,7 @@ test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unl
     const docker = fake(t, { engineDown: true });
     const result = await runWith(t, repo, docker);
     assert.equal(result.exitCode, 125, JSON.stringify(result));
-    assert.match(result.message, /Docker is not reachable.*Start Docker/s);
+    assert.match(result.message!, /Docker is not reachable.*Start Docker/s);
     assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
   });
 });

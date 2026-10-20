@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fake } from '../helpers.mjs';
+import { fake } from '../helpers.ts';
 
 test('T12 the fake Docker exits non-zero on an unknown run option, and finds the image after the options', (t) => {
   const f = fake(t);
-  const dockerRun = (args) => {
+  const dockerRun = (args: string[]) => {
     const [exe, ...rest] = f.docker;
     return spawnSync(exe, [...rest, 'run', ...args], { input: '', encoding: 'utf8', shell: false });
   };

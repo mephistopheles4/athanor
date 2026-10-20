@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
     "strict": true,
-    "allowJs": true,
-    "checkJs": false,
     "target": "es2024",
     "lib": ["es2024"],
     "module": "nodenext",

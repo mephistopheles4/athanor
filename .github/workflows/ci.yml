@@ -1,5 +1,5 @@
 # One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4): npm ci from
-# the lockfile, a strict tsc check, a syntax check of every .mjs file, the
+# the lockfile, a strict tsc check of src/ and of test/, a syntax check of every .mjs file, the
 # source check, both test tiers (each builds dist/ first; the docker tier uses
 # the runner's own Docker engine), and npm pack followed by a check of what the
 # packed file holds, an install of it into a temporary prefix, and a type check
@@ -36,6 +36,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Strict type check
         run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Strict type check of the tests
+        run: node node_modules/typescript/bin/tsc -p test/tsconfig.json
       - name: Syntax check of every .mjs file
         run: |
           set -e

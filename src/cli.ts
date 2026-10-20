@@ -2,31 +2,52 @@
 // The core (index.ts) does the work and never prints or exits.
 import { readFileSync } from 'node:fs';
 import { run, status, prune } from './index.js';
+import type { RunResult, StatusResult, PruneResult } from './index.js';
 import { AthanorError, EXIT } from './errors.js';
+
+type Command = 'run' | 'status' | 'prune';
+
+interface CliOptions {
+  json: boolean;
+  name?: string;
+  command?: string[];
+  untracked?: boolean;
+  dryRun?: boolean;
+  days?: number;
+}
+
+type Parsed = { command: 'version' | Command; options: CliOptions };
+
+interface ErrorResult {
+  schema: 1;
+  outcome: 'error';
+  exitCode: number;
+  message: string;
+}
 
 const SUBCOMMANDS = 'The subcommands are: run, status, prune. Use athanor --version for the version.';
 
-function version() {
+function version(): string {
   return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 }
 
 // Returns { command, options } or throws AthanorError.
-export function parseArgs(argv) {
-  if (argv.length === 0) throw new AthanorError(`No subcommand given. ${SUBCOMMANDS}`);
+export function parseArgs(argv: string[]): Parsed {
   const [command, ...rest] = argv;
-  if (command === '--version' && rest.length === 0) return { command: 'version', options: {} };
-  if (!['run', 'status', 'prune'].includes(command)) {
+  if (command === undefined) throw new AthanorError(`No subcommand given. ${SUBCOMMANDS}`);
+  if (command === '--version' && rest.length === 0) return { command: 'version', options: { json: false } };
+  if (command !== 'run' && command !== 'status' && command !== 'prune') {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
-  const allowed = {
+  const allowed: string[] = {
     run: ['--json', '--untracked'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
   }[command];
-  const options = { json: false };
-  const names = [];
+  const options: CliOptions = { json: false };
+  const names: string[] = [];
   for (let i = 0; i < rest.length; i++) {
-    const arg = rest[i];
+    const arg = rest[i] as string;
     if (command === 'run' && arg === '--') {
       const after = rest.slice(i + 1);
       if (after.length === 0) throw new AthanorError('There is nothing after --. Give the command to run after it, or leave -- out.');
@@ -55,24 +76,24 @@ export function parseArgs(argv) {
   if (names.length > 1) {
     throw new AthanorError(`athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To run a command of your own, put it after --.`);
   }
-  if (names.length === 1) options.name = names[0];
+  if (names.length === 1) options.name = names[0] as string;
   return { command, options };
 }
 
-function errorResult(message) {
+function errorResult(message: string): ErrorResult {
   return { schema: 1, outcome: 'error', exitCode: EXIT.setup, message };
 }
 
-function writeJson(object) {
+function writeJson(object: unknown): void {
   process.stdout.write(JSON.stringify(object) + '\n');
 }
 
-function say(line) {
+function say(line: string): void {
   process.stderr.write(`athanor: ${line}\n`);
 }
 
-export async function main(argv) {
-  let parsed;
+export async function main(argv: string[]): Promise<number> {
+  let parsed: Parsed;
   try {
     parsed = parseArgs(argv);
   } catch (error) {
@@ -86,14 +107,18 @@ export async function main(argv) {
     process.stdout.write(version() + '\n');
     return 0;
   }
-  const onProgress = (line) => say(line);
+  const onProgress = (line: string): void => say(line);
   try {
     if (command === 'run') return await runCommand(options, onProgress);
-    const result = command === 'status'
-      ? await status({ onProgress })
-      : await prune({ days: options.days, dryRun: options.dryRun, onProgress });
-    if (options.json) writeJson(result);
-    else printSummary(command, result);
+    if (command === 'status') {
+      const result = await status();
+      if (options.json) writeJson(result);
+      else printStatus(result);
+    } else {
+      const result = await prune({ days: options.days, dryRun: options.dryRun });
+      if (options.json) writeJson(result);
+      else printPrune(result);
+    }
     return 0;
   } catch (error) {
     if (!(error instanceof AthanorError)) throw error;
@@ -103,10 +128,11 @@ export async function main(argv) {
   }
 }
 
-async function runCommand(options, onProgress) {
+async function runCommand(options: CliOptions, onProgress: (line: string) => void): Promise<number> {
   const controller = new AbortController();
-  const onSignal = () => controller.abort();
-  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'].filter((s) => s !== 'SIGBREAK' || process.platform === 'win32');
+  const onSignal = (): void => controller.abort();
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  if (process.platform === 'win32') signals.push('SIGBREAK');
   for (const s of signals) process.on(s, onSignal);
   try {
     const result = await run({
@@ -114,7 +140,6 @@ async function runCommand(options, onProgress) {
       name: options.name,
       command: options.command,
       untracked: options.untracked === true,
-      json: options.json,
       signal: controller.signal,
       onProgress,
       stdout: options.json ? process.stderr : process.stdout,
@@ -128,7 +153,7 @@ async function runCommand(options, onProgress) {
   }
 }
 
-function resultLine(result) {
+function resultLine(result: RunResult): string {
   switch (result.outcome) {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;
@@ -139,18 +164,18 @@ function resultLine(result) {
   }
 }
 
-function printSummary(command, result) {
-  if (command === 'status') {
-    say(`run limit ${result.limit} (from ${result.limitSource}).`);
-    for (const s of result.slots) {
-      say(s.pid === undefined
-        ? `slot ${s.slot}: free.`
-        : `slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${Number.isFinite(new Date(s.started).getTime()) ? new Date(s.started).toISOString() : 'an unknown time'}, limit ${s.limit} (as the holder reports).`);
-    }
-    for (const c of result.containers) say(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
-    if (result.containers.length === 0) say('no athanor containers.');
-  } else {
-    const verb = result.dryRun ? 'would remove' : 'removed';
-    say(`${verb} ${result.removed.length} image${result.removed.length === 1 ? '' : 's'}${result.removed.length ? ': ' + result.removed.join(', ') : ''}; kept ${result.kept.length}.`);
+function printStatus(result: StatusResult): void {
+  say(`run limit ${result.limit} (from ${result.limitSource}).`);
+  for (const s of result.slots) {
+    say(s.pid === undefined
+      ? `slot ${s.slot}: free.`
+      : `slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${Number.isFinite(new Date(s.started as number).getTime()) ? new Date(s.started as number).toISOString() : 'an unknown time'}, limit ${s.limit} (as the holder reports).`);
   }
+  for (const c of result.containers) say(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
+  if (result.containers.length === 0) say('no athanor containers.');
+}
+
+function printPrune(result: PruneResult): void {
+  const verb = result.dryRun ? 'would remove' : 'removed';
+  say(`${verb} ${result.removed.length} image${result.removed.length === 1 ? '' : 's'}${result.removed.length ? ': ' + result.removed.join(', ') : ''}; kept ${result.kept.length}.`);
 }

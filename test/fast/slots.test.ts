@@ -1,20 +1,21 @@
 // Slot limits with real OS locks, and status. One top-level test per claim.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { run, status } from '../../dist/index.js';
-import { lockPath } from '../../dist/slots.js';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, together, waited } from '../helpers.mjs';
+import { run, status } from '#dist/index.js';
+import { lockPath } from '#dist/slots.js';
+import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, together, waited } from '../helpers.ts';
 
 // Hold a slot from this process with any answer line; returns a closer.
-function holdSlot(t, prefix, slot, line) {
+function holdSlot(t: TestContext, prefix: string, slot: number, line: string) {
   return new Promise((resolve, reject) => {
     const server = net.createServer((s) => { s.on('error', () => {}); s.end(line); });
     server.once('error', reject);
     server.listen(lockPath(prefix, slot), () => {
-      t.after(() => new Promise((r) => server.close(() => r())));
+      t.after(() => new Promise<void>((r) => server.close(() => r())));
       resolve(server);
     });
   });
@@ -36,7 +37,7 @@ test('C9 ATHANOR_MAX_RUNS sets the limit, bad values exit 125, and a holder abov
       const docker = fake(t);
       const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix() });
       assert.equal(result.exitCode, 125);
-      assert.match(result.message, /ATHANOR_MAX_RUNS/);
+      assert.match(result.message!, /ATHANOR_MAX_RUNS/);
       assert.equal(docker.calls().length, 0);
     });
   }
@@ -46,7 +47,7 @@ test('C9 ATHANOR_MAX_RUNS sets the limit, bad values exit 125, and a holder abov
     const prefix = uniquePrefix();
     await holdSlot(t, prefix, 3, JSON.stringify({ slot: 3, pid: 1, started: 1, repo: 'x', limit: 3 }) + '\n');
     const repo = makeRepo(t, { athanor: baseConfig });
-    const lines = [];
+    const lines: string[] = [];
     const result = await run({ cwd: repo, docker: fake(t).docker, prefix, onProgress: (l) => lines.push(l) });
     assert.equal(result.outcome, 'pass');
     assert.ok(lines.some((l) => /warning: another caller uses a different run limit/.test(l)), lines.join('\n'));
