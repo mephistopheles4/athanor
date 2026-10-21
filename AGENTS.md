@@ -23,7 +23,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
   and the package's major version. An addition bumps neither.
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, no other `-e`, and `--network none`
-  (ADR 0005). A change here is security-sensitive work.
+  (ADR 0015). An `-e` with an empty value, which blocks a value the Docker CLI
+  would otherwise add, is allowed. Today that means the ten proxy names, each
+  written `-e NAME=` and never `-e NAME`. A change here is security-sensitive work.
 - **Messages use plain words.** Each says what happened and, for a warning or
   an error, what to do next.
 - **Source files use LF line endings** (`.gitattributes`). The container's
@@ -61,9 +63,10 @@ prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
-spec on issue 1; `T1` to `T14`, from the spec on issue 8). C22 (the Windows
-check), the required-check half of C23, and T14 (C22 and the fast tier on
-Windows) are manual checks on the owner's machine.
+spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
+issue 23). C22 (the Windows check), the required-check half of C23, T14 (C22
+and the fast tier on Windows) and P1 on Windows are manual checks on the
+owner's machine.
 
 ## The tracker
 

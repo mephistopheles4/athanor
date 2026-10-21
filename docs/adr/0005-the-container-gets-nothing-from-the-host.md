@@ -1,6 +1,6 @@
 # 0005. The container gets nothing from the host
 
-Date: 2026-10-19 · Status: accepted · Source: spec revision 5 on issue 1 (S4, S9, C6, C7, C19)
+Date: 2026-10-19 · Status: superseded by 0015 · Source: spec revision 5 on issue 1 (S4, S9, C6, C7, C19)
 
 `docker run` gets `-i --init --pull never --log-driver none --network none`,
 memory, memory-swap and CPU limits, `--pids-limit 1024`,
