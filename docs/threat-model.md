@@ -188,7 +188,7 @@ candidate, so other work can point at it.
    on the engine's machine, such as other runs' snapshots and image layers.
    Every other capability is dropped by an allow-list, so one a later Docker
    adds does not reach the container (ADR 0016). Accepted because the container
-   also has no network, no host folders and `no-new-privileges`, the five are
+   also has no network, no host folders and `no-new-privileges`, the other five are
    what a root-run test can plausibly need and `KILL` is what the in-container
    time limit needs for a test that switches user, and the run limit is the
    owner's own setting.
