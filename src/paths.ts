@@ -17,19 +17,19 @@ function isInside(root: string, path: string): boolean {
 }
 
 // Returns the path relative to the repo root, with forward slashes ('.' for the root).
-// `where` names the place the path was set, such as 'the "athanor" key'.
+// `where` names the place the path was set, such as 'athanor.json' or 'the "athanor" key in package.json'.
 export function insideRepo(root: string, value: string, key: string, where: string): string {
   const realRoot = realpathSync.native(root);
   const target = resolve(realRoot, value);
   if (!isInside(realRoot, target)) {
-    throw new AthanorError(`${key} "${value}" is outside the repo. Every configured path must stay inside the repo root.`);
+    throw new AthanorError(`${key} "${value}" in ${where} is outside the repo. Every configured path must stay inside the repo root.`);
   }
   if (!existsSync(target)) {
     throw new AthanorError(`${key} "${value}" does not exist in the repo. Fix the path in ${where}.`);
   }
   const real = realpathSync.native(target);
   if (!isInside(realRoot, real)) {
-    throw new AthanorError(`${key} "${value}" is outside the repo: it leads through a link to a place outside the repo root.`);
+    throw new AthanorError(`${key} "${value}" in ${where} is outside the repo: it leads through a link to a place outside the repo root.`);
   }
   // From the real path, so Windows gives the folder's own spelling, as git has it.
   const rel = relative(realRoot, real).split(sep).join('/');

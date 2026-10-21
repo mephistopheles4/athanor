@@ -6,6 +6,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { run } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
 import type { Call } from '../helpers.ts';
@@ -26,7 +27,7 @@ function assertSetupError(result: RunResult, calls: Call[], pattern: RegExp) {
 
 test('C18 bad configuration and bad command lines exit 125 naming the problem; -- overrides the named command', async (t) => {
   const configRows = [
-    { name: 'missing key', athanor: undefined, says: /no repo configuration.*athanor\.json.*"athanor" key in package\.json/is },
+    { name: 'missing key', athanor: undefined, says: /no repo configuration.*add an athanor\.json.*"athanor" key in package\.json/is },
     { name: 'unknown command name', athanor: baseConfig, runName: 'lint', says: /no command named "lint".*Its commands are: test/s },
     { name: 'a name that is a built-in object member', athanor: baseConfig, runName: 'constructor', says: /no command named "constructor".*Its commands are: test/s },
     { name: 'string command', athanor: { ...baseConfig, commands: { test: 'npm test' } }, says: /commands\.test must be an array of strings, such as \["npm", "test"\]/ },
@@ -258,9 +259,8 @@ test('J1 a run configured in athanor.json makes the same Docker calls as the sam
     const docker = fake(t);
     const result = await run({ cwd: repo, docker: docker.docker, prefix });
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
-    // The image tag hashes the snapshot, which differs by the configuration file.
-    const calls = docker.calls().filter((c) => c.args[0] === 'build' || c.args[0] === 'run');
-    return calls.map((c) => c.args.map((a) => a.replace(/athanor:[0-9a-f]{32}/, 'athanor:TAG')));
+    // The image tag is part of the comparison: it hashes the context and the inputs.
+    return docker.calls().filter((c) => c.args[0] === 'build' || c.args[0] === 'run').map((c) => c.args);
   };
   const a = await shape(byFile);
   assert.equal(a.length, 2);
@@ -308,6 +308,7 @@ test('J5 athanor.json with a package.json that is not valid JSON exits 125 namin
   const repo = makeRepo(t, { files: { 'athanor.json': asJson(baseConfig), 'package.json': `{ ${MARKER}` } });
   const { result, calls } = await runIn(t, repo);
   assertSetupError(result, calls, /package\.json.*not valid JSON/s);
+  assert.equal(result.message, 'package.json at the repo root is not valid JSON, so athanor cannot tell whether it also has an "athanor" key next to athanor.json. Fix it, then run again.');
   assertNoLeak(result.message!, repo, MARKER);
   assert.equal(calls.length, 0, 'no Docker call at all');
 });
@@ -315,8 +316,8 @@ test('J5 athanor.json with a package.json that is not valid JSON exits 125 namin
 test('J6 athanor.json gets the key checks, and both files must be regular files inside the repo', async (t) => {
   const outside = tempDir(t, 'athanor-outside-');
   writeFileSync(join(outside, 'other.json'), JSON.stringify({ outsideKeyName: 1 }));
-  const rows: { name: string; json?: string; dir?: boolean; link?: string; says: RegExp; absent?: string[] }[] = [
-    { name: 'invalid JSON', json: `{ ${MARKER}`, says: /athanor\.json.*not valid JSON/s, absent: [MARKER] },
+  const rows: { name: string; json?: string; dir?: boolean; link?: string; says: RegExp; exact?: string; absent?: string[] }[] = [
+    { name: 'invalid JSON', json: `{ ${MARKER}`, says: /athanor\.json.*not valid JSON/s, exact: 'athanor.json at the repo root is not valid JSON. Fix it, then run again.', absent: [MARKER] },
     { name: 'not an object', json: '[1]', says: /athanor\.json must hold one JSON object/ },
     { name: 'an unknown key', json: asJson({ ...baseConfig, image: 'x' }), says: /athanor\.json has an unknown key "image". Its keys are: dockerfile/ },
     { name: 'a string command', json: asJson({ ...baseConfig, commands: { test: 'npm test' } }), says: /athanor\.json.*commands\.test must be an array of strings/s },
@@ -329,17 +330,25 @@ test('J6 athanor.json gets the key checks, and both files must be regular files 
   for (const row of rows) {
     await t.test(row.name, async (t) => {
       isolate(t);
-      const plain = row.json !== undefined && row.link === undefined;
-      const repo = makeRepo(t, { packageJson: row.link !== 'package.json', files: plain ? { 'athanor.json': row.json! } : {} });
+      const repo = makeRepo(t, { packageJson: row.link !== 'package.json', files: row.json !== undefined ? { 'athanor.json': row.json } : {} });
       if (row.dir) mkdirSync(join(repo, 'athanor.json'));
-      if (row.link === 'package.json') writeFileSync(join(repo, 'athanor.json'), row.json!);
       if (row.link) symlinkSync(join(outside, 'other.json'), join(repo, row.link), 'file');
       const { result, calls } = await runIn(t, repo);
       assertSetupError(result, calls, row.says);
+      if (row.exact !== undefined) assert.equal(result.message, row.exact);
       assertNoLeak(result.message!, repo, ...(row.absent ?? []));
       assert.equal(calls.length, 0, 'no Docker call at all');
     });
   }
+
+  await t.test('a pipe named athanor.json inside the repo exits 125 promptly', { skip: process.platform === 'win32' ? 'no mkfifo' : false, timeout: 20000 }, async (t) => {
+    isolate(t);
+    const repo = makeRepo(t);
+    const made = spawnSync('mkfifo', [join(repo, 'athanor.json')], { shell: false });
+    assert.equal(made.status, 0, 'mkfifo');
+    const { result, calls } = await runIn(t, repo);
+    assertSetupError(result, calls, /athanor.json at the repo root could not be read/);
+  });
 
   await t.test('a link to /dev/zero exits 125 promptly', { skip: process.platform === 'win32' ? 'no /dev/zero' : false }, async (t) => {
     isolate(t);
@@ -374,7 +383,7 @@ test('J8 with no repo configuration the message names both forms', async (t) => 
       const repo = makeRepo(t, row.opts);
       const { result, calls } = await runIn(t, repo);
       assertSetupError(result, calls, bothFiles);
-      assert.match(result.message!, /athanor\.json at the repo root.*"athanor" key in package\.json/s);
+      assert.match(result.message!, /Add an athanor\.json at the repo root.*"athanor" key in package\.json/s);
     });
   }
 });

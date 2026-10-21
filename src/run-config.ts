@@ -1,7 +1,7 @@
 // The run configuration: everything a run needs from the repo configuration
 // and the machine configuration, path-checked and ceiling-checked, with the
 // source of each value, so every message names the file to fix.
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync, closeSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
@@ -37,7 +37,7 @@ const memory = (example: string): Check => ({
 
 // The one table of configuration keys: which file may set each, and the check
 // for its value. Messages list the keys in this order. The repo-only keys are
-// checked by readRepoConfig. allowPlainTcp is machine-only, so a repo cannot
+// checked by checkRepoValues. allowPlainTcp is machine-only, so a repo cannot
 // open a plain tcp endpoint for itself (ADR 0013).
 const KEYS = {
   dockerfile: { repo: true, machine: false },
@@ -163,26 +163,38 @@ export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig):
 
 // One configuration file at the repo root, as text. It must be a regular file
 // whose real path is inside the repo, so a link out, a device or a pipe is
-// never read. Whatever goes wrong, the message holds no file content, no
-// system error text and no host path.
+// never read. The real path is opened once, without following a link and
+// without waiting on a pipe, and the open handle is checked to be the file
+// that was checked, so a swap between the check and the read is refused.
+// Whatever goes wrong, the message holds no file content, no system error text
+// and no host path.
 function readRootFile(root: string, file: string): string {
+  let fd: number | undefined;
   try {
-    insideRepo(root, file, file, file);
-    if (!statSync(join(root, file)).isFile()) throw new Error('not a regular file');
-    return readFileSync(join(root, file), 'utf8');
+    const real = join(realpathSync.native(root), insideRepo(root, file, file, file));
+    const before = lstatSync(real, { bigint: true });
+    if (!before.isFile()) throw new Error('not a regular file');
+    // O_NOFOLLOW and O_NONBLOCK are not defined on Windows, where they count as 0.
+    fd = openSync(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const opened = fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error('not the file that was checked');
+    return readFileSync(fd, 'utf8');
   } catch {
-    throw new AthanorError(`${file} at the repo root could not be read. Make it a regular file inside the repo, then run again.`);
+    throw new AthanorError(`${file} at the repo root could not be read. Make it a regular file inside the repo that you can read, then run again.`);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
 const PACKAGE_KEY = 'athanor';
 const PACKAGE_PLACE = `the "${PACKAGE_KEY}" key in package.json`;
 // The same words at the start of a sentence.
-const PACKAGE_PLACE_LEAD = `The ${PACKAGE_PLACE.slice(4)}`;
+const PACKAGE_PLACE_LEAD = `The "${PACKAGE_KEY}" key in package.json`;
 
 // The repo configuration, validated: athanor.json, or the athanor key in the
-// package.json at the repo root, never both.
-function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; values: RepoValues } {
+// package.json at the repo root, never both. `place` names where it was read,
+// for every message that sends the user back to it.
+function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; values: RepoValues; place: string } {
   const hasJson = existsSync(join(root, 'athanor.json'));
   let pkg: unknown;
   if (existsSync(join(root, 'package.json'))) {
@@ -205,23 +217,25 @@ function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; valu
   let config: unknown;
   let source: Source & { kind: 'repo' };
   let place: string;
+  let lead: string;
   if (hasJson) {
     source = { kind: 'repo', file: 'athanor.json' };
-    place = 'athanor.json';
+    place = lead = 'athanor.json';
+    const text = readRootFile(root, 'athanor.json');
     try {
-      config = JSON.parse(readRootFile(root, 'athanor.json'));
-    } catch (e) {
-      if (e instanceof AthanorError) throw e;
+      config = JSON.parse(text);
+    } catch {
       throw new AthanorError('athanor.json at the repo root is not valid JSON. Fix it, then run again.');
     }
-    if (!isObject(config)) throw new AthanorError('athanor.json must hold one JSON object.');
+    if (!isObject(config)) throw new AthanorError('athanor.json must hold one JSON object, such as { "dockerfile": "test/Dockerfile", "commands": { "test": ["npm", "test"] } }. Fix it, then run again.');
   } else {
     source = { kind: 'repo', file: 'package.json', key: PACKAGE_KEY };
     place = PACKAGE_PLACE;
+    lead = PACKAGE_PLACE_LEAD;
     config = (pkg as Record<string, unknown>)[PACKAGE_KEY];
-    if (!isObject(config)) throw new AthanorError(`${PACKAGE_PLACE_LEAD} must be an object.`);
+    if (!isObject(config)) throw new AthanorError(`${lead} must be an object.`);
   }
-  return { source, values: checkRepoValues(config, place, hasJson ? place : PACKAGE_PLACE_LEAD) };
+  return { source, values: checkRepoValues(config, place, lead), place };
 }
 
 // The checks on the repo configuration object, whichever place it came from.
@@ -261,9 +275,8 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
 // Everything a run needs. The machine configuration is read first, on its
 // own, because the run limit comes from it before the repo is found.
 export function resolveRunConfig(root: string, machine: MachineConfig, request: { name?: string; command?: string[] } = {}): RunConfig {
-  const { source: repoSource, values: repo } = readRepoConfig(root);
+  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
   const machineSource: Source = { kind: 'machine', file: machine.file };
-  const where = repoSource.key === undefined ? repoSource.file : `the "${repoSource.key}" key in ${repoSource.file}`;
   // Where a message tells the user to change a value: the file it came from,
   // or the repo configuration for a default.
   const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
@@ -274,7 +287,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     : (dockerfile.includes('/') ? dockerfile.slice(0, dockerfile.lastIndexOf('/')) : '.');
   const inputs = (repo.inputs ?? []).map((p) => insideRepo(root, p, 'inputs', where));
   if (!isUnder(context, dockerfile)) {
-    throw new AthanorError(`The Dockerfile "${repo.dockerfile}" is outside the context folder "${context}". Move it into the context, or widen the context.`);
+    throw new AthanorError(`The Dockerfile "${repo.dockerfile}" is outside the context folder "${context}". Move it into the context, or widen the context in ${where}.`);
   }
   const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
 

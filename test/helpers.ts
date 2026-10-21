@@ -50,7 +50,8 @@ export function git(cwd: string, args: string[], env: Record<string, string> = {
   return r.stdout;
 }
 
-// A repo with one commit holding the given files, and an athanor key.
+// A repo with one commit holding the given files, a package.json (unless
+// packageJson is false), and the athanor key in it when athanor is set.
 export interface RepoOptions {
   files?: Record<string, string>;
   athanor?: unknown;

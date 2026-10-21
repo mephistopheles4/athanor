@@ -72,8 +72,9 @@ The same object works as `athanor.json`, at the top level of the file with no
 ```
 
 Save `athanor.json` as UTF-8 without a byte-order mark. PowerShell 5.1's `>`
-writes UTF-16, which athanor rejects as invalid JSON. Both files must be
-regular files inside the repo, not links to a place outside it.
+writes UTF-16, which athanor rejects as invalid JSON. Whichever
+file you use must be a regular file inside the repo, not a link to a place
+outside it.
 
 - `dockerfile` (required) and `context` (default: the Dockerfile's folder)
   are repo-relative paths. Every tracked file under `context` keys the image,

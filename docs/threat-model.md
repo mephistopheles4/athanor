@@ -17,11 +17,11 @@ repo. Each session runs `athanor run` to test its work in a Linux container.
 CI runs athanor on Linux. athanor uses Docker as the user has it configured,
 local or remote (ADR 0012).
 
-**What athanor does.** It reads the repo's `athanor` key in `package.json`
-and an optional machine configuration, builds the repo's Dockerfile into an
-image, takes a snapshot of the work with git, holds one of N slot locks, and
-pipes the snapshot into a fresh container that runs the test command. It
-writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`).
+**What athanor does.** It reads the repo configuration (`athanor.json`, or the
+`athanor` key in `package.json`) and an optional machine
+configuration, builds the repo's Dockerfile into an image, takes a snapshot of
+the work with git, holds one of N slot locks, and pipes the snapshot into a
+fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`).
 
 **Who could act against it.**
 
@@ -68,7 +68,10 @@ above; the software they run is not.
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
-  before any Docker call (C17).
+  before any Docker call (C17). The configuration files themselves, `athanor.json`
+  and `package.json`, must each be a regular file whose real path is inside the
+  repo, opened once and checked on the open handle, before any of their content
+  is read (J6).
 - **Only the hashed set reaches the build.** The build context is exactly the
   tracked files under `context` plus the listed `inputs`, each of which must
   be tracked: no untracked or ignored file and no git folder (ADR 0006, C28).
