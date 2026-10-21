@@ -14,7 +14,7 @@ import type { Limits } from './run-config.js';
 // The line the boot script prints on stderr just before the test command.
 export const MARKER = 'athanor-boot-ok';
 
-// The six capabilities a test keeps (ADR 0016): the five a root-run test can
+// The six capabilities a test keeps (ADR 0016): five that a root-run test can
 // plausibly need, and KILL, which the in-container time limit needs to end a
 // test that switched to another user.
 export const KEPT_CAPABILITIES = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETUID', 'SETGID'];

@@ -262,7 +262,7 @@ test('C16 a command with shell characters reaches the container as the same lite
 });
 
 // The capability options, in order (ADR 0016): drop all, then keep six.
-const KEPT_CAPABILITIES = [
+const CAPABILITY_OPTIONS = [
   '--cap-drop', 'ALL', '--cap-add', 'CHOWN', '--cap-add', 'DAC_OVERRIDE', '--cap-add', 'FOWNER',
   '--cap-add', 'KILL', '--cap-add', 'SETUID', '--cap-add', 'SETGID',
 ];
@@ -275,9 +275,9 @@ test('K1 the docker run arguments drop every capability and add back exactly six
   const options = runOptions(callsOf(docker.calls(), 'run')[0].args, result.image!.tag);
   const at = options.indexOf('--cap-drop');
   assert.notEqual(at, -1, 'the capability options are present');
-  assert.deepEqual(options.slice(at, at + KEPT_CAPABILITIES.length), KEPT_CAPABILITIES);
+  assert.deepEqual(options.slice(at, at + CAPABILITY_OPTIONS.length), CAPABILITY_OPTIONS);
   assert.deepEqual(options.slice(at - 2, at), ['--security-opt', 'no-new-privileges'], 'right after no-new-privileges');
-  assert.equal(options[at + KEPT_CAPABILITIES.length], '-e', 'before the first -e');
+  assert.equal(options[at + CAPABILITY_OPTIONS.length], '-e', 'before the first -e');
   const capOptions = options.filter((o) => /^--cap-/.test(o) || /^--privileged/.test(o));
   assert.equal(capOptions.length, 7, 'no other capability option');
 });
@@ -296,7 +296,7 @@ test('C19 P2 no host environment value, host folder or socket reaches the contai
     '--network', 'none',
     '--memory', '2g', '--memory-swap', '2g', '--cpus', '2', '--pids-limit', '1024',
     '--security-opt', 'no-new-privileges',
-    ...KEPT_CAPABILITIES,
+    ...CAPABILITY_OPTIONS,
     '-e', 'ATHANOR_GRACE_LIMIT=1860',
     // The ten proxy names, each set empty and never in the bare form (ADR 0016).
     ...['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'FTP_PROXY', 'ftp_proxy',

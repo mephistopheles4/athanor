@@ -186,6 +186,8 @@ test('K4 a test that switches user is still ended by the in-container time limit
   const repo = makeRepo(t, { athanor: config, files: { 'test/Dockerfile': dockerfile } });
   await runReal(t, repo);
   const prefix = uniquePrefix();
+  t.after(() => { docker(['rm', '-f', `${prefix}-slot-1`]); });
+  // The orphan case of C11 with a test that switched user: keep the timings in step with it.
   const killed = startDriver({ cwd: repo, prefix, home, command: ['su-exec', '1000', 'sleep', '600'], timeLimitSeconds: 3, graceSeconds: 2 });
   await until(() => runningCount(prefix) === 1, 60000, 'the container to start');
   const startedAt = Date.now();
@@ -193,7 +195,6 @@ test('K4 a test that switches user is still ended by the in-container time limit
   await killed.done;
   await until(() => runningCount(prefix) === 0, 30000, 'the orphan to end itself');
   assert.ok(Date.now() - startedAt <= 15000, 'it ended within the time limit plus the grace, with slack, far short of the sleep');
-  docker(['rm', '-f', `${prefix}-slot-1`]);
 });
 
 test('C10 a hard-killed caller frees its slot, and the next run removes the old container first', async (t) => {

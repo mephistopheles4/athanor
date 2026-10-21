@@ -24,8 +24,11 @@ It gets no `-v`, `--mount` or `--privileged`, and no `-e` but these:
   `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is written `-e NAME=`, with
   nothing after the `=`. The bare form `-e NAME` would copy the host's own
   value in, so it is never used. The Docker CLI adds proxy variables from its
-  own client configuration after it has parsed athanor's arguments, and a
-  proxy setting can hold a password; an empty override stops that.
+  own client configuration (`proxies` in `config.json`) after it has parsed
+  athanor's arguments, and a proxy setting can hold a password, so the values
+  would reach the test code. The check on issue 23 confirmed this on Docker
+  29.9.2: ten names were filled with the configured values. An empty override
+  stops that.
 
 The snapshot arrives on stdin. Docker keeps no log of the output.
 
@@ -51,11 +54,12 @@ later Docker adds to its defaults does not reach the container.
 **The list of proxy names is fixed.** It holds the names the Docker client
 fills from the five proxy settings it reads today. A setting that a later
 client adds reaches the container until the list is updated, and test P1
-cannot see it. This is accepted risk 11 in the threat model. athanor does not
+cannot see it. This is accepted risk 11 in the threat model. A Docker release
+that adds a proxy setting is a reason to update the list. athanor does not
 read the client configuration to find the names (ADR 0012).
 
 **The build is unchanged.** `docker build` still gets the proxy settings as
 build arguments, which a build behind a proxy needs (accepted risk 1).
 
-**Rollback.** Revert the commit that added the options; ADR 0015 is current
-again.
+**Rollback.** Revert the change (the options, this record and the threat
+model's edits); ADR 0015 is current again.

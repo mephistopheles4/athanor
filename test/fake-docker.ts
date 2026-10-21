@@ -64,6 +64,8 @@ function option(name: string): string | undefined {
 // The `run` options athanor uses. Any other option is a typo in the container's
 // options, so the fake refuses it. The image is the first argument after them.
 const RUN_FLAGS = new Set(['-i', '--init']);
+// A repeated option (`-e`, `--cap-add`) keeps only its last value in the parsed
+// options; a check on one reads the raw arguments.
 const RUN_VALUED = new Set([
   '--pull', '--log-driver', '--name', '--label', '--network', '--memory', '--memory-swap',
   '--cpus', '--pids-limit', '--security-opt', '--cap-drop', '--cap-add', '-e',

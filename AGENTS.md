@@ -70,7 +70,8 @@ issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
 issue 4). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3 and K6 are checked by
-reading at review; no test carries their names.
+reading at review; no test carries their names. K3 is shown by the docker
+tier's pass, and no test carries its name either.
 
 ## The tracker
 

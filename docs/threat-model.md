@@ -56,7 +56,7 @@ above; the software they run is not.
   and `ATHANOR_GRACE_LIMIT`: no network, no host folder, no host environment
   value, no Docker socket, no privileged mode, and only six Linux capabilities: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`, every other one
-  dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1; K4 beside C11). The run
+  dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
   blocks, with empty values, the ten proxy names the Docker CLI fills from the
   five proxy settings it reads today (accepted risk 11). A value the build
   writes into the image or its cache is accepted risk 1. This, and
@@ -65,7 +65,7 @@ above; the software they run is not.
   decides (accepted risk 7).
 - **Fixed limits on each run:** memory and memory-swap, CPUs, a process limit
   of 1024, `no-new-privileges`, a host-side time limit and an in-container
-  timer (C7, C11). The machine configuration's ceilings bound what any repo
+  timer (C7, C11, K4). The machine configuration's ceilings bound what any repo
   can ask for (C31).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
