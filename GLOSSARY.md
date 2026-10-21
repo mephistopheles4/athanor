@@ -26,6 +26,9 @@
 - **Machine configuration.** The optional `config.json` in the state folder:
   the run limit, default per-run limits, their ceilings, and the default age
   for `prune`.
+- **Repo configuration.** What the repo sets for athanor: the `athanor.json`
+  file at the repo root, or the `athanor` key in its `package.json`, never
+  both. A run with both exits 125.
 - **Run configuration.** Everything a run needs from the repo configuration
   and the machine configuration: the build settings, the command, the limits,
   the time limit and the Docker endpoint settings. Its paths are checked to

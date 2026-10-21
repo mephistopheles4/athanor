@@ -158,7 +158,7 @@ function resultLine(result: RunResult): string {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;
     case 'timeout': return `the time limit ended the run (exit ${result.exitCode}). Raise timeoutMinutes, or find what hangs.`;
-    case 'memory': return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in the athanor key, or use less.`;
+    case 'memory': return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
     case 'interrupted': return `the run was interrupted and cleaned up (exit ${result.exitCode}).`;
     default: return `athanor could not run the test (exit ${result.exitCode}): ${result.message}`;
   }

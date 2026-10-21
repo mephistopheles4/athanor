@@ -77,6 +77,14 @@ test('C1 a run builds the image, runs the command, streams output and exits with
   assert.match(fail.stderr, /failing/);
 });
 
+test('J9 a repo with only athanor.json (no package.json) runs its command and passes', async (t) => {
+  isolate(t);
+  const repo = makeRepo(t, { packageJson: false, files: { ...FIXTURE, 'athanor.json': JSON.stringify(config) } });
+  const { result, stdout, stderr } = await runReal(t, repo);
+  assert.equal(result.outcome, 'pass', JSON.stringify(result) + stderr);
+  assert.equal(stdout, 'fixture-ok\n');
+});
+
 test('C2 a warm run makes no build and adds at most 5 seconds to the container\'s run time', async (t) => {
   isolate(t);
   const repo = fixtureRepo(t);
