@@ -179,7 +179,7 @@ function readRootFile(root: string, file: string): string {
     // O_NOFOLLOW and O_NONBLOCK are not defined on Windows, where they count as 0.
     fd = openSync(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = fstatSync(fd, { bigint: true });
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error('not the file that was checked');
+    if (!opened.isFile() || opened.nlink > 1n || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error('not the file that was checked');
     return readFileSync(fd, 'utf8');
   } catch {
     throw new AthanorError(`${file} at the repo root could not be read. Make it a regular file inside the repo that you can read, then run again.`);

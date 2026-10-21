@@ -230,3 +230,40 @@ candidate, so other work can point at it.
     script, which is fragile and leaves the engine's copy in place. A Docker
     release that adds a proxy setting is a reason to update the list.
     Accepted 2026-10-21. From: issue 23, the Design review of the spec (adversarial-lens, the fixed list of names; data-lens, P1's reach). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
+12. **A configuration-file link that Windows follows to a network location.** On
+    Windows, a link at the repo root named `athanor.json` or `package.json`
+    that leads to a network location is followed by the path resolution before
+    athanor tests whether it is inside the repo, so the machine can start a
+    sign-in to that location. No content is read. Accepted because it needs a
+    Windows checkout with real links turned on and a repo from someone who
+    wants this, and `package.json` already had the same path before the
+    `athanor.json` change.
+    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, the Windows network location at the repo root; data-lens). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
+13. **A folder swapped under an in-repo link to a configuration file.** When
+    `athanor.json` or `package.json` is a link to a file in a subfolder of the
+    repo, a program that can write the repo while athanor runs can swap that
+    subfolder for a link out between the path check and the open, and an outside
+    file is read as configuration. At most a key name or a path value from it
+    appears in a message. Accepted because it needs write access to the repo
+    during the run, which the owner's own programs already have, and a fix
+    would either refuse links at the repo root or work on Linux only.
+    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a folder swapped on the path of an in-repo link). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
+14. **A dangling link named `athanor.json` counts as absent.** A link named
+    `athanor.json` that points nowhere is treated as not there, so an
+    `athanor` key in `package.json` is used with no conflict message.
+    Accepted because the spec defines "exists" as what the file system call
+    sees, and anyone who can plant the link can already edit the repo.
+    Accepted 2026-10-21. From: issue 7, the first-round review of #30 (unstated-lens, a broken link read as absent). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
+15. **A file moved into the repo for the moment of the read.** A program that
+    can write both the repo root and the folder of an outside file can give that
+    file its only name in the repo for the moment athanor reads it, and no
+    point-in-time check can tell it from a real configuration file. Accepted
+    because the attacker needs write access to both places, and the gain is
+    limited to what a message shows.
+    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file whose only name is placed in the repo for the read). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
+16. **A file mounted over a configuration file name on Linux.** A file mounted
+    over `athanor.json` or `package.json` passes every check, because the
+    path, the link count and the opened file all agree. Accepted because it
+    needs mount privilege, which is root, and finding it would mean parsing the
+    mount table on Linux only.
+    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file mounted over the configuration name). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
