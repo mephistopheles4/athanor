@@ -165,7 +165,8 @@ export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig):
 // whose real path is inside the repo, so a link out, a device or a pipe is
 // never read. The real path is opened once, without following a link and
 // without waiting on a pipe, and the open handle is checked to be the file
-// that was checked, so a swap between the check and the read is refused.
+// that was checked, so a swap of the last name between the check and the read
+// is refused. A file with more than one hard link is refused too.
 // Whatever goes wrong, the message holds no file content, no system error text
 // and no host path.
 function readRootFile(root: string, file: string): string {
@@ -173,7 +174,8 @@ function readRootFile(root: string, file: string): string {
   try {
     const real = join(realpathSync.native(root), insideRepo(root, file, file, file));
     const before = lstatSync(real, { bigint: true });
-    if (!before.isFile()) throw new Error('not a regular file');
+    // A file with a second hard link may be the same data as a file outside the repo.
+    if (!before.isFile() || before.nlink > 1n) throw new Error('not a plain regular file');
     // O_NOFOLLOW and O_NONBLOCK are not defined on Windows, where they count as 0.
     fd = openSync(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = fstatSync(fd, { bigint: true });

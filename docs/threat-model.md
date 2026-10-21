@@ -70,8 +70,9 @@ above; the software they run is not.
   as the repo root and compared segment by segment, ignoring case on Windows,
   before any Docker call (C17). The configuration files themselves, `athanor.json`
   and `package.json`, must each be a regular file whose real path is inside the
-  repo, opened once and checked on the open handle, before any of their content
-  is read (J6).
+  repo, and must have no second hard link. The file is opened once, and the
+  open handle must be the regular file that was checked, before any of its
+  content is read (J6).
 - **Only the hashed set reaches the build.** The build context is exactly the
   tracked files under `context` plus the listed `inputs`, each of which must
   be tracked: no untracked or ignored file and no git folder (ADR 0006, C28).
