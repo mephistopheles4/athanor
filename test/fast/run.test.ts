@@ -261,7 +261,7 @@ test('C16 a command with shell characters reaches the container as the same lite
   });
 });
 
-test('C19 no host environment value, host folder or socket reaches the container', async (t) => {
+test('C19 P2 no host environment value, host folder or socket reaches the container', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t);
@@ -276,6 +276,9 @@ test('C19 no host environment value, host folder or socket reaches the container
     '--memory', '2g', '--memory-swap', '2g', '--cpus', '2', '--pids-limit', '1024',
     '--security-opt', 'no-new-privileges',
     '-e', 'ATHANOR_GRACE_LIMIT=1860',
+    // The ten proxy names, each set empty and never in the bare form (ADR 0015).
+    ...['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'FTP_PROXY', 'ftp_proxy',
+      'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy'].flatMap((name) => ['-e', `${name}=`]),
   ]);
 });
 

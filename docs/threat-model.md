@@ -54,7 +54,10 @@ above; the software they run is not.
   the container as the same literal arguments (C16).
 - **Nothing from the host reaches the container** but the snapshot on stdin
   and `ATHANOR_GRACE_LIMIT`: no network, no host folder, no host environment
-  value, no Docker socket, no privileged mode (ADR 0005, C6, C19). This, and
+  value, no Docker socket, no privileged mode (ADR 0015, C6, C19, P1). The run
+  blocks, with empty values, the ten proxy names the Docker CLI fills from the
+  five proxy settings it reads today (accepted risk 11). A value the build
+  writes into the image or its cache is accepted risk 1. This, and
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
   decides (accepted risk 7).
@@ -99,7 +102,9 @@ above; the software they run is not.
   under `context` or listed in `inputs`; the build has the network
   (accepted risk 1). With a remote engine or builder, those copies go to that
   machine (accepted risk 7), and a remote builder can ask this machine for the
-  owner's registry credentials (accepted risk 7). Plain tcp transport is refused
+  owner's registry credentials (accepted risk 7). The Docker client's proxy
+  settings can hold a password: the run blocks it (ADR 0015), and the build
+  receives it (accepted risk 1). Plain tcp transport is refused
   by default (ADR 0013; accepted risk 10 for the opt-out). Test output can hold
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
@@ -134,6 +139,23 @@ candidate, so other work can point at it.
    Accepted because athanor is for repos the owner trusts to build, and most
    Dockerfiles need the network to install packages.
    Accepted 2026-10-20. From: Spec revision 5, S9 and T4; the security review of the first build (adversarial-lens F8, data-lens F6). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+
+   The build also gets the Docker client's proxy settings as build arguments,
+   and a proxy setting can hold a password.
+
+   - A build step can read it and send it out over the build's network.
+   - It can print it into the build output, which reaches the caller and, from
+     an agent session, the session's model provider.
+   - A Dockerfile that writes it into the image, or only refers to it, can
+     leave it in the image's files, metadata or history, or in the build cache.
+     There it stays until removed, and `prune` does not clear the build cache.
+     The test run, the engine's operator and a shared engine's other users can
+     read it there (accepted risks 7 and 8).
+   - The configured builder receives it too (accepted risk 7).
+
+   Accepted because the build needs the proxy behind one, and blocking it would
+   mean athanor choosing the build's Docker configuration, against ADR 0012.
+   Extended 2026-10-21. From: issue 23 (a data-lens finding in the Test review of #13; the Design reviews of this spec). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
 2. **The slot names are open to local programs.** Any local program can take
    the slot names to block runs, or answer `status` with false holder
    details. Accepted because limiting the Windows pipe to the owner's account
@@ -190,8 +212,17 @@ candidate, so other work can point at it.
    a spec'd warning.
    Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F4); the owner's q10 A. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 10. **Plain tcp, when the owner opts in.** With `"allowPlainTcp": true` in the
-    machine configuration, the snapshot, the build context and the test output
+    machine configuration, the snapshot, the build context, the build arguments and the test output
     cross the network unencrypted, readable and changeable by anyone on the
     path. Accepted because the opt-out is for networks the owner trusts, and
     only the machine configuration can set it.
     Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F2, data-lens F1); the owner's q8 A2. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+11. **A proxy setting a later Docker client adds.** athanor blanks the ten
+    proxy names the Docker client fills from the five proxy settings it reads
+    today (ADR 0015). A setting that a later client adds, beyond those five,
+    reaches the container until athanor's list is updated, and P1 cannot see
+    it. Accepted because a guard at run time would mean either reading the
+    client configuration, against ADR 0012, or blanking names in the boot
+    script, which is fragile and leaves the engine's copy in place. A Docker
+    release that adds a proxy setting is a reason to update the list.
+    Accepted 2026-10-21. From: issue 23, the Design review of the spec (adversarial-lens, the fixed list of names; data-lens, P1's reach). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.

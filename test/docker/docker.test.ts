@@ -277,3 +277,52 @@ test('C15 with --json, stdout holds exactly one JSON object and everything else 
   assert.equal(p.code, 0);
   assert.deepEqual(Object.keys(JSON.parse(p.stdout)).sort(), ['dryRun', 'kept', 'removed', 'schema']);
 });
+
+const PROXY_NAMES = [
+  'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'FTP_PROXY', 'ftp_proxy',
+  'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy',
+];
+
+test('P1 the Docker client\'s proxy settings do not reach the container', async (t) => {
+  isolate(t);
+  const repo = fixtureRepo(t);
+  // Build the image first, with the normal configuration: under a fake proxy
+  // the fixture's apk add would fail.
+  const built = await runReal(t, repo);
+  assert.equal(built.result.outcome, 'pass', JSON.stringify(built.result) + built.stderr);
+  // A scratch configuration folder drops the active context, so keep the
+  // engine the normal configuration reaches.
+  const inspected = docker(['context', 'inspect']);
+  assert.equal(inspected.status, 0, inspected.stderr);
+  const host = JSON.parse(inspected.stdout)[0].Endpoints.docker.Host as string;
+  // Set after isolate(t), not through it: the endpoint is only known once the
+  // image is built with the normal configuration. isolate() restores it.
+  const savedConfig = process.env.DOCKER_CONFIG;
+  t.after(() => {
+    if (savedConfig === undefined) delete process.env.DOCKER_CONFIG;
+    else process.env.DOCKER_CONFIG = savedConfig;
+  });
+  const secret = 'athanor-fake-secret';
+  const proxy = `http://athanor-fake-user:${secret}@proxy.invalid:3128`;
+  const envOf = async (config: object) => {
+    const dir = tempDir(t, 'athanor-docker-config-');
+    writeFileSync(join(dir, 'config.json'), JSON.stringify(config));
+    process.env.DOCKER_CONFIG = dir;
+    const r = await runReal(t, repo, { command: ['env'] });
+    assert.equal(r.result.outcome, 'pass', JSON.stringify(r.result) + r.stderr);
+    assert.equal(r.result.image!.built, false, 'the image is reused, not rebuilt under the fake proxy');
+    return r;
+  };
+  const baseline = await envOf({});
+  const proxied = await envOf({ proxies: { default: {
+    httpProxy: proxy, httpsProxy: proxy, ftpProxy: proxy, noProxy: 'athanor-fake-host.invalid', allProxy: proxy,
+  } } });
+  const lines = proxied.stdout.split('\n').filter(Boolean);
+  for (const name of PROXY_NAMES) {
+    assert.ok(lines.includes(`${name}=`), `${name} is set and empty`);
+  }
+  assert.equal((proxied.stdout + proxied.stderr).includes(secret), false, 'the fake proxy password is nowhere in the output');
+  assert.equal((proxied.stdout + proxied.stderr).includes('athanor-fake-host'), false, 'the fake noProxy value is nowhere in the output');
+  const names = (out: string) => out.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('='))).sort();
+  assert.deepEqual(names(proxied.stdout), names(baseline.stdout), 'the same variable names as with no proxy settings');
+});

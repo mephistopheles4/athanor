@@ -9,7 +9,7 @@ changed one gets a new record that names the one it replaces.
 | [0002](0002-no-shell.md) | No command string, no shell |
 | [0003](0003-core-and-thin-cli.md) | A core module with a thin CLI |
 | [0004](0004-the-os-lock.md) | The slot lock is the OS lock |
-| [0005](0005-the-container-gets-nothing-from-the-host.md) | The container gets nothing from the host |
+| [0005](0005-the-container-gets-nothing-from-the-host.md) | The container gets nothing from the host (superseded by 0015) |
 | [0006](0006-the-image-is-built-from-the-hashed-set.md) | The image is built from exactly the files that key its tag |
 | [0007](0007-snapshots-never-write-the-repo.md) | Snapshots never write the repo |
 | [0008](0008-local-docker-only.md) | Local Docker only (superseded by 0012) |
@@ -19,3 +19,4 @@ changed one gets a new record that names the one it replaces.
 | [0012](0012-docker-as-configured.md) | Docker as configured |
 | [0013](0013-plain-tcp-refused-by-default.md) | A plain tcp Docker endpoint is refused by default |
 | [0014](0014-typescript-compiled-to-dist.md) | TypeScript source, compiled to dist |
+| [0015](0015-empty-overrides-for-the-docker-clients-proxy-settings.md) | Empty overrides for the Docker client's proxy settings |
