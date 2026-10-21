@@ -161,6 +161,33 @@ test('C8 with the default limit, three runs never have more than two containers 
   assert.equal(midStatus.containers.length, 2);
 });
 
+test('K2 the container bounding and effective capability sets are exactly the six', async (t) => {
+  isolate(t);
+  const repo = fixtureRepo(t);
+  const r = await runReal(t, repo, { command: ['grep', '^Cap', '/proc/self/status'] });
+  assert.equal(r.result.outcome, 'pass', JSON.stringify(r.result) + r.stderr);
+  const mask = (name: string) => BigInt(`0x${new RegExp(`^${name}:\\s*([0-9a-f]+)$`, 'm').exec(r.stdout)![1]}`);
+  // CHOWN 0, DAC_OVERRIDE 1, FOWNER 3, KILL 5, SETGID 6, SETUID 7.
+  assert.equal(mask('CapBnd'), 0xebn);
+  assert.equal(mask('CapEff'), 0xebn);
+});
+
+test('K4 a test that switches user is still ended by the in-container time limit after the caller is hard-killed', async (t) => {
+  const home = isolate(t);
+  const dockerfile = 'FROM alpine:3.20\nRUN apk add --no-cache git su-exec\n';
+  const repo = makeRepo(t, { athanor: config, files: { 'test/Dockerfile': dockerfile } });
+  await runReal(t, repo);
+  const prefix = uniquePrefix();
+  const killed = startDriver({ cwd: repo, prefix, home, command: ['su-exec', '1000', 'sleep', '600'], timeLimitSeconds: 3, graceSeconds: 2 });
+  await until(() => runningCount(prefix) === 1, 60000, 'the container to start');
+  const startedAt = Date.now();
+  killed.child.kill('SIGKILL');
+  await killed.done;
+  await until(() => runningCount(prefix) === 0, 30000, 'the orphan to end itself');
+  assert.ok(Date.now() - startedAt <= 15000, 'it ended within the time limit plus the grace, with slack, far short of the sleep');
+  docker(['rm', '-f', `${prefix}-slot-1`]);
+});
+
 test('C10 a hard-killed caller frees its slot, and the next run removes the old container first', async (t) => {
   const home = isolate(t);
   const prefix = uniquePrefix();

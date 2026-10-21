@@ -69,6 +69,11 @@ Add an `athanor` key to the `package.json` at the repo root:
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
 
+A test keeps six Linux capabilities (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
+`SETUID` and `SETGID`) and loses the other eight of Docker's defaults. A test
+that needs one of the eight, such as `MKNOD` or `NET_RAW`, fails with a
+permission error, and no configuration gives one back yet.
+
 ## Use
 
 ```bash

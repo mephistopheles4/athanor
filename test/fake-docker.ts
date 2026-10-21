@@ -66,7 +66,7 @@ function option(name: string): string | undefined {
 const RUN_FLAGS = new Set(['-i', '--init']);
 const RUN_VALUED = new Set([
   '--pull', '--log-driver', '--name', '--label', '--network', '--memory', '--memory-swap',
-  '--cpus', '--pids-limit', '--security-opt', '-e',
+  '--cpus', '--pids-limit', '--security-opt', '--cap-drop', '--cap-add', '-e',
 ]);
 
 function parseRun(runArgs: string[]): { error: string } | { options: Map<string, string>; image: string } {
