@@ -22,7 +22,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
   public interface. A removal, or a change in what one means, bumps `schema`
   and the package's major version. An addition bumps neither.
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
-  No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0015). The only
+  No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
+  with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
+  `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`. The only
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. A change here is security-sensitive work.
@@ -64,10 +66,12 @@ marks.
 
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
-issue 23; `J1` to `J9`, from the spec on issue 7). C22 (the Windows check), the
-required-check half of C23, T14 (C22 and the fast tier on Windows) and P1 on
-Windows are manual checks on the owner's machine. P3 is checked by reading at
-review; no test carries its name.
+issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
+issue 4). C22 (the Windows check), the required-check half of C23, T14 (C22
+and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
+Windows) are manual checks on the owner's machine. P3 and K6 are checked by
+reading at review; no test carries their names. K3 is shown by the docker
+tier's pass, and no test carries its name either.
 
 ## The tracker
 

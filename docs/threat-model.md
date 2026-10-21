@@ -54,7 +54,9 @@ above; the software they run is not.
   the container as the same literal arguments (C16).
 - **Nothing from the host reaches the container** but the snapshot on stdin
   and `ATHANOR_GRACE_LIMIT`: no network, no host folder, no host environment
-  value, no Docker socket, no privileged mode (ADR 0015, C6, C19, P1). The run
+  value, no Docker socket, no privileged mode, and only six Linux capabilities: `CHOWN`,
+  `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`, every other one
+  dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
   blocks, with empty values, the ten proxy names the Docker CLI fills from the
   five proxy settings it reads today (accepted risk 11). A value the build
   writes into the image or its cache is accepted risk 1. This, and
@@ -63,7 +65,7 @@ above; the software they run is not.
   decides (accepted risk 7).
 - **Fixed limits on each run:** memory and memory-swap, CPUs, a process limit
   of 1024, `no-new-privileges`, a host-side time limit and an in-container
-  timer (C7, C11). The machine configuration's ceilings bound what any repo
+  timer (C7, C11, K4). The machine configuration's ceilings bound what any repo
   can ask for (C31).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
@@ -107,7 +109,7 @@ above; the software they run is not.
   (accepted risk 1). With a remote engine or builder, those copies go to that
   machine (accepted risk 7), and a remote builder can ask this machine for the
   owner's registry credentials (accepted risk 7). The Docker client's proxy
-  settings can hold a password: the run blocks it (ADR 0015), and the build
+  settings can hold a password: the run blocks it (ADR 0016), and the build
   receives it (accepted risk 1). Plain tcp transport is refused
   by default (ADR 0013; accepted risk 10 for the opt-out). Test output can hold
   secrets: athanor streams it to the caller, keeps no copy, and runs the
@@ -178,11 +180,20 @@ candidate, so other work can point at it.
    container running until its slot is next used. Accepted because the next
    run on the slot removes it.
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-5. **Linux capabilities are not dropped, and the run limit has no upper
-   bound.** Accepted because the container already has no network, no host
-   folders and `no-new-privileges`, and the run limit is the owner's own
-   setting.
-   Accepted 2026-10-20. From: Spec revision 5, S9; follow-up issue #4 (try --cap-drop ALL) stands against it. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+5. **A root test keeps six Linux capabilities, and the run limit has no upper
+   bound.** The test runs as the image's user, root unless the Dockerfile names
+   another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
+   `SETUID` and `SETGID`, which a flaw in Docker or the kernel that lets a
+   process out of the container could use to read or change what root can reach
+   on the engine's machine, such as other runs' snapshots and image layers.
+   Every other capability is dropped by an allow-list, so one a later Docker
+   adds does not reach the container (ADR 0016). Accepted because the container
+   also has no network, no host folders and `no-new-privileges`, the other five are
+   what a root-run test can plausibly need and `KILL` is what the in-container
+   time limit needs for a test that switches user, and the run limit is the
+   owner's own setting.
+   Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+   Narrowed 2026-10-21. From: issue 4, spec revision 4; the security review of revision 3 (adversarial-lens F1, data-lens F1). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
 6. **The folder lock's shared count.** This candidate does not arise: the
    probe selected the OS lock, and the folder lock was not built. It is kept
    here so the owner can see it was considered. The owner confirmed on
@@ -223,7 +234,7 @@ candidate, so other work can point at it.
     Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F2, data-lens F1); the owner's q8 A2. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 11. **A proxy setting a later Docker client adds.** athanor blanks the ten
     proxy names the Docker client fills from the five proxy settings it reads
-    today (ADR 0015). A setting that a later client adds, beyond those five,
+    today (ADR 0016). A setting that a later client adds, beyond those five,
     reaches the container until athanor's list is updated, and P1 cannot see
     it. Accepted because a guard at run time would mean either reading the
     client configuration, against ADR 0012, or blanking names in the boot

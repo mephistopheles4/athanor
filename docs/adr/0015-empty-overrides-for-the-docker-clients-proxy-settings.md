@@ -1,6 +1,6 @@
 # 0015. Empty overrides for the Docker client's proxy settings
 
-Date: 2026-10-21 · Status: accepted · Supersedes: 0005 · Source: spec revision 4 on issue 23 (S2, S3, P1 to P3)
+Date: 2026-10-21 · Status: superseded by 0016 · Supersedes: 0005 · Source: spec revision 4 on issue 23 (S2, S3, P1 to P3)
 
 The Docker CLI adds proxy environment variables to a container from its own
 client configuration (`proxies` in `config.json`), after it has parsed the

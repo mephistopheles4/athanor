@@ -38,9 +38,10 @@
 - **Container settings.** What reaches the container, worked out from the run
   configuration, the slot, the image tag and the test command: the
   `docker run` options, the boot script and the command after it. They hold
-  ADR 0015's rules: no network, no new privileges, no mounts, and no
+  ADR 0016's rules: no network, no new privileges, no mounts, only six
+  capabilities (`--cap-drop ALL`, then six `--cap-add`), and no
   environment variable but `ATHANOR_GRACE_LIMIT` and the ten proxy names
-  (listed in ADR 0015), each set empty with `-e NAME=` and never `-e NAME`.
+  (listed in ADR 0016), each set empty with `-e NAME=` and never `-e NAME`.
 - **Container run.** Starting the container from its settings, piping the
   snapshot in, ending it on an interrupt or at the time limit, finding the
   boot marker, and reading how it ended into the run's outcome.

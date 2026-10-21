@@ -19,4 +19,5 @@ changed one gets a new record that names the one it replaces.
 | [0012](0012-docker-as-configured.md) | Docker as configured |
 | [0013](0013-plain-tcp-refused-by-default.md) | A plain tcp Docker endpoint is refused by default |
 | [0014](0014-typescript-compiled-to-dist.md) | TypeScript source, compiled to dist |
-| [0015](0015-empty-overrides-for-the-docker-clients-proxy-settings.md) | Empty overrides for the Docker client's proxy settings |
+| [0015](0015-empty-overrides-for-the-docker-clients-proxy-settings.md) | Empty overrides for the Docker client's proxy settings (superseded by 0016) |
+| [0016](0016-the-container-keeps-six-capabilities.md) | The container keeps six capabilities |

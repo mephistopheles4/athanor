@@ -17,4 +17,4 @@ collide. Both are accepted-risk candidates in the threat model draft. No
 guard is built for either.
 
 Every other run control is unchanged: `--network none` and the rest of
-ADR 0005, now ADR 0015, still apply to the test run.
+ADR 0005, now ADR 0016, still apply to the test run.
