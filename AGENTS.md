@@ -61,7 +61,8 @@ prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
-spec on issue 1; `T1` to `T14`, from the spec on issue 8). C22 (the Windows
+spec on issue 1; `T1` to `T14`, from the spec on issue 8; `J1` to `J9`, from the spec on
+issue 7). C22 (the Windows
 check), the required-check half of C23, and T14 (C22 and the fast tier on
 Windows) are manual checks on the owner's machine.
 

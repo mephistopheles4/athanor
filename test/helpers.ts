@@ -57,9 +57,11 @@ export interface RepoOptions {
   commit?: boolean;
   packageExtra?: Record<string, unknown>;
   objectFormat?: string;
+  // false writes no package.json, for a repo whose configuration is in athanor.json.
+  packageJson?: boolean;
 }
 
-export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, packageExtra = {}, objectFormat }: RepoOptions = {}): string {
+export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, packageExtra = {}, objectFormat, packageJson = true }: RepoOptions = {}): string {
   const dir = tempDir(t, 'athanor-repo-');
   git(dir, ['init', '-q', '-b', 'main', ...(objectFormat ? [`--object-format=${objectFormat}`] : [])]);
   git(dir, ['config', 'user.name', 'test']);
@@ -68,7 +70,7 @@ export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, p
   const pkg: Record<string, unknown> = { name: 'fixture', private: true, ...packageExtra };
   if (athanor !== undefined) pkg.athanor = athanor;
   const all = {
-    'package.json': JSON.stringify(pkg, null, 2) + '\n',
+    ...(packageJson ? { 'package.json': JSON.stringify(pkg, null, 2) + '\n' } : {}),
     'test/Dockerfile': 'FROM alpine:3.20\n',
     ...files,
   };

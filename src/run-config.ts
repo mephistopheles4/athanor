@@ -1,7 +1,7 @@
 // The run configuration: everything a run needs from the repo configuration
 // and the machine configuration, path-checked and ceiling-checked, with the
 // source of each value, so every message names the file to fix.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
@@ -19,7 +19,7 @@ export const DEFAULTS = Object.freeze({
 
 // Where a value came from.
 export type Source =
-  | { kind: 'repo'; file: string; key: string }
+  | { kind: 'repo'; file: string; key?: string }
   | { kind: 'machine'; file: string }
   | { kind: 'default' };
 
@@ -161,54 +161,101 @@ export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig):
   return { limit: DEFAULTS.maxRuns, source: 'default' };
 }
 
-// The athanor key in the package.json at the repo root, validated.
-function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; values: RepoValues } {
-  const source = { kind: 'repo', file: 'package.json', key: 'athanor' } as const;
-  const { file, key } = source;
-  const path = join(root, file);
-  if (!existsSync(path)) {
-    throw new AthanorError(`There is no ${file} at the repo root. Add one with an "${key}" key, as the README shows.`);
-  }
-  let pkg: unknown;
+// One configuration file at the repo root, as text. It must be a regular file
+// whose real path is inside the repo, so a link out, a device or a pipe is
+// never read. Whatever goes wrong, the message holds no file content, no
+// system error text and no host path.
+function readRootFile(root: string, file: string): string {
   try {
-    pkg = JSON.parse(readFileSync(path, 'utf8'));
+    insideRepo(root, file, file, file);
+    if (!statSync(join(root, file)).isFile()) throw new Error('not a regular file');
+    return readFileSync(join(root, file), 'utf8');
   } catch {
-    throw new AthanorError(`${file} at the repo root is not valid JSON. Fix it, then run again.`);
+    throw new AthanorError(`${file} at the repo root could not be read. Make it a regular file inside the repo, then run again.`);
   }
-  const config = isObject(pkg) ? pkg[key] : undefined;
-  if (config === undefined) {
-    throw new AthanorError(`There is no "${key}" key in ${file} at the repo root. Add one with at least "dockerfile" and "commands", as the README shows.`);
+}
+
+const PACKAGE_KEY = 'athanor';
+const PACKAGE_PLACE = `the "${PACKAGE_KEY}" key in package.json`;
+// The same words at the start of a sentence.
+const PACKAGE_PLACE_LEAD = `The ${PACKAGE_PLACE.slice(4)}`;
+
+// The repo configuration, validated: athanor.json, or the athanor key in the
+// package.json at the repo root, never both.
+function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; values: RepoValues } {
+  const hasJson = existsSync(join(root, 'athanor.json'));
+  let pkg: unknown;
+  if (existsSync(join(root, 'package.json'))) {
+    const text = readRootFile(root, 'package.json');
+    try {
+      pkg = JSON.parse(text);
+    } catch {
+      throw new AthanorError(hasJson
+        ? `package.json at the repo root is not valid JSON, so athanor cannot tell whether it also has an "${PACKAGE_KEY}" key next to athanor.json. Fix it, then run again.`
+        : 'package.json at the repo root is not valid JSON. Fix it, then run again.');
+    }
   }
-  if (!isObject(config)) throw new AthanorError(`The "${key}" key in ${file} must be an object.`);
+  const hasKey = isObject(pkg) && Object.hasOwn(pkg, PACKAGE_KEY);
+  if (hasJson && hasKey) {
+    throw new AthanorError(`The repo has both athanor.json and ${PACKAGE_PLACE}. Keep one, and delete the other, then run again.`);
+  }
+  if (!hasJson && !hasKey) {
+    throw new AthanorError(`There is no repo configuration. Add an athanor.json at the repo root, or an "${PACKAGE_KEY}" key in package.json, with at least "dockerfile" and "commands", as the README shows.`);
+  }
+  let config: unknown;
+  let source: Source & { kind: 'repo' };
+  let place: string;
+  if (hasJson) {
+    source = { kind: 'repo', file: 'athanor.json' };
+    place = 'athanor.json';
+    try {
+      config = JSON.parse(readRootFile(root, 'athanor.json'));
+    } catch (e) {
+      if (e instanceof AthanorError) throw e;
+      throw new AthanorError('athanor.json at the repo root is not valid JSON. Fix it, then run again.');
+    }
+    if (!isObject(config)) throw new AthanorError('athanor.json must hold one JSON object.');
+  } else {
+    source = { kind: 'repo', file: 'package.json', key: PACKAGE_KEY };
+    place = PACKAGE_PLACE;
+    config = (pkg as Record<string, unknown>)[PACKAGE_KEY];
+    if (!isObject(config)) throw new AthanorError(`${PACKAGE_PLACE_LEAD} must be an object.`);
+  }
+  return { source, values: checkRepoValues(config, place, hasJson ? place : PACKAGE_PLACE_LEAD) };
+}
+
+// The checks on the repo configuration object, whichever place it came from.
+// `lead` is the place as it starts a sentence.
+function checkRepoValues(config: Record<string, unknown>, place: string, lead: string): RepoValues {
   for (const k of Object.keys(config)) {
     if (!REPO_KEYS.includes(k as Key)) {
-      throw new AthanorError(`The "${key}" key in ${file} has an unknown key "${k}". Its keys are: ${REPO_KEYS.join(', ')}.`);
+      throw new AthanorError(`${lead} has an unknown key "${k}". Its keys are: ${REPO_KEYS.join(', ')}.`);
     }
   }
   if (typeof config.dockerfile !== 'string' || config.dockerfile === '') {
-    throw new AthanorError(`"dockerfile" is required in the "${key}" key: the repo-relative path of the Dockerfile.`);
+    throw new AthanorError(`"dockerfile" is required in ${place}: the repo-relative path of the Dockerfile.`);
   }
   if (config.context !== undefined && (typeof config.context !== 'string' || config.context === '')) {
-    throw new AthanorError(`In the "${key}" key, context must be a repo-relative path string.`);
+    throw new AthanorError(`In ${place}, context must be a repo-relative path string.`);
   }
   if (config.inputs !== undefined && (!Array.isArray(config.inputs) || !config.inputs.every((p) => typeof p === 'string' && p !== ''))) {
-    throw new AthanorError(`In the "${key}" key, inputs must be a list of repo-relative paths, such as ["package-lock.json"].`);
+    throw new AthanorError(`In ${place}, inputs must be a list of repo-relative paths, such as ["package-lock.json"].`);
   }
   if (!isObject(config.commands) || Object.keys(config.commands).length === 0) {
-    throw new AthanorError(`In the "${key}" key, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);
+    throw new AthanorError(`In ${place}, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);
   }
   for (const [name, argv] of Object.entries(config.commands)) {
     if (!Array.isArray(argv) || argv.length === 0 || !argv.every((a) => typeof a === 'string')) {
-      throw new AthanorError(`commands.${name} must be an array of strings, such as ["npm", "test"]. A single string is not allowed, because athanor never uses a shell.`);
+      throw new AthanorError(`In ${place}, commands.${name} must be an array of strings, such as ["npm", "test"]. A single string is not allowed, because athanor never uses a shell.`);
     }
   }
   for (const k of REPO_KEYS) {
     const check = checkOf(k);
     if (check && config[k] !== undefined && !check.ok(config[k])) {
-      throw new AthanorError(`In the "${key}" key, ${k} ${check.rule}.`);
+      throw new AthanorError(`In ${place}, ${k} ${check.rule}.`);
     }
   }
-  return { source, values: config as unknown as RepoValues };
+  return config as unknown as RepoValues;
 }
 
 // Everything a run needs. The machine configuration is read first, on its
@@ -216,7 +263,7 @@ function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; valu
 export function resolveRunConfig(root: string, machine: MachineConfig, request: { name?: string; command?: string[] } = {}): RunConfig {
   const { source: repoSource, values: repo } = readRepoConfig(root);
   const machineSource: Source = { kind: 'machine', file: machine.file };
-  const where = `the "${repoSource.key}" key`;
+  const where = repoSource.key === undefined ? repoSource.file : `the "${repoSource.key}" key in ${repoSource.file}`;
   // Where a message tells the user to change a value: the file it came from,
   // or the repo configuration for a default.
   const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
