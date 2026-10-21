@@ -1,11 +1,22 @@
 // The container settings: the one place that says what reaches the container
-// (ADR 0005). The container gets the snapshot on stdin and ATHANOR_GRACE_LIMIT,
+// (ADR 0015). The container gets the snapshot on stdin and ATHANOR_GRACE_LIMIT,
 // and nothing else from the host: --network none, no-new-privileges, no -v,
-// --mount or --privileged, and no other -e. A change here is security-sensitive.
+// --mount or --privileged, and no other -e. The one exception is the ten proxy
+// names, each set empty with `-e NAME=`: the Docker CLI fills them from its
+// client configuration, and a proxy setting can hold a password. The empty
+// value stops that; the bare `-e NAME` would copy the host's value in, so it is
+// never used. A change here is security-sensitive.
 import type { Limits } from './run-config.js';
 
 // The line the boot script prints on stderr just before the test command.
 export const MARKER = 'athanor-boot-ok';
+
+// The names the Docker CLI fills from the five proxy settings it reads today.
+// The list is fixed (ADR 0015, accepted risk 11 in the threat model).
+export const PROXY_NAMES = [
+  'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'FTP_PROXY', 'ftp_proxy',
+  'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy',
+];
 
 // The boot script, joined with \n so no checkout's line endings can reach sh -c.
 export const BOOT = [
@@ -54,6 +65,7 @@ export function containerSettings(r: ContainerRequest): Container {
     '--cpus', String(r.limits.cpus), '--pids-limit', '1024',
     '--security-opt', 'no-new-privileges',
     '-e', `ATHANOR_GRACE_LIMIT=${graceLimit}`,
+    ...PROXY_NAMES.flatMap((n) => ['-e', `${n}=`]),
     r.tag, 'sh', '-c', BOOT, 'athanor', ...r.command,
   ];
   return { name, args };

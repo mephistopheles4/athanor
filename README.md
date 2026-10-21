@@ -149,6 +149,17 @@ With a named buildx builder, clear its cache with
 `docker buildx prune --builder <name>`. With a remote engine or builder, these
 copies sit on that machine.
 
+## Proxy settings
+
+Every run sets the ten proxy variables (`HTTP_PROXY`, `http_proxy`,
+`HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`,
+`ALL_PROXY` and `all_proxy`) to empty in the test container, so a proxy
+password in your Docker client configuration does not reach the test code. That
+also blanks a value the image's own `ENV` gives them; the container has no
+network, so a proxy in it does nothing. The image build still gets the proxy
+settings as build arguments, so a Dockerfile can read them. See
+[the threat model](docs/threat-model.md), accepted risk 1.
+
 ## Secrets
 
 Keep secrets out of the files a run sends: everything tracked in the repo goes

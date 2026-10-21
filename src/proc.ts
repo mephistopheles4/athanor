@@ -39,19 +39,22 @@ export function start(argv: string[], { cwd, env, stdin = 'ignore', capture = tr
     shell: false,
     windowsHide: true,
   }) as Started['child'];
-  let stdout = '';
-  let stderr = '';
+  // Keep the raw chunks and decode each stream once at the end, so a
+  // multibyte character split across chunks is not garbled.
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const text = (chunks: Buffer[]) => Buffer.concat(chunks).toString('utf8');
   child.stdout.on('data', (chunk: Buffer) => {
-    if (capture) stdout += chunk;
+    if (capture) stdout.push(chunk);
     onStdout?.(chunk);
   });
   child.stderr.on('data', (chunk: Buffer) => {
-    if (capture) stderr += chunk;
+    if (capture) stderr.push(chunk);
     onStderr?.(chunk);
   });
   const done = new Promise<Ended>((resolve) => {
-    child.once('error', (error) => resolve({ code: null, stdout, stderr: stderr + String(error.message), error }));
-    child.once('close', (code, signal) => resolve({ code: code ?? (signal ? 128 : null), stdout, stderr }));
+    child.once('error', (error) => resolve({ code: null, stdout: text(stdout), stderr: text(stderr) + String(error.message), error }));
+    child.once('close', (code, signal) => resolve({ code: code ?? (signal ? 128 : null), stdout: text(stdout), stderr: text(stderr) }));
   });
   return { child, done };
 }
