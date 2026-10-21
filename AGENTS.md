@@ -22,10 +22,10 @@ lasting decisions are in [docs/adr/](docs/adr/).
   public interface. A removal, or a change in what one means, bumps `schema`
   and the package's major version. An addition bumps neither.
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
-  No `-v`, `--mount`, `--privileged`, no other `-e`, and `--network none`
-  (ADR 0015). An `-e` with an empty value, which blocks a value the Docker CLI
-  would otherwise add, is allowed. Today that means the ten proxy names, each
-  written `-e NAME=` and never `-e NAME`. A change here is security-sensitive work.
+  No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0015). The only
+  `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
+  block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
+  written `-e NAME=` and never `-e NAME`, which would copy the host's value in. A change here is security-sensitive work.
 - **Messages use plain words.** Each says what happened and, for a warning or
   an error, what to do next.
 - **Source files use LF line endings** (`.gitattributes`). The container's
@@ -66,7 +66,7 @@ Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows) and P1 on Windows are manual checks on the
-owner's machine.
+owner's machine. P3 is checked by reading at review; no test carries its name.
 
 ## The tracker
 

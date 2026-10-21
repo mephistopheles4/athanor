@@ -295,7 +295,8 @@ test('P1 the Docker client\'s proxy settings do not reach the container', async 
   const inspected = docker(['context', 'inspect']);
   assert.equal(inspected.status, 0, inspected.stderr);
   const host = JSON.parse(inspected.stdout)[0].Endpoints.docker.Host as string;
-  process.env.DOCKER_HOST = host; // isolate() restores it
+  // Set after isolate(t), not through it: the endpoint is only known once the
+  // image is built with the normal configuration. isolate() restores it.
   const savedConfig = process.env.DOCKER_CONFIG;
   t.after(() => {
     if (savedConfig === undefined) delete process.env.DOCKER_CONFIG;
@@ -321,7 +322,7 @@ test('P1 the Docker client\'s proxy settings do not reach the container', async 
     assert.ok(lines.includes(`${name}=`), `${name} is set and empty`);
   }
   assert.equal((proxied.stdout + proxied.stderr).includes(secret), false, 'the fake proxy password is nowhere in the output');
-  assert.equal((proxied.stdout + proxied.stderr).includes('athanor-fake-host'), false);
+  assert.equal((proxied.stdout + proxied.stderr).includes('athanor-fake-host'), false, 'the fake noProxy value is nowhere in the output');
   const names = (out: string) => out.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('='))).sort();
   assert.deepEqual(names(proxied.stdout), names(baseline.stdout), 'the same variable names as with no proxy settings');
 });
