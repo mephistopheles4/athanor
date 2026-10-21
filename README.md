@@ -41,7 +41,11 @@ The command is `athanor`.
 
 ## Set up a repo
 
-Add an `athanor` key to the `package.json` at the repo root:
+Put the repo configuration in one of two places: an `athanor.json` file at the
+repo root, or an `athanor` key in the `package.json` at the repo root. Use one,
+never both: a run that finds both exits 125 and says to keep one.
+
+As the `athanor` key in `package.json`:
 
 ```json
 {
@@ -56,6 +60,21 @@ Add an `athanor` key to the `package.json` at the repo root:
   }
 }
 ```
+
+The same object works as `athanor.json`, at the top level of the file with no
+`athanor` wrapper, for a repo that has no `package.json` or does not want one:
+
+```json
+{
+  "dockerfile": "test/Dockerfile",
+  "commands": { "test": ["npm", "test"] }
+}
+```
+
+Save `athanor.json` as UTF-8 without a byte-order mark. PowerShell 5.1's `>`
+writes UTF-16, which athanor rejects as invalid JSON. Whichever
+file you use must be a regular file inside the repo, not a link to a place
+outside it.
 
 - `dockerfile` (required) and `context` (default: the Dockerfile's folder)
   are repo-relative paths. Every tracked file under `context` keys the image,
