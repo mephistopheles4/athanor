@@ -3,10 +3,13 @@
 The owner's first publish of `@mephistopheles4/athanor`, by hand. Run these
 commands in PowerShell 7, from a checkout of the commit being released.
 
-1. Check that nothing stray can ship from `bin/`. The command prints nothing
-   when the checkout is clean:
+1. Check that the checkout is clean and that nothing stray can ship from
+   `bin/`. Each command prints nothing when it is. The first covers every
+   tracked and untracked file, so an edit outside `bin/` cannot be built and
+   published; the second adds the ignored files under `bin/`:
 
    ```powershell
+   git status --porcelain
    git status --porcelain --ignored -- bin
    ```
 
