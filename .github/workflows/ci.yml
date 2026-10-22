@@ -108,7 +108,7 @@ jobs:
       - name: Docker tier
         run: node test/run.mjs docker
       - name: Pack and install
-        run: |
+        run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
           set -e
           # The repo's .npmrc turns prepack off (ADR 0017), so the build is an
           # explicit step. The tiers left a dist/ behind: clearing it, and the
@@ -140,7 +140,7 @@ jobs:
           actual=$("$prefix/bin/athanor" --version)
           test "$actual" = "$expected"
       - name: Typed import by package name
-        run: |
+        run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
           set -e
           tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
           project="$RUNNER_TEMP/athanor-typed"
