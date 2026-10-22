@@ -114,10 +114,10 @@ test('C17 a path outside the repo root exits 125 before any Docker call', async 
   });
 });
 
-test('C31 a repo value above a machine ceiling exits 125 naming the key and the ceiling', async (t) => {
+test('C31 U3 a repo value above a machine ceiling exits 125 naming the key and the ceiling', async (t) => {
   const rows = [
     { set: { memory: '9g' }, says: /memory 9g is above the machine ceiling maxMemory 8g/ },
-    { set: { cpus: 5 }, says: /cpus 5 is above the machine ceiling maxCpus 4/ },
+    { set: { cpus: 5 }, file: { maxCpus: 4 }, says: /cpus 5 is above the machine ceiling maxCpus 4/ },
     { set: { timeoutMinutes: 121 }, says: /timeoutMinutes 121 is above the machine ceiling maxTimeoutMinutes 120/ },
     { set: { memory: '3g' }, file: { maxMemory: '2048m' }, says: /memory 3g is above the machine ceiling maxMemory 2048m/ },
   ];
@@ -128,6 +128,24 @@ test('C31 a repo value above a machine ceiling exits 125 naming the key and the 
       const repo = makeRepo(t, { athanor: { ...baseConfig, ...row.set } });
       const { result, calls } = await runIn(t, repo);
       assertSetupError(result, calls, row.says);
+    });
+  }
+});
+
+test('U4 U5 maxCpus caps a run with no cpus; with no maxCpus a repo cpus has no ceiling', async (t) => {
+  const rows = [
+    { name: 'U4 maxCpus 3 and no cpus gives --cpus 3', file: { maxCpus: 3 }, set: {}, cpus: '3' },
+    { name: 'U5 no maxCpus and cpus 5 gives --cpus 5', file: {}, set: { cpus: 5 }, cpus: '5' },
+  ];
+  for (const row of rows) {
+    await t.test(row.name, async (t) => {
+      const home = isolate(t);
+      writeFileSync(join(home, 'config.json'), JSON.stringify(row.file));
+      const repo = makeRepo(t, { athanor: { ...baseConfig, ...row.set } });
+      const { result, calls } = await runIn(t, repo);
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      const a = callsOf(calls, 'run')[0].args;
+      assert.equal(a[a.indexOf('--cpus') + 1], row.cpus);
     });
   }
 });
@@ -153,7 +171,7 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     });
   }
 
-  await t.test('a repo without limits takes the file; a repo with its own keeps them', async (t) => {
+  await t.test('U2 a repo without limits takes the file; a repo with its own keeps them', async (t) => {
     const home = isolate(t);
     writeFileSync(join(home, 'config.json'), JSON.stringify({ memory: '3g', cpus: 3, timeoutMinutes: 45 }));
     const plain = makeRepo(t, { athanor: baseConfig });

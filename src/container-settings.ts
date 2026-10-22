@@ -70,7 +70,7 @@ export function containerSettings(r: ContainerRequest): Container {
     '--name', name, '--label', `athanor.slot=${r.slot}`,
     '--network', 'none',
     '--memory', r.limits.memory, '--memory-swap', r.limits.memory,
-    '--cpus', String(r.limits.cpus), '--pids-limit', '1024',
+    ...(r.limits.cpus !== undefined ? ['--cpus', String(r.limits.cpus)] : []), '--pids-limit', '1024',
     '--security-opt', 'no-new-privileges',
     '--cap-drop', 'ALL', ...KEPT_CAPABILITIES.flatMap((c) => ['--cap-add', c]),
     '-e', `ATHANOR_GRACE_LIMIT=${graceLimit}`,
