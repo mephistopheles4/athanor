@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          persist-credentials: true
       # Lints .github/ (the workflows and dependabot.yml). The action's SHA
       # fixes zizmor's version and its wheel hashes, so the update bot's change
       # of this SHA is the only zizmor update, and it waits out the same
