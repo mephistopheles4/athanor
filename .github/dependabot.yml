@@ -1,0 +1,30 @@
+# Update proposals for the actions and the dev packages (spec on issue 34, S6).
+# Both wait 7 days after a release before proposing it; a security update skips
+# the wait. A bot pull request is not the owner's code (docs/agents/issue-tracker.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Keep exact pins exact (ADR 0018); the default would widen a range.
+    versioning-strategy: increase
+    ignore:
+      # The major tracks the Node floor (engines >=24) and moves only with a
+      # change that moves the floor.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      dev-packages:
+        update-types: ['minor', 'patch']

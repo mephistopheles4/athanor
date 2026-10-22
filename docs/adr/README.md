@@ -18,7 +18,8 @@ changed one gets a new record that names the one it replaces.
 | [0011](0011-the-state-folder.md) | The state folder is .athanor in home |
 | [0012](0012-docker-as-configured.md) | Docker as configured |
 | [0013](0013-plain-tcp-refused-by-default.md) | A plain tcp Docker endpoint is refused by default |
-| [0014](0014-typescript-compiled-to-dist.md) | TypeScript source, compiled to dist |
+| [0014](0014-typescript-compiled-to-dist.md) | TypeScript source, compiled to dist (superseded by 0018) |
 | [0015](0015-empty-overrides-for-the-docker-clients-proxy-settings.md) | Empty overrides for the Docker client's proxy settings (superseded by 0016) |
 | [0016](0016-the-container-keeps-six-capabilities.md) | The container keeps six capabilities (superseded in part by 0017) |
 | [0017](0017-no-cpu-limit-unless-one-is-configured.md) | No CPU limit unless one is configured |
+| [0018](0018-typescript-compiled-to-dist-with-install-scripts-off.md) | TypeScript compiled to dist, with install scripts off |
