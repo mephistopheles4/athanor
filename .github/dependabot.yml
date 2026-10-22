@@ -25,6 +25,11 @@ updates:
       # change that moves the floor.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # TypeScript 7 drops the compiler API that Stryker and typescript-eslint
+      # still need. Remove this once both ship TS 7 support
+      # (stryker-mutator/stryker-js#6110, typescript-eslint/typescript-eslint#10940).
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
     groups:
       dev-packages:
         update-types: ['minor', 'patch']
