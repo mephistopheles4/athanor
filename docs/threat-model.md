@@ -46,7 +46,7 @@ fresh container that runs the test command. It writes only to its state folder (
   result. It reaches `main`, and the owner's machine through `npm ci`, only
   through a merge. The compiler is the one dev package that runs: once merged,
   it runs as the owner in every test run and in the build before a publish
-  (accepted risk 17).
+  (accepted risk 18).
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -70,10 +70,7 @@ above; the software they run is not.
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
   decides (accepted risk 7).
-- **Fixed limits on each run:** memory and memory-swap, CPUs, a process limit
-  of 1024, `no-new-privileges`, a host-side time limit and an in-container
-  timer (C7, C11, K4). The machine configuration's ceilings bound what any repo
-  can ask for (C31).
+- **Fixed limits on each run:** memory and memory-swap, a process limit of 1024, `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted risk 17). The ceilings that the machine configuration sets bound what any repo can ask for; only `maxCpus` has no default (C31, U3).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
@@ -111,10 +108,10 @@ above; the software they run is not.
   - Updates come from the update bot after a 7-day wait, except security
     updates. A bot pull request's passing check is not evidence the update is
     safe: the wait and the owner's merge are the controls.
-  - CI holds no secrets. Its token is read-only (accepted risk 18).
+  - CI holds no secrets. Its token is read-only (accepted risk 19).
   - The npm publish credential exists only on the owner's machine, from login
     to logout around a hand publish (`docs/releasing.md`).
-  - See ADR 0017, A1 to A6.
+  - See ADR 0018, A1 to A6.
 
 ## The sensitive-work list
 
@@ -200,7 +197,7 @@ candidate, so other work can point at it.
 4. **A hostile test can outlive a hard-killed caller.** A test that kills the
    in-container timer, together with a hard-killed caller, leaves one
    container running until its slot is next used. Accepted because the next
-   run on the slot removes it.
+   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17).
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
 5. **A root test keeps six Linux capabilities, and the run limit has no upper
    bound.** The test runs as the image's user, root unless the Dockerfile names
@@ -300,7 +297,9 @@ candidate, so other work can point at it.
     needs mount privilege, which is root, and finding it would mean parsing the
     mount table on Linux only.
     Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file mounted over the configuration name). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-17. **A merged hijacked compiler runs with the owner's rights.** The TypeScript
+17. **A run with no CPU limit, or with a limit the repo chose, can use every CPU the engine has.** When the machine configuration sets no `maxCpus`, the repo's test code can keep every core of the engine busy, which on Docker Desktop is every core the VM has, slowing the host and the owner's other runs. The run's time limit ends it, except in accepted risk 4's case, where it lasts until the slot is next used. Memory, swap and processes stay bounded. Accepted because the owner chose speed by default, the repo is code the owner trusts to build, and a machine that wants a bound sets `maxCpus`.
+    Accepted 2026-10-22. From: the spec on issue 36, revisions 1–4 (S6; the decisions in S7, items 3 and 6), and the Design review of revision 2 (adversarial-lens F1–F5, data-lens F1–F2). How the word arrived: the owner, in chat with the session that wrote the spec.
+18. **A merged hijacked compiler runs with the owner's rights.** The TypeScript
     compiler is the one dev package that runs. A hijacked release that stays
     hidden past the update bot's wait runs as the owner once the owner merges
     it: in every test run, and in the build before a publish. It can read what
@@ -309,13 +308,13 @@ candidate, so other work can point at it.
     independent check of the compiler's output exists. The wait, the
     registry's signatures and the owner's merge narrow the window.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-18. **Code in the CI job can read the job's token.** A dev package, an action
+19. **Code in the CI job can read the job's token.** A dev package, an action
     or the test code running in CI can read the job's token until the job ends.
     That includes code on a bot's pull request before merge. Accepted because
     the token is read-only, the repo is public, and CI holds no secrets. A
     workflow that holds a secret, such as issue 6's, needs its own controls.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (data-lens F9). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-19. **A hijacked action could leave cache entries for a later workflow.** An
+20. **A hijacked action could leave cache entries for a later workflow.** An
     action's code, run on a push to `main`, can write Actions cache entries,
     and a later workflow that restores the cache would read them. Accepted
     because nothing restores a cache today. A workflow that restores one, such

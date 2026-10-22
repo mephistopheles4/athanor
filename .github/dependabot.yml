@@ -18,7 +18,7 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-    # Keep exact pins exact (ADR 0017); the default would widen a range.
+    # Keep exact pins exact (ADR 0018); the default would widen a range.
     versioning-strategy: increase
     ignore:
       # The major tracks the Node floor (engines >=24) and moves only with a

@@ -9,11 +9,9 @@ import { insideRepo, isUnder } from './paths.js';
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
   memory: '2g',
-  cpus: 2,
   timeoutMinutes: 30,
   pruneDays: 30,
   maxMemory: '8g',
-  maxCpus: 4,
   maxTimeoutMinutes: 120,
 });
 
@@ -96,9 +94,11 @@ interface RepoValues {
   timeoutMinutes?: number;
 }
 
+// cpus is unset when neither file sets it and the machine sets no maxCpus: the
+// container then gets no CPU limit (ADR 0017).
 export interface Limits {
   memory: string;
-  cpus: number;
+  cpus?: number;
   timeoutMinutes: number;
 }
 
@@ -294,17 +294,22 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
 
   // Per-run limits: the repo, then the machine file, then the defaults, each
-  // held to the machine's ceilings.
+  // held to the machine's ceilings. cpus has no default, and maxCpus has none
+  // either: when the machine sets it, it is also the cpus of a run that sets none.
   const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
     if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
     if (machine.values[key] !== undefined) return { value: machine.values[key] as Limits[K], source: machineSource };
-    return { value: DEFAULTS[key] as Limits[K], source: { kind: 'default' } };
+    if (key === 'cpus') {
+      const cap = machine.values.maxCpus;
+      return cap !== undefined ? { value: cap as Limits[K], source: machineSource } : { value: undefined as Limits[K], source: { kind: 'default' } };
+    }
+    return { value: DEFAULTS[key as Exclude<LimitKey, 'cpus'>] as Limits[K], source: { kind: 'default' } };
   };
   const picked = { memory: pick('memory'), cpus: pick('cpus'), timeoutMinutes: pick('timeoutMinutes') };
   const limits: Limits = { memory: picked.memory.value, cpus: picked.cpus.value, timeoutMinutes: picked.timeoutMinutes.value };
   const ceilings = {
     maxMemory: machine.values.maxMemory ?? DEFAULTS.maxMemory,
-    maxCpus: machine.values.maxCpus ?? DEFAULTS.maxCpus,
+    maxCpus: machine.values.maxCpus,
     maxTimeoutMinutes: machine.values.maxTimeoutMinutes ?? DEFAULTS.maxTimeoutMinutes,
   };
   const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
@@ -313,7 +318,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     }
   };
   over('memory', 'maxMemory', memoryBytes(limits.memory) > memoryBytes(ceilings.maxMemory));
-  over('cpus', 'maxCpus', limits.cpus > ceilings.maxCpus);
+  over('cpus', 'maxCpus', ceilings.maxCpus !== undefined && limits.cpus !== undefined && limits.cpus > ceilings.maxCpus);
   over('timeoutMinutes', 'maxTimeoutMinutes', limits.timeoutMinutes > ceilings.maxTimeoutMinutes);
 
   const commandName = request.name ?? 'test';

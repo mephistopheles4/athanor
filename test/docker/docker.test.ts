@@ -118,7 +118,7 @@ test('C6 inside a run, a host name does not resolve and a raw IP cannot be reach
   assert.equal(r.stdout.trim(), 'offline');
 });
 
-test('C7 the container gets the memory, CPU, process and privilege limits', async (t) => {
+test('C7 U6 the container gets the memory, CPU, process and privilege limits', async (t) => {
   isolate(t);
   const prefix = uniquePrefix();
   const repo = fixtureRepo(t);
@@ -133,7 +133,7 @@ test('C7 the container gets the memory, CPU, process and privilege limits', asyn
   await pending;
   assert.equal(inspected.Memory, 2 * 1024 ** 3);
   assert.equal(inspected.MemorySwap, 2 * 1024 ** 3);
-  assert.equal(inspected.NanoCpus, 2e9);
+  assert.equal(inspected.NanoCpus, 0, 'no CPU limit unless one is configured');
   assert.equal(inspected.PidsLimit, 1024);
   assert.ok(inspected.SecurityOpt.includes('no-new-privileges'));
   assert.equal(inspected.NetworkMode, 'none');

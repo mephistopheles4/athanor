@@ -55,7 +55,6 @@ As the `athanor` key in `package.json`:
     "inputs": ["package-lock.json"],
     "commands": { "test": ["npm", "test"], "fast": ["node", "test/run.mjs", "fast"] },
     "memory": "2g",
-    "cpus": 2,
     "timeoutMinutes": 30
   }
 }
@@ -83,7 +82,9 @@ outside it.
   tracked by git, and keeps its repo-relative path under the context root.
 - `commands` maps names to argument arrays. A string is an error.
 - `memory` (`512m`, `2g`), `cpus` and `timeoutMinutes` default to the machine
-  configuration, else 2g, 2 and 30.
+  configuration. If that does not set them, `memory` is 2g and `timeoutMinutes`
+  is 30. `cpus` has no default: with no `cpus` in either file (and no `maxCpus`),
+  the container gets no CPU limit and may use every CPU the engine has.
 
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
@@ -132,12 +133,17 @@ athanor's.
 An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 
 ```json
-{ "maxRuns": 2, "memory": "2g", "cpus": 2, "timeoutMinutes": 30, "pruneDays": 30,
-  "maxMemory": "8g", "maxCpus": 4, "maxTimeoutMinutes": 120, "allowPlainTcp": false }
+{ "maxRuns": 2, "memory": "2g", "timeoutMinutes": 30, "pruneDays": 30,
+  "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false }
 ```
 
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
-above a `max*` ceiling is an error.
+above a `max*` ceiling is an error. `maxMemory` and `maxTimeoutMinutes` default to
+8g and 120. `maxCpus` has no default: when you set it, it also gives a run with
+no `cpus` that many CPUs. Docker refuses a `cpus` above the CPUs the engine
+has, and the run then ends with exit 125 and Docker's message. On Docker
+Desktop the engine's CPUs are the VM's, which can be fewer than the host's, so
+keep `maxCpus` at or below the engine's CPUs.
 
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. If you set `ATHANOR_HOME`,

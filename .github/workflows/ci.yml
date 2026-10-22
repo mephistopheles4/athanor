@@ -119,14 +119,14 @@ jobs:
       - name: Pack and install
         run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
           set -e
-          # The repo's .npmrc turns prepack off (ADR 0017), so the build is an
+          # The repo's .npmrc turns prepack off (ADR 0018), so the build is an
           # explicit step. The tiers left a dist/ behind: clearing it, and the
           # index.d.ts check below, fail a pack made without the build. The
           # diff against a fresh build, further down, fails a pack whose dist/
           # differs from what this commit's source compiles to, such as a
           # dist/ written by another step between the build and the pack.
           # Neither checks the compiler: a hijacked compiler shapes both
-          # builds (accepted risk 17 in the threat model).
+          # builds (accepted risk 18 in the threat model).
           rm -rf dist
           node scripts/build.mjs
           npm pack --pack-destination "$RUNNER_TEMP"

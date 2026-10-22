@@ -66,7 +66,7 @@ commands in PowerShell 7, from a checkout of the commit being released.
 ## What to know
 
 - **The build is explicit.** The repo's `.npmrc` turns lifecycle scripts off
-  (ADR 0017), so `npm pack` and `npm publish` do not run `prepack`. Run
+  (ADR 0018), so `npm pack` and `npm publish` do not run `prepack`. Run
   without step 3, `npm publish` ships a stale or missing `dist/`.
 - **No token stays on the machine.** Never write a token into the repo's
   `.npmrc`, and never keep one on the machine between publishes. Log in just
@@ -76,4 +76,4 @@ commands in PowerShell 7, from a checkout of the commit being released.
   content to show.
 - **The compiler runs as you in step 3.** A hijacked compiler can shape the
   published code, and neither the install-scripts setting nor CI's comparison
-  with a rebuild sees it (accepted risk 17 in the threat model).
+  with a rebuild sees it (accepted risk 18 in the threat model).

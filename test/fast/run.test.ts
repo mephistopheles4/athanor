@@ -282,7 +282,7 @@ test('K1 the docker run arguments drop every capability and add back exactly six
   assert.equal(capOptions.length, 7, 'no other capability option');
 });
 
-test('C19 P2 no host environment value, host folder or socket reaches the container', async (t) => {
+test('C19 P2 U1 no host environment value, host folder or socket reaches the container', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t);
@@ -294,7 +294,7 @@ test('C19 P2 no host environment value, host folder or socket reaches the contai
     'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
     '--name', `${prefix}-slot-1`, '--label', 'athanor.slot=1',
     '--network', 'none',
-    '--memory', '2g', '--memory-swap', '2g', '--cpus', '2', '--pids-limit', '1024',
+    '--memory', '2g', '--memory-swap', '2g', '--pids-limit', '1024',
     '--security-opt', 'no-new-privileges',
     ...CAPABILITY_OPTIONS,
     '-e', 'ATHANOR_GRACE_LIMIT=1860',
@@ -330,7 +330,7 @@ test('C25 a run never passes on a partial snapshot, and each failure gets its ou
   const rows = [
     { name: 'tar fails in the container', run: { tarFails: true }, outcome: 'error', exitCode: 125 },
     { name: 'the test itself exits 125', run: { exitCode: 125 }, outcome: 'fail', exitCode: 125 },
-    { name: 'docker run fails before the test', run: { runFails: true, marker: false }, outcome: 'error', exitCode: 125 },
+    { name: 'U7 docker run fails before the test', run: { runFails: true, marker: false }, outcome: 'error', exitCode: 125 },
     { name: 'no marker: the image breaks the contract', run: { marker: false, exitCode: 0 }, outcome: 'error', exitCode: 125, says: /image contract/ },
     { name: 'the memory limit', run: { exitCode: 137, oom: true }, outcome: 'memory', exitCode: 137 },
     { name: 'docker inspect fails', run: { exitCode: 0 }, inspectFails: true, outcome: 'error', exitCode: 125 },

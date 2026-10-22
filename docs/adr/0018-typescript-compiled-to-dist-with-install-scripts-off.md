@@ -1,4 +1,4 @@
-# 0017. TypeScript compiled to dist, with install scripts off
+# 0018. TypeScript compiled to dist, with install scripts off
 
 Date: 2026-10-22 · Status: accepted · Supersedes: 0014 · Source: spec revision 3 on issue 34 (S3 to S5)
 
@@ -66,6 +66,6 @@ lockfile's integrity hashes.
 **The compiler is the one dev package that runs.** It runs as the owner in
 every test tier, in CI and in the build before a publish. A rebuild uses the
 same compiler, so the comparison of the packed `dist/` with a fresh build
-cannot see a hijacked compiler (accepted risk 17 in the threat model).
+cannot see a hijacked compiler (accepted risk 18 in the threat model).
 
 ADR 0001 to 0013 are unchanged.

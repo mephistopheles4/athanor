@@ -1,6 +1,6 @@
 # 0014. TypeScript source, compiled to dist
 
-Date: 2026-10-20 · Status: superseded by 0017 · Source: spec revision 4 on issue 8 (S4), ticket issue 9
+Date: 2026-10-20 · Status: superseded by 0018 · Source: spec revision 4 on issue 8 (S4), ticket issue 9
 
 The source moves to TypeScript, using all of its syntax, one module at a
 time. `tsc` in strict mode compiles `src/` to a flat `dist/` (`rootDir` is
