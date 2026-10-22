@@ -32,24 +32,33 @@ commands in PowerShell 7, from a checkout of the commit being released.
    The list holds only `bin/*.mjs`, the JavaScript and declaration files of
    `dist/`, `README.md`, `LICENSE` and `package.json`, as CI's pack check
    allows. If anything else is listed, stop.
-5. Log in to npm, just before the publish:
+5. Log in to npm, just before the publish. Your npm account must require
+   two-factor authentication for authorization and writes (the account's
+   security settings). Afterwards, `git status --porcelain -- .npmrc` must
+   print nothing: the login belongs in your own npm configuration, never in the
+   repo's file.
 
    ```powershell
    npm login
    ```
 
-6. Publish, approving it with two-factor authentication:
+6. Publish, approving it with two-factor authentication. After the first
+   publish, set the package's publishing access on npmjs.com to require
+   two-factor authentication and disallow tokens.
 
    ```powershell
    npm publish
    ```
 
-7. Log out straight after. This revokes the session token and removes it from
-   your npm configuration:
+7. Log out straight after, whether or not the publish worked. This revokes the
+   session token and removes it from your npm configuration:
 
    ```powershell
    npm logout
+   npm whoami
    ```
+
+   `npm whoami` must fail. If it prints your name, you are still logged in.
 
 ## What to know
 
