@@ -32,7 +32,8 @@
 - **Run configuration.** Everything a run needs from the repo configuration
   and the machine configuration: the build settings, the command, the limits,
   the time limit and the Docker endpoint settings. Its paths are checked to
-  stay inside the repo, its limits are held to the machine's ceilings, and
+  stay inside the repo, its limits are held to the machine's ceilings where the machine
+  configuration sets them, and
   each value keeps the file it came from, so a message names the file to fix.
   One table says which keys a repo may set and which only the machine may set.
 - **Container settings.** What reaches the container, worked out from the run

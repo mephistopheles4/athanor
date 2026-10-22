@@ -1,6 +1,6 @@
 # 0016. The container keeps six capabilities
 
-Date: 2026-10-21 · Status: accepted · Supersedes: 0015 · Source: spec revision 4 on issue 4 (S2, S3, K1 to K6)
+Date: 2026-10-21 · Status: accepted, superseded in part by 0017 · Supersedes: 0015 · Source: spec revision 4 on issue 4 (S2, S3, K1 to K6)
 
 The test code runs as root in the container, so a container-escape bug in
 Docker or the kernel would find Docker's 14 default capabilities already
