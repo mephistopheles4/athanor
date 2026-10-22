@@ -66,10 +66,16 @@ jobs:
           node -e '
             const fs = require("node:fs");
             const bad = [];
+            const cred = [];
             fs.readFileSync(".npmrc", "utf8").split("\n").forEach((line, i) => {
               const t = line.trim();
-              if (t !== "" && t[0] !== "#" && t[0] !== ";" && t !== "ignore-scripts=true") bad.push(i + 1);
+              if (/_auth|_password/i.test(t)) cred.push(i + 1);
+              else if (t !== "" && t[0] !== "#" && t[0] !== ";" && t !== "ignore-scripts=true") bad.push(i + 1);
             });
+            if (cred.length) {
+              console.error(".npmrc line " + cred.join(", ") + " looks like a credential, comment or not. Remove it; the file is public, and npm logins belong in your own npm configuration.");
+              process.exit(1);
+            }
             if (bad.length) {
               console.error(".npmrc line " + bad.join(", ") + " is not a comment or ignore-scripts=true. Remove it; the file is public and holds no other setting.");
               process.exit(1);
@@ -138,7 +144,8 @@ jobs:
           node scripts/build.mjs
           diff -r "$packed_dist/package/dist" dist
           prefix="$RUNNER_TEMP/athanor-prefix"
-          npm install --global --prefix "$prefix" "$tgz"
+          # npm skips the repo's .npmrc for a global install, so the flag is explicit.
+          npm install --global --ignore-scripts --prefix "$prefix" "$tgz"
           expected=$(node -p "require('./package.json').version")
           actual=$("$prefix/bin/athanor" --version)
           test "$actual" = "$expected"

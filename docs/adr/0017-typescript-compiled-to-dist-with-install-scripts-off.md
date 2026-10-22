@@ -9,8 +9,8 @@ declaration files. `src/` holds only `.ts` files, and `allowJs` is off.
 Both test tiers run the compiled output. `scripts/build.mjs` clears `dist/`
 and runs the compiler. The test runner calls it before every tier, and every
 pack runs it first, as an explicit step, because the repo's `.npmrc` turns
-lifecycle scripts off (`prepack` included) for every npm command in the repo,
-so no test or package uses a stale build. The compiler is started as Node
+lifecycle scripts off (`prepack` included) for every npm command in the repo
+except global installs, so no test or package uses a stale build. The compiler is started as Node
 itself from `node_modules`, with `shell: false` (ADR 0002). Each run clears
 `dist/`, so one worktree runs one test run at a time.
 
@@ -49,6 +49,8 @@ it never holds a credential.
   and `post` hooks don't run. The repo has no such hooks.
 - `prepack` stays in `package.json`. It runs when a pack is made without the
   repo's `.npmrc` or with `--ignore-scripts=false`.
+- npm skips a project `.npmrc` for a global install, so CI's global install of
+  the packed tarball passes `--ignore-scripts` itself.
 - An `npm_config_ignore_scripts` environment variable, or a command-line flag,
   overrides the project file.
 - Installing athanor from GitHub ships no `dist/`, with or without the

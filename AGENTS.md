@@ -38,8 +38,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
 Run `npm ci --ignore-scripts` first, once per worktree: it installs the
 compiler from the lockfile (ADR 0017) and runs no package's install scripts,
 as CI does. The repo's `.npmrc` turns install scripts off for every npm command
-run in the repo, `pack` and `publish` included, so every pack builds `dist/`
-first (`node scripts/build.mjs`); [the release steps](docs/releasing.md) show
+run in the repo, `pack` and `publish` included but global installs excepted (npm
+skips the project file for those), so every pack builds `dist/` first
+(`node scripts/build.mjs`); [the release steps](docs/releasing.md) show
 the hand publish. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
