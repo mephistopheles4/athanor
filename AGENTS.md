@@ -36,8 +36,11 @@ lasting decisions are in [docs/adr/](docs/adr/).
 ## Running the tests
 
 Run `npm ci --ignore-scripts` first, once per worktree: it installs the
-compiler from the lockfile (ADR 0014) and runs no package's install scripts,
-as CI does. Then one runner, named tiers, from the repo root:
+compiler from the lockfile (ADR 0017) and runs no package's install scripts,
+as CI does. The repo's `.npmrc` turns install scripts off for every npm command
+run in the repo, `pack` and `publish` included, so every pack builds `dist/`
+first (`node scripts/build.mjs`); [the release steps](docs/releasing.md) show
+the hand publish. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
   Runs anywhere Node 24 and git run.
@@ -56,11 +59,15 @@ syntax only, which Node runs directly. They import the core as `#dist/...`
 (`package.json` `imports`), which is `dist/` at run time and `src/` for
 `test/tsconfig.json`, so that the type check sees the test-only options (marked `@internal`, ADR 0003).
 
-CI runs `npm ci`, a strict `tsc` check of `src/` and of `test/`
-(`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file, the
-source check, both tiers, and a pack-and-install check that also checks
-the packed file's contents and type-checks an import of the package by its
-name, on Linux and Node 24. Every test sets its own `ATHANOR_HOME` and name
+CI runs zizmor on the workflows, a check that install scripts are off and
+every package resolves from the public registry, `npm ci`, `npm audit
+signatures` (the registry's signatures over the installed packages' metadata;
+`npm ci` enforces the lockfile hashes), a strict `tsc` check of `src/` and of
+`test/` (`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file,
+the source check, both tiers, and a pack-and-install check that builds before
+it packs, compares the packed `dist/` with a rebuild, checks the packed file's
+contents and type-checks an import of the package by its name, on Linux and
+Node 24. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
@@ -71,7 +78,9 @@ issue 4). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3 and K6 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
-tier's pass, and no test carries its name either.
+tier's pass, and no test carries its name either. `A1` to `A7`, from the spec
+on issue 34, are CI steps, one-time checks recorded in the PR, or checks by
+reading; no test carries their names.
 
 ## The tracker
 

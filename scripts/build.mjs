@@ -1,6 +1,6 @@
-// The build (spec on issue 8, ADR 0014): clears dist/, then compiles src/ to
-// it with tsc. The test runner and prepack both call it, so no test runs on a
-// stale build. The compiler is started as Node itself with shell: false,
+// The build (spec on issue 8, ADR 0017): clears dist/, then compiles src/ to
+// it with tsc. The test runner calls it before every tier, and every pack runs
+// it first as an explicit step, so no test or package uses a stale build. The compiler is started as Node itself with shell: false,
 // because a .cmd file on Windows needs a shell (ADR 0002). The compiler and
 // Node's types are taken from this repo's node_modules, whichever project root
 // it builds.

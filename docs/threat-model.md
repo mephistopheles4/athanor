@@ -40,6 +40,13 @@ fresh container that runs the test command. It writes only to its state folder (
 - **Someone on the network path to a remote engine** (accepted risk 10).
 - **An authenticated network user who can reach the Windows slot pipe**
   (accepted risk 3).
+- **Whoever can publish a release of a dev package or an action that CI uses,
+  or take over the account or repository that does.** A hijacked release runs
+  in CI on the bot's pull request before any merge, and can set that check's
+  result. It reaches `main`, and the owner's machine through `npm ci`, only
+  through a merge. The compiler is the one dev package that runs: once merged,
+  it runs as the owner in every test run and in the build before a publish
+  (accepted risk 17).
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -93,6 +100,21 @@ above; the software they run is not.
 - **Holder answers are shown, not trusted.** `status` skips an answer that is
   not one well-formed JSON line of the expected shape, or whose repo name holds
   control characters.
+- **The build's own supply chain.**
+  - Install scripts are off in the repo (`.npmrc`) and on CI's `npm ci`.
+  - The lockfile pins each dev package by integrity hash, and every package
+    resolves from the public registry.
+  - CI checks registry signatures against the public registry's keys.
+  - Actions are pinned by full SHA. zizmor checks each pin belongs to the
+    action's own repository, using the job's read-only token, which it sends
+    only to GitHub's API.
+  - Updates come from the update bot after a 7-day wait, except security
+    updates. A bot pull request's passing check is not evidence the update is
+    safe: the wait and the owner's merge are the controls.
+  - CI holds no secrets. Its token is read-only (accepted risk 18).
+  - The npm publish credential exists only on the owner's machine, from login
+    to logout around a hand publish (`docs/releasing.md`).
+  - See ADR 0017, A1 to A6.
 
 ## The sensitive-work list
 
@@ -278,3 +300,24 @@ candidate, so other work can point at it.
     needs mount privilege, which is root, and finding it would mean parsing the
     mount table on Linux only.
     Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file mounted over the configuration name). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
+17. **A merged hijacked compiler runs with the owner's rights.** The TypeScript
+    compiler is the one dev package that runs. A hijacked release that stays
+    hidden past the update bot's wait runs as the owner once the owner merges
+    it: in every test run, and in the build before a publish. It can read what
+    the owner's account can read, and shape the published code. A rebuild uses
+    the same compiler, so it cannot see the change. Accepted because no cheap
+    independent check of the compiler's output exists. The wait, the
+    registry's signatures and the owner's merge narrow the window.
+    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+18. **Code in the CI job can read the job's token.** A dev package, an action
+    or the test code running in CI can read the job's token until the job ends.
+    That includes code on a bot's pull request before merge. Accepted because
+    the token is read-only, the repo is public, and CI holds no secrets. A
+    workflow that holds a secret, such as issue 6's, needs its own controls.
+    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (data-lens F9). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+19. **A hijacked action could leave cache entries for a later workflow.** An
+    action's code, run on a push to `main`, can write Actions cache entries,
+    and a later workflow that restores the cache would read them. Accepted
+    because nothing restores a cache today. A workflow that restores one, such
+    as issue 6's, is a reason to revisit.
+    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.

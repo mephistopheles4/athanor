@@ -1,12 +1,15 @@
-# One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4): npm ci from
-# the lockfile, a strict tsc check of src/ and of test/, a syntax check of
-# every .mjs file, the source check, both test tiers (each builds dist/ first;
-# the docker tier uses the runner's own Docker engine), and npm pack followed
-# by a check of what the packed file holds, an install of it into a temporary
-# prefix, and a type check of a file that imports it by its name and sees no
-# test-only option. Locked down for a public repo: a read-only token, no
-# secrets, each action pinned to a full commit SHA, and the checkout's
-# token not left in the clone.
+# One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4; spec on
+# issue 34, S3 to S7): zizmor on the workflows, a check that install scripts
+# are off and every package comes from the public registry, npm ci from the
+# lockfile, a check of the installed packages' registry signatures, a strict
+# tsc check of src/ and of test/, a syntax check of every .mjs file, the
+# source check, both test tiers (each builds dist/ first; the docker tier uses
+# the runner's own Docker engine), and npm pack after an explicit build,
+# followed by a check of what the packed file holds, a comparison of its dist/
+# with a fresh build, an install of it into a temporary prefix, and a type
+# check of a file that imports it by its name and sees no test-only option.
+# Locked down for a public repo: a read-only token, no secrets, each action
+# pinned to a full commit SHA, and the checkout's token not left in the clone.
 name: ci
 
 on:
@@ -30,11 +33,66 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Lints .github/ (the workflows and dependabot.yml). The action's SHA
+      # fixes zizmor's version and its wheel hashes, so the update bot's change
+      # of this SHA is the only zizmor update, and it waits out the same
+      # period as the rest. advanced-security is off so a finding fails the
+      # job (zizmor's exit code) and no write permission is asked for. The
+      # online audits use the job's read-only token, which only zizmor sees.
+      - name: Lint the workflows with zizmor
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false
+          online-audits: true
+          persona: regular
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+      # Proves CI reads the repo's .npmrc, and that the install and the
+      # signature check below use the public registry and its keys. It reads
+      # .npmrc and the lockfile as text and prints no line of either.
+      - name: Check that install scripts are off and the registry is public
+        run: |
+          set -e
+          ignore=$(npm config get ignore-scripts)
+          registry=$(npm config get registry)
+          echo "ignore-scripts: $ignore"
+          echo "registry: $registry"
+          test "$ignore" = "true" || { echo "npm would run install scripts here. Put ignore-scripts=true in the .npmrc at the repo root."; exit 1; }
+          test "$registry" = "https://registry.npmjs.org/" || { echo "npm is not set to the public registry. Remove the registry setting from the .npmrc, or from the npm environment variables."; exit 1; }
+          node -e '
+            const fs = require("node:fs");
+            const bad = [];
+            fs.readFileSync(".npmrc", "utf8").split("\n").forEach((line, i) => {
+              const t = line.trim();
+              if (t !== "" && t[0] !== "#" && t[0] !== ";" && t !== "ignore-scripts=true") bad.push(i + 1);
+            });
+            if (bad.length) {
+              console.error(".npmrc line " + bad.join(", ") + " is not a comment or ignore-scripts=true. Remove it; the file is public and holds no other setting.");
+              process.exit(1);
+            }
+            const off = [];
+            const walk = (o, path) => {
+              for (const [k, v] of Object.entries(o)) {
+                if (k === "resolved" && typeof v === "string" && !v.startsWith("https://registry.npmjs.org/")) off.push(path);
+                else if (v && typeof v === "object") walk(v, path + "/" + k);
+              }
+            };
+            walk(JSON.parse(fs.readFileSync("package-lock.json", "utf8")), "");
+            if (off.length) {
+              console.error("package-lock.json has a package that does not resolve from https://registry.npmjs.org/: " + off.join(", ") + ". Regenerate the lockfile from the public registry.");
+              process.exit(1);
+            }
+          '
       - name: Install the compiler from the lockfile
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # Fails the job if the registry's signature over an installed package's
+      # own metadata (its name, version and integrity) does not verify. It does
+      # not compare the installed files: npm ci enforces the lockfile hashes.
+      # Only what npm ci put in node_modules needs it: the later installs of
+      # athanor's own tarball fetch nothing from the registry.
+      - name: Check the registry signatures of the installed packages
+        run: npm audit signatures
       - name: Strict type check
         run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Strict type check of the tests
@@ -52,8 +110,16 @@ jobs:
       - name: Pack and install
         run: |
           set -e
-          # The tiers left a dist/ behind; clear it so only prepack can build it.
+          # The repo's .npmrc turns prepack off (ADR 0017), so the build is an
+          # explicit step. The tiers left a dist/ behind: clearing it, and the
+          # index.d.ts check below, fail a pack made without the build. The
+          # diff against a fresh build, further down, fails a pack whose dist/
+          # differs from what this commit's source compiles to, such as a
+          # dist/ written by another step between the build and the pack.
+          # Neither checks the compiler: a hijacked compiler shapes both
+          # builds (accepted risk 17 in the threat model).
           rm -rf dist
+          node scripts/build.mjs
           npm pack --pack-destination "$RUNNER_TEMP"
           tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
           # Only bin/, dist/ (compiled JavaScript and its declarations), the
@@ -62,6 +128,12 @@ jobs:
           unexpected=$(printf '%s\n' "$packed" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
           test -z "$unexpected" || { echo "unexpected files in the package: $unexpected"; exit 1; }
           printf '%s\n' "$packed" | grep -qx 'package/dist/index.d.ts'
+          packed_dist="$RUNNER_TEMP/athanor-packed-dist"
+          rm -rf "$packed_dist"
+          mkdir -p "$packed_dist"
+          tar -xzf "$tgz" -C "$packed_dist" package/dist
+          node scripts/build.mjs
+          diff -r "$packed_dist/package/dist" dist
           prefix="$RUNNER_TEMP/athanor-prefix"
           npm install --global --prefix "$prefix" "$tgz"
           expected=$(node -p "require('./package.json').version")
