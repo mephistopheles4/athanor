@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, existsSync, mkdirSync, cpSync, appendFileSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdirSync, cpSync, appendFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { run } from '#dist/index.js';
@@ -173,6 +173,9 @@ test('G3 attributes from outside the tree change no byte', async (t) => {
 test('G4 a host tar.umask changes no file mode in either stream', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig, files: { 'a.txt': 'a\n', 'test/tool.sh': 'echo hi\n' } });
+  // The snapshot takes the work tree's mode where git tracks modes (Linux), and
+  // the index's where it does not (Windows), so the file is executable in both.
+  chmodSync(join(repo, 'test/tool.sh'), 0o755);
   git(repo, ['update-index', '--chmod=+x', 'test/tool.sh']);
   git(repo, ['commit', '-q', '-m', 'exec']);
   setEnv(t, { GIT_CONFIG_GLOBAL: configFile(t, '[tar]\n\tumask = 0077\n') });
