@@ -17,11 +17,11 @@ host-side conversion beyond what athanor pins:
 
 - athanor's archive attributes are `* -export-ignore -export-subst -filter`,
   so no filter driver runs, whatever config defines one.
-- The archive folder is made by `git init --bare --template=`, and every
-  `git archive` runs, in a clean environment: the inherited one with every
-  variable whose name starts with `GIT_` removed (on Windows, whatever its
-  case), `GIT_CONFIG_GLOBAL` naming an empty file in the run's scratch folder,
-  `GIT_CONFIG_NOSYSTEM=1` and `GIT_ATTR_NOSYSTEM=1`. The archive also pins
+- athanor makes the archive folder with `git init --bare --template=`. That
+  `init`, and every `git archive`, run in a clean environment: the inherited
+  one with every variable whose name starts with `GIT_` removed (on Windows,
+  whatever its case), `GIT_CONFIG_GLOBAL` naming an empty file in the run's
+  scratch folder, `GIT_CONFIG_NOSYSTEM=1` and `GIT_ATTR_NOSYSTEM=1`. The archive also pins
   `core.attributesFile` to that empty file, because git reads its default
   global attributes file even with no global config.
 - The snapshot's archive pins `tar.umask=0002`, git's default; the build
@@ -52,4 +52,5 @@ against a process that can write the environment or the home folder, which
 already chooses the git that runs. And the git calls that record the work
 (`stash create`, `add`, `hash-object`) still run with the host's git config and
 environment, clean filters included: the threat model's accepted risk 23, and
-issue 42.
+issue 42. ADR 0007 still holds for git's own files; a host clean filter that
+those calls run, such as Git LFS's, can write the repo's git folder.

@@ -33,11 +33,13 @@ function setEnv(t: TestContext, values: Record<string, string>): void {
   });
 }
 
+const fwd = (p: string): string => p.replace(/\\/g, '/');
+
 // A marker file and the smudge command that writes it. The path is written
 // with forward slashes inside single quotes, so Git for Windows' sh reads it.
 function marker(t: TestContext): { path: string; smudge: string } {
   const path = join(tempDir(t, 'athanor-marker-'), 'ran');
-  return { path, smudge: `echo ran >> '${path.replace(/\\/g, '/')}'; tr a-z A-Z` };
+  return { path, smudge: `echo ran >> '${fwd(path)}'; tr a-z A-Z` };
 }
 
 // A file of git config, in a temporary folder.
@@ -46,8 +48,6 @@ function configFile(t: TestContext, text: string): string {
   writeFileSync(file, text);
   return file;
 }
-
-const fwd = (p: string): string => p.replace(/\\/g, '/');
 
 // A repo whose attributes name the filter `up` for .txt files, at the root and
 // in the build context, with one such file in each stream.
@@ -213,4 +213,54 @@ test('G7 the image tag hashes the format athanor-image-v2 and the build context\
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
   const expected = createHash('sha256').update(`athanor-image-v2\n${tree}`).digest('hex').slice(0, 32);
   assert.equal(result.image!.tag, `athanor:${expected}`);
+});
+
+// The regular files of a tar stream, by name: mode and bytes.
+function tarEntries(buffer: Buffer): Map<string, { mode: string; bytes: Buffer }> {
+  const files = new Map<string, { mode: string; bytes: Buffer }>();
+  for (let offset = 0; offset + 512 <= buffer.length;) {
+    const header = buffer.subarray(offset, offset + 512);
+    if (header.every((b) => b === 0)) break;
+    const field = (start: number, length: number): string => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
+    const size = parseInt(field(124, 12).trim() || '0', 8);
+    if ((field(156, 1) || '0') === '0') files.set(field(0, 100), { mode: field(100, 8).trim(), bytes: buffer.subarray(offset + 512, offset + 512 + size) });
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+
+test('G1 G3 G4 C32 the archive step\'s own settings hold even when a hostile global config reaches git', async (t) => {
+  const home = isolate(t);
+  const repo = makeRepo(t, { athanor: baseConfig, files: { '.gitattributes': '*.txt filter=up text\n', 'a.txt': 'one\n$Id$\n' } });
+  const head = git(repo, ['rev-parse', 'HEAD']).trim();
+  const gitModule = await import('#dist/git.js');
+  const scratch = await gitModule.makeScratch(home, repo);
+  t.after(() => scratch.remove());
+  // The clean environment: the empty global config, no system config or
+  // attributes, and no GIT_* name but the ones athanor sets.
+  assert.equal(scratch.archiveEnv.GIT_CONFIG_GLOBAL, scratch.emptyFile);
+  assert.equal(scratch.archiveEnv.GIT_CONFIG_NOSYSTEM, '1');
+  assert.equal(scratch.archiveEnv.GIT_ATTR_NOSYSTEM, '1');
+  assert.deepEqual(Object.keys(scratch.archiveEnv).filter((k) => /^git_/i.test(k)).sort(),
+    ['GIT_ATTR_NOSYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_DIR', 'GIT_LITERAL_PATHSPECS', 'GIT_OBJECT_DIRECTORY']);
+  // Past that environment, a global config that would change the bytes and
+  // the mode if one of the archive's own settings were lost.
+  const m = marker(t);
+  const attributes = join(tempDir(t, 'athanor-attrs-'), 'attributes');
+  writeFileSync(attributes, '*.txt ident\n');
+  const hostile = configFile(t, `[filter "up"]\n\tsmudge = "${m.smudge}"\n[core]\n\tautocrlf = true\n\teol = crlf\n\tattributesFile = ${fwd(attributes)}\n[tar]\n\tumask = 0077\n`);
+  const stream = async (of: 'snapshot' | 'build context') => {
+    const started = gitModule.tarStream(repo, { ...scratch, archiveEnv: { ...scratch.archiveEnv, GIT_CONFIG_GLOBAL: hostile } }, head, of);
+    const chunks: Buffer[] = [];
+    started.child.stdout.on('data', (c: Buffer) => chunks.push(c));
+    const ended = await started.done;
+    assert.equal(ended.code, 0);
+    return tarEntries(Buffer.concat(chunks));
+  };
+  for (const [of, mode] of [['snapshot', /664$/], ['build context', /644$/]] as const) {
+    const file = (await stream(of)).get('a.txt')!;
+    assert.equal(file.bytes.toString('utf8'), 'one\n$Id$\n', `the ${of} keeps LF, runs no filter and adds no attribute`);
+    assert.match(file.mode, mode, `the ${of} keeps its pinned umask`);
+  }
+  assert.equal(existsSync(m.path), false, 'the filter never ran');
 });

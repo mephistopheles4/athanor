@@ -52,8 +52,9 @@ const BUILD_ARCHIVE_CONFIG = ['-c', 'tar.umask=0022'];
 const SNAPSHOT_ARCHIVE_CONFIG = ['-c', 'tar.umask=0002'];
 
 // The environment for the archive step (ADR 0020): the inherited one with
-// every GIT_* variable removed (on Windows, whatever its case, as Windows
-// reads names), no global or system config and no system attributes.
+// every GIT_* variable removed (on Windows in any case, since Windows matches
+// variable names without regard to case), no global or system config and no
+// system attributes.
 function cleanGitEnv(emptyFile: string): Env {
   const gitVariable = process.platform === 'win32' ? /^git_/i : /^GIT_/;
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !gitVariable.test(name)));
