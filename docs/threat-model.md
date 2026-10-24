@@ -46,7 +46,18 @@ fresh container that runs the test command. It writes only to its state folder (
   result. It reaches `main`, and the owner's machine through `npm ci`, only
   through a merge. The compiler is the one dev package that runs: once merged,
   it runs as the owner in every test run and in the build before a publish
-  (accepted risk 18).
+  (accepted risk 18). The same holds for the actions the release workflow
+  uses, among them `actions/upload-artifact` and `actions/download-artifact`,
+  and for the build on the runner before a staged release (accepted risks 21
+  and 22).
+- **Whoever controls the owner's GitHub account, or can merge to `main`,** can
+  change and start the release workflow and approve its deployment. They can
+  stage a version, but cannot make one live without the owner's npm
+  two-factor approval. Before that approval the owner checks that they
+  started the run, on the commit they merged, and reads the diff since the
+  last release tag. The GitHub approval guards the token only as far as npm
+  enforces the environment the trusted publisher names, which is unconfirmed
+  (R10).
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -109,9 +120,16 @@ above; the software they run is not.
     updates. A bot pull request's passing check is not evidence the update is
     safe: the wait and the owner's merge are the controls.
   - CI holds no secrets. Its token is read-only (accepted risk 19).
-  - The npm publish credential exists only on the owner's machine, from login
-    to logout around a hand publish (`docs/releasing.md`).
-  - See ADR 0018, A1 to A6.
+  - The first publish is by hand, as before (`docs/releasing.md`).
+  - Later versions are staged from the release workflow's `publish` job.
+    GitHub issues an identity token there only after the owner approves the
+    `npm` environment. That token proves the job's identity to any service
+    that trusts it, including Sigstore for provenance. npm exchanges it for a
+    token that can only stage.
+  - A staged version goes live only when the owner approves it with npm 2FA.
+    The owner logs in only after the local build and logs out straight after.
+    Publishing access disallows tokens.
+  - See ADR 0018, A1 to A6, and ADR 0019.
 
 ## The sensitive-work list
 
@@ -121,7 +139,10 @@ above; the software they run is not.
   (mode 0700 on Linux; on Windows, the home folder's own access rules), and on
   whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; a remote engine's access control is its
-  operator's (accepted risks 7 and 8).
+  operator's (accepted risks 7 and 8). The release path has its own: npm's
+  trusted-publisher binding to this repo, workflow and environment, the `npm`
+  environment's required reviewer, and the owner's npm two-factor approval
+  (the supply-chain bullet above; ADR 0019).
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
@@ -134,7 +155,9 @@ above; the software they run is not.
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
   output goes on to that session's model provider, as it does when tests run
-  on the host.
+  on the host. The release path holds two credentials for a short time: the
+  publish job's identity token, and the owner's npm login around an approval
+  (the supply-chain bullet above; ADR 0019; accepted risk 22).
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
   its image (accepted risk 8). Temporary names use Node's crypto random source.
@@ -143,7 +166,9 @@ above; the software they run is not.
   container's writable layer sit unencrypted on the engine's or builder's
   disk: on this machine they rely on its disk encryption; on a remote one, on
   that machine's owner (accepted risk 7). `prune` does not clear Docker's build
-  cache; the README names the commands that do.
+  cache; the README names the commands that do. Each released version's
+  provenance is signed by npm through Sigstore (the supply-chain bullet above;
+  ADR 0019).
 - **Input validation.** Repo configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
@@ -313,10 +338,45 @@ candidate, so other work can point at it.
     That includes code on a bot's pull request before merge. Accepted because
     the token is read-only, the repo is public, and CI holds no secrets. A
     workflow that holds a secret, such as issue 6's, needs its own controls.
+    The release workflow keeps its OIDC permission in the `publish` job,
+    which runs no repo code and installs no npm package. Its code is two
+    pinned actions and the Node and npm that setup-node provides (ADR 0019).
+    The release's `check` job holds the same kind of read-only token, with
+    `actions: read` added. This risk's reason, that CI holds no secrets,
+    doesn't cover the artifact that job hands on to be staged: see accepted
+    risk 21.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (data-lens F9). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM3); the Design review of spec revision 1 (data-lens F7, adversarial-lens F8). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 20. **A hijacked action could leave cache entries for a later workflow.** An
     action's code, run on a push to `main`, can write Actions cache entries,
     and a later workflow that restores the cache would read them. Accepted
     because nothing restores a cache today. A workflow that restores one, such
-    as issue 6's, is a reason to revisit.
+    as issue 6's, is a reason to revisit. The release workflow restores no
+    cache. The workflow check fails a workflow that uses the cache actions or
+    setup-node's cache in the block style it reads, and refuses a flow-style
+    `with:` on those actions.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM4); the Design review of spec revision 1 (adversarial-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+21. **Code in the release's check job shapes the tarball.** A dev package,
+    the compiler, the test code, an action, or a process an earlier step left
+    running in `check` can change any file that is packed, and `publish`
+    stages exactly that. Matching the check job's integrity proves only that
+    `publish` staged what `check` made. The control is the owner's comparison
+    of every file of the staged package with a local pack of the same commit,
+    made before the login, which catches every change made only on the
+    runner. A hijacked compiler shapes both packs (accepted risk 18). Accepted
+    because the staged version goes live only after that comparison and the
+    owner's npm two-factor approval.
+    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM5); the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+22. **An action in the release's publish job holds the identity token.**
+    `actions/download-artifact` or `actions/setup-node`, hijacked, or the npm
+    it provides, can ask for the token. With it they can stage another
+    tarball or extra versions, use up the 2-day validation of a new trusted
+    publisher, or get a Sigstore signature in this workflow's name for some
+    other file. The controls are the SHA pins and the pinned Node, each at
+    least 7 days old; stage-only publishing; the owner's look, which expects
+    exactly one staged entry whose integrity matches the check job's; and the
+    owner's 2FA approval. Accepted because nothing goes live without that
+    look and approval, and a stray signature names this workflow's run in
+    the public log.
+    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.

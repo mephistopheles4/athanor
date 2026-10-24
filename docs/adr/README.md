@@ -23,3 +23,4 @@ changed one gets a new record that names the one it replaces.
 | [0016](0016-the-container-keeps-six-capabilities.md) | The container keeps six capabilities (superseded in part by 0017) |
 | [0017](0017-no-cpu-limit-unless-one-is-configured.md) | No CPU limit unless one is configured |
 | [0018](0018-typescript-compiled-to-dist-with-install-scripts-off.md) | TypeScript compiled to dist, with install scripts off |
+| [0019](0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md) | Releases are staged by a trusted publisher and approved twice |

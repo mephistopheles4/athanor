@@ -1,0 +1,86 @@
+// The workflow check (spec on issue 6, S6): every actions/checkout step sets
+// persist-credentials: false, every actions/setup-node step sets
+// package-manager-cache: false with no cache or registry-url input, no step
+// uses a cache action, and no line names an npm token or reads a secret.
+// It reads each .yml and .yaml file by lines and step blocks, with no YAML
+// package, so it sees only the named actions written in block style, and it
+// refuses a flow-style with: on them. It guards against mistakes, not against
+// someone set on getting round it.
+//   node scripts/check-workflows.mjs [folder]   (default: .github/workflows)
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const folder = process.argv[2] ?? join(root, '.github', 'workflows');
+
+const indent = (line) => line.match(/^ */)[0].length;
+const meaningful = (line) => line.trim() !== '' && !line.trim().startsWith('#');
+// The value of a key on its line, without quotes or a trailing comment.
+const value = (line, key) => line.match(new RegExp(`^\\s*(?:-\\s+)?${key}:\\s*['"]?([^'"\\s#]*)`))?.[1];
+
+// The lines of the step that holds line i: from its "- " line to the next
+// line at or left of that dash.
+function stepAround(lines, i) {
+  let start = i;
+  while (start >= 0 && !(/^\s*-\s/.test(lines[start]) && indent(lines[start]) < indent(lines[i]) + (/^\s*-\s/.test(lines[i]) ? 1 : 0))) start--;
+  if (start < 0) start = i;
+  const dash = indent(lines[start]);
+  let end = start + 1;
+  while (end < lines.length && !(meaningful(lines[end]) && indent(lines[end]) <= dash)) end++;
+  return { start, end };
+}
+
+const problems = [];
+let files = 0;
+for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort()) {
+  files++;
+  const path = join(folder, name);
+  const shown = relative(process.cwd(), path);
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  const report = (i, why) => problems.push(`${shown}:${i + 1}: ${why}`);
+
+  lines.forEach((line, i) => {
+    const persist = value(line, 'persist-credentials');
+    if (persist !== undefined && persist !== 'false') report(i, 'persist-credentials must be false, so the job\'s token is not left in the clone.');
+    if (/NODE_AUTH_TOKEN|_authToken/.test(line)) report(i, 'an npm token is named here. Remove it: releases publish through the trusted publisher, and no npm token is kept anywhere.');
+    if (/\bsecrets\.[A-Za-z_]/.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
+
+    const uses = value(line, 'uses');
+    if (uses === undefined) return;
+    if (/^actions\/cache(\/restore|\/save)?@/.test(uses)) {
+      report(i, `${uses.split('@')[0]} must not be used: no workflow restores or saves an Actions cache.`);
+      return;
+    }
+    const checkout = uses.startsWith('actions/checkout@');
+    const setupNode = uses.startsWith('actions/setup-node@');
+    if (!checkout && !setupNode) return;
+    const action = checkout ? 'actions/checkout' : 'actions/setup-node';
+    const { start, end } = stepAround(lines, i);
+    const step = lines.slice(start, end).map((text, k) => ({ text, at: start + k }));
+    const flow = step.find((l) => /^\s*(?:-\s+)?with:\s*\{/.test(l.text));
+    if (flow) {
+      report(flow.at, `${action}'s with: is in flow style, which this check can't read. Write it in block style, one input per line.`);
+      return;
+    }
+    if (checkout && !step.some((l) => value(l.text, 'persist-credentials') !== undefined)) {
+      report(i, 'actions/checkout must set persist-credentials: false, so the job\'s token is not left in the clone.');
+    }
+    if (setupNode) {
+      if (!step.some((l) => value(l.text, 'package-manager-cache') === 'false')) {
+        report(i, 'actions/setup-node must set package-manager-cache: false, so no Actions cache is restored.');
+      }
+      for (const l of step) {
+        if (value(l.text, 'cache') !== undefined) report(l.at, 'actions/setup-node must not set cache: no workflow restores an Actions cache.');
+        if (value(l.text, 'registry-url') !== undefined) report(l.at, 'actions/setup-node must not set registry-url, which writes an .npmrc that reads an npm token.');
+      }
+    }
+  });
+}
+
+if (problems.length > 0) {
+  for (const p of problems) console.error(p);
+  console.error(`${problems.length} workflow rule${problems.length === 1 ? '' : 's'} broken.`);
+  process.exit(1);
+}
+console.log(`${files} workflow file${files === 1 ? '' : 's'} checked; every rule kept.`);
