@@ -26,6 +26,8 @@ export interface ContainerRun {
   // The container's name and the arguments that start it, from the container settings.
   container: Container;
   timeLimitSeconds: number;
+  // The run's environment with the checked Docker context and builder pinned.
+  env?: NodeJS.ProcessEnv;
   stdout: Sink | null;
   stderr: Sink | null;
   signal?: AbortSignal;
@@ -67,13 +69,13 @@ export async function runContainer(o: ContainerRun): Promise<Ran> {
   const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
   const { name, args } = o.container;
   const container = start([...o.docker, ...args], {
-    stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
+    env: o.env, stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
   feed(archive, container);
 
   let timedOut = false;
   let interrupted = false;
-  const stop = () => removeContainer(o.docker, name);
+  const stop = () => removeContainer(o.docker, name, o.env);
   const timer = setTimeout(() => { timedOut = true; stop(); }, o.timeLimitSeconds * 1000);
   const onAbort = () => { interrupted = true; stop(); };
   if (o.signal?.aborted) onAbort();
@@ -84,8 +86,8 @@ export async function runContainer(o: ContainerRun): Promise<Ran> {
   o.signal?.removeEventListener('abort', onAbort);
   filter.flush();
   const ranMs = Date.now() - started;
-  const state = interrupted || timedOut ? null : await readExit(o.docker, name);
-  await removeContainer(o.docker, name);
+  const state = interrupted || timedOut ? null : await readExit(o.docker, name, o.env);
+  await removeContainer(o.docker, name, o.env);
 
   const base = { ranMs };
   if (interrupted) return { ...base, outcome: 'interrupted', exitCode: EXIT.interrupted };

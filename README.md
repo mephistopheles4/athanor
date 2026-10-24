@@ -18,17 +18,25 @@ Dockerfile with network access.
 Needs Node 24 or later, git 2.32 or later, and a Docker engine (Docker Desktop
 on Windows).
 
-athanor uses Docker as you have it configured (`DOCKER_HOST`, the Docker
-context and the buildx builder), local or remote. With a remote engine or
-builder, your build context and your snapshot, uncommitted changes included,
-go to that machine.
+athanor uses the Docker engine and buildx builder you have configured
+(`DOCKER_HOST`, the Docker context and the buildx builder) when they are on
+this machine: a unix socket, Docker Desktop's local pipe, or tcp to a loopback
+address. `athanor run` refuses an engine or builder on another machine,
+because your build context and your snapshot, uncommitted changes included,
+would go to that machine. To use one anyway (an ssh engine, a build box, a
+remote builder, or CI running Docker inside Docker on another host), set
+`"allowRemoteDocker": true` in the machine configuration; each run then names
+the engine or builder before it builds.
 
-A plain `tcp://` engine without TLS verification is refused, because your
-work and the test output would cross the network unencrypted. Use `ssh://`,
-tcp with TLS verification, or a local engine; loopback addresses pass. On a
-network you trust (a home lab, an office build box, a VM on this machine, or
-CI running Docker inside Docker), set `"allowPlainTcp": true` in the machine
-configuration. A repo cannot set it.
+A plain `tcp://` engine or builder without TLS verification is refused too,
+because your work and the test output would cross the network unencrypted.
+Use `ssh://`, tcp with TLS verification, or a local engine; loopback addresses
+pass. On a network you trust (a home lab, an office build box, a VM on this
+machine, or CI running Docker inside Docker), set `"allowPlainTcp": true` in
+the machine configuration; plain tcp to another host needs both keys. A repo
+cannot set either. The machine configuration is read from the state folder,
+which `ATHANOR_HOME` moves, so whoever sets a run's environment also chooses
+which machine configuration it reads.
 
 Don't run athanor on a Docker engine shared with people you don't trust:
 anyone with access to the engine can read your runs and change their results.
@@ -146,7 +154,8 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 
 ```json
 { "maxRuns": 2, "memory": "2g", "timeoutMinutes": 30, "pruneDays": 30,
-  "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false }
+  "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false,
+  "allowRemoteDocker": false }
 ```
 
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
