@@ -16,6 +16,7 @@ interface CliOptions {
   // Words after the name given without --, passed on so the core can say how to give them.
   extraNames?: string[];
   untracked?: boolean;
+  output?: string;
   dryRun?: boolean;
   days?: number;
 }
@@ -44,7 +45,7 @@ export function parseArgs(argv: string[]): Parsed {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
   const allowed: string[] = {
-    run: ['--json', '--untracked'],
+    run: ['--json', '--untracked', '--output'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
   }[command];
@@ -67,6 +68,13 @@ export function parseArgs(argv: string[]): Parsed {
       if (arg === '--json') options.json = true;
       else if (arg === '--untracked') options.untracked = true;
       else if (arg === '--dry-run') options.dryRun = true;
+      else if (arg === '--output') {
+        const value = rest[++i];
+        if (value === undefined || value === '') {
+          throw new AthanorError('--output needs a folder to copy into, such as --output reports/run-1. The folder must not exist yet.');
+        }
+        options.output = value;
+      }
       else if (arg === '--days') {
         const value = rest[++i];
         if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
@@ -145,6 +153,7 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
       command: options.command,
       args: options.args,
       extraNames: options.extraNames,
+      output: options.output,
       untracked: options.untracked === true,
       signal: controller.signal,
       onProgress,
@@ -160,6 +169,8 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
 }
 
 function resultLine(result: RunResult): string {
+  // The test ran and exited, but its outputs could not be copied: the message says both.
+  if (result.testExitCode !== undefined) return `${result.message} (exit ${result.exitCode}).`;
   switch (result.outcome) {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;

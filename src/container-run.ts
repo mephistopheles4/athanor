@@ -8,7 +8,7 @@ import type { Scratch } from './git.js';
 import { readExit, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { start, feed } from './proc.js';
-import { MARKER } from './container-settings.js';
+import { MARKER, WORK_PREFIX } from './container-settings.js';
 import type { Container } from './container-settings.js';
 
 export type Outcome = 'pass' | 'fail' | 'timeout' | 'memory' | 'interrupted' | 'error';
@@ -40,12 +40,24 @@ export interface Ran {
   message?: string;
 }
 
-// Strips the boot marker from the container's stderr and notes that it came.
+// What a container run hands back: the outcome, the work lines the boot script
+// printed, and the stopped container's ID. The container is still there; the
+// core removes it, by ID when it copies from it (ADR 0023).
+export interface Handed {
+  ran: Ran;
+  work: string[];
+  id?: string;
+}
+
+// Strips the boot marker, and every work line before it, from the container's
+// stderr. It notes that the marker came and keeps the work lines' text.
 function markerFilter(write: (chunk: Buffer | string) => void) {
   let seen = false;
+  const work: string[] = [];
   let pending = '';
   return {
     get seen() { return seen; },
+    work,
     push(chunk: Buffer): void {
       if (seen) { write(chunk); return; }
       pending += chunk.toString('utf8');
@@ -53,7 +65,9 @@ function markerFilter(write: (chunk: Buffer | string) => void) {
       while (!seen && (i = pending.indexOf('\n')) !== -1) {
         const line = pending.slice(0, i + 1);
         pending = pending.slice(i + 1);
-        if (line.replace(/\r?\n$/, '') === MARKER) seen = true;
+        const text = line.replace(/\r?\n$/, '');
+        if (text === MARKER) seen = true;
+        else if (text.startsWith(WORK_PREFIX)) work.push(text.slice(WORK_PREFIX.length));
         else write(line);
       }
       if (seen && pending) { write(pending); pending = ''; }
@@ -62,7 +76,7 @@ function markerFilter(write: (chunk: Buffer | string) => void) {
   };
 }
 
-export async function runContainer(o: ContainerRun): Promise<Ran> {
+export async function runContainer(o: ContainerRun): Promise<Handed> {
   const write = (stream: Sink | null) => (c: Buffer | string) => { stream?.write(c); };
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
@@ -87,23 +101,23 @@ export async function runContainer(o: ContainerRun): Promise<Ran> {
   filter.flush();
   const ranMs = Date.now() - started;
   const state = interrupted || timedOut ? null : await readExit(o.docker, name, o.env);
-  await removeContainer(o.docker, name, o.env);
 
   const base = { ranMs };
-  if (interrupted) return { ...base, outcome: 'interrupted', exitCode: EXIT.interrupted };
-  if (timedOut) return { ...base, outcome: 'timeout', exitCode: EXIT.timeout };
+  const handed = (ran: Ran): Handed => ({ ran, work: filter.work, ...(state?.id !== undefined ? { id: state.id } : {}) });
+  if (interrupted) return handed({ ...base, outcome: 'interrupted', exitCode: EXIT.interrupted });
+  if (timedOut) return handed({ ...base, outcome: 'timeout', exitCode: EXIT.timeout });
   if (a.code !== 0) {
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: `git archive of the snapshot failed (exit ${a.code}), so the test did not run on the whole snapshot.` };
+    return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: `git archive of the snapshot failed (exit ${a.code}), so the test did not run on the whole snapshot.` });
   }
   if (!filter.seen) {
     const why = c.code === 125
       ? 'docker run failed before the test started. Its message is above.'
       : 'the container did not print athanor\'s start marker. Either the snapshot could not be unpacked, or the image breaks athanor\'s image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.';
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: `The test never started: ${why}` };
+    return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: `The test never started: ${why}` });
   }
   if (!state) {
-    return { ...base, outcome: 'error', exitCode: EXIT.setup, message: 'athanor could not read how the container ended (docker inspect failed). Check that Docker is still running.' };
+    return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: 'athanor could not read how the container ended (docker inspect failed). Check that Docker is still running.' });
   }
-  if (state.oom) return { ...base, outcome: 'memory', exitCode: EXIT.memory };
-  return { ...base, outcome: state.exitCode === 0 ? 'pass' : 'fail', exitCode: state.exitCode };
+  if (state.oom) return handed({ ...base, outcome: 'memory', exitCode: EXIT.memory });
+  return handed({ ...base, outcome: state.exitCode === 0 ? 'pass' : 'fail', exitCode: state.exitCode });
 }

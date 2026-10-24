@@ -5,6 +5,7 @@ import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync,
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
+import { checkOutputs, DEFAULT_MAX_OUTPUT_MEGABYTES } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -53,6 +54,7 @@ const KEYS = {
   maxTimeoutMinutes: { repo: false, machine: true, check: positiveNumber },
   allowPlainTcp: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
   allowRemoteDocker: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
+  maxOutputMegabytes: { repo: false, machine: true, check: positiveInteger },
 } satisfies Record<string, KeyRule>;
 
 interface KeyRule {
@@ -79,6 +81,7 @@ export interface MachineValues {
   maxTimeoutMinutes: number;
   allowPlainTcp: boolean;
   allowRemoteDocker: boolean;
+  maxOutputMegabytes: number;
 }
 
 // The machine configuration: its file, which may not exist, and its checked values.
@@ -130,6 +133,10 @@ export interface RunConfig {
   limits: Limits;
   timeLimitSeconds: number;
   docker: { allowPlainTcp: boolean; allowRemoteDocker: boolean; machineFile: string };
+  // The paths the command declares for copy-out, relative to the work folder.
+  outputs: string[];
+  // The most bytes copy-out reads from the container, from the machine configuration.
+  maxOutputBytes: number;
   // A command's own limit names its key: commands.<name>.<key>.
   from: Record<LimitKey | 'allowPlainTcp' | 'allowRemoteDocker', Source>;
 }
@@ -325,6 +332,10 @@ function checkCommand(name: string, command: unknown, place: string, lead: strin
   if (command.args !== undefined && typeof command.args !== 'boolean') {
     throw new AthanorError(`In ${place}, commands.${name}.args must be true or false.`);
   }
+  if (command.outputs !== undefined) {
+    const problem = checkOutputs(command.outputs);
+    if (problem) throw new AthanorError(`In ${place}, commands.${name}.outputs ${problem}.`);
+  }
   for (const k of ['memory', 'cpus', 'timeoutMinutes'] as const) {
     const check = checkOf(k);
     if (check && command[k] !== undefined && !check.ok(command[k])) {
@@ -416,6 +427,8 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     command,
     limits,
     timeLimitSeconds: limits.timeoutMinutes * 60,
+    outputs: own?.outputs ?? [],
+    maxOutputBytes: (machine.values.maxOutputMegabytes ?? DEFAULT_MAX_OUTPUT_MEGABYTES) * 1024 * 1024,
     docker: { allowPlainTcp: machine.values.allowPlainTcp === true, allowRemoteDocker: machine.values.allowRemoteDocker === true, machineFile: machine.file },
     from: {
       memory: picked.memory.source,

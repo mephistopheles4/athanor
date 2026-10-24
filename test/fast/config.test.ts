@@ -53,7 +53,7 @@ test('C18 bad configuration and bad command lines exit 125 naming the problem; -
   const lineRows = [
     { args: [], says: /No subcommand given. The subcommands are: run, status, prune/ },
     { args: ['frobnicate'], says: /unknown subcommand "frobnicate".*run, status, prune/s },
-    { args: ['run', '--bogus'], says: /unknown flag "--bogus" for athanor run. Its flags are: --json, --untracked/ },
+    { args: ['run', '--bogus'], says: /unknown flag "--bogus" for athanor run. Its flags are: --json, --untracked, --output/ },
     { args: ['status', '--untracked'], says: /unknown flag "--untracked" for athanor status. Its flags are: --json./ },
     { args: ['prune', '--days', '0'], says: /--days must be a positive whole number of days, such as --days 30/ },
     { args: ['prune', '--days', 'x'], says: /--days must be a positive whole number of days, such as --days 30/ },
@@ -232,7 +232,7 @@ test('T8 a configuration message names the file the bad value came from, in its 
 
 test('T9 a key only the machine may set is refused in the repo configuration, and a repo key in the machine file', async (t) => {
   const repoKeys = 'dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes';
-  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp, allowRemoteDocker';
+  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp, allowRemoteDocker, maxOutputMegabytes';
   const machineOnly = { maxRuns: 3, pruneDays: 7, maxMemory: '4g', maxCpus: 2, maxTimeoutMinutes: 60, allowPlainTcp: true };
   for (const [key, value] of Object.entries(machineOnly)) {
     await t.test(`${key} in the repo`, async (t) => {
