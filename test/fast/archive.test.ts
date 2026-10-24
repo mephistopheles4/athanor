@@ -85,6 +85,18 @@ test('G2 a filter defined elsewhere on the host never runs either', async (t) =>
       skip: process.platform !== 'win32' && 'Windows matches variable names without regard to case',
       env: (_t, _r, smudge) => ({ git_config_count: '1', git_config_key_0: 'filter.up.smudge', git_config_value_0: smudge }),
     },
+    {
+      // -filter cannot stop this one, since git then reads info/attributes from
+      // the copy, so a strip that missed lower-case names would fail the row.
+      name: 'a lower-case git_common_dir naming a copy of the repo\'s git folder, on Windows',
+      skip: process.platform !== 'win32' && 'Windows matches variable names without regard to case',
+      env: (t, repo, smudge) => {
+        const copy = join(tempDir(t, 'athanor-common-'), 'git');
+        cpSync(join(repo, '.git'), copy, { recursive: true });
+        appendFileSync(join(copy, 'config'), `[filter "up"]\n\tsmudge = "${smudge}"\n`);
+        return { git_common_dir: copy };
+      },
+    },
     { name: 'GIT_CONFIG_PARAMETERS', env: (_t, _r, smudge) => ({ GIT_CONFIG_PARAMETERS: sq(`filter.up.smudge=${smudge}`) }) },
     { name: 'GIT_CONFIG_SYSTEM naming a file', env: (t, _r, smudge) => ({ GIT_CONFIG_SYSTEM: configFile(t, `[filter "up"]\n\tsmudge = "${smudge}"\n`) }) },
     {

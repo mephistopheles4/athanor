@@ -122,7 +122,9 @@ their line endings and file modes, and applies your repo's own
 (`git archive`) runs no git content filter and does not read your global or
 system git configuration, so a Git LFS file arrives as its pointer file. The git calls that record uncommitted work still run with your git
 configuration, clean filters included
-([issue 42](https://github.com/mephistopheles4/athanor/issues/42)).
+([issue 42](https://github.com/mephistopheles4/athanor/issues/42)). With Git
+LFS, its clean filter can copy uncommitted files, and with `--untracked`
+untracked ones, into the repo's `.git/lfs` folder, where they stay.
 
 ### Exit codes
 

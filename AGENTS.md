@@ -30,7 +30,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. A change here is security-sensitive work.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
-  no inherited `GIT_*` variable, no global or system config, no template, and
+  no inherited `GIT_*` variable, no global or system config or attributes, no template, and
   `-filter` on every path. A change here is security-sensitive work.
 - **Messages use plain words.** Each says what happened and, for a warning or
   an error, what to do next.

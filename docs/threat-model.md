@@ -21,7 +21,7 @@ local or remote (ADR 0012).
 `athanor` key in `package.json`) and an optional machine
 configuration, builds the repo's Dockerfile into an image, takes a snapshot of
 the work with git, holds one of N slot locks, and pipes the snapshot into a
-fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`) (and, through a host clean filter, the repo's git folder: accepted risk 23).
+fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`), except that a host clean filter can write the repo's git folder (accepted risk 23).
 
 **Who could act against it.**
 
@@ -84,17 +84,20 @@ above; the software they run is not.
   be tracked: no untracked or ignored file and no git folder (ADR 0006, C28).
 - **The archive step carries the tree as committed.** Every `git archive`, and
   the `git init` of athanor's archive folder, run with every inherited `GIT_*`
-  variable removed, no global or system git config or attributes, and no git
-  template; the archive also has `-filter` on every path. So no content filter
-  runs on the host while the stream is made, and no host git setting changes a
-  file in that step. This keeps host git settings out of the archive step; it
-  is not a control against a process that can write the environment or the
-  home folder, which already chooses the git that runs. The line endings and
+  variable removed, no global or system git config or attributes (on git 2.32
+  or later), and no git template; the archive also has `-filter` on every
+  path. So no content filter runs on the host while the stream is made, and no
+  host git setting changes a file in that step. This keeps host git settings
+  out of the archive step; it is not a control against a process that can
+  write the environment or the home folder, which already chooses the git that
+  runs. On Windows, how athanor finds the git and docker programs it starts is
+  not yet a control either; a follow-up to issue 20 closes that. The line
+  endings and
   file modes are pinned, and the tree's own `text`, `eol`, `ident` and
   `working-tree-encoding` attributes still apply (ADR 0020, C32, G1–G6). The
   git calls that make the snapshot's and the build context's trees still run
   with the host's git config and environment (accepted risk 23, issue 42).
-- **The repo is never written.** Snapshots use a copy of the index and a
+- **athanor's own git calls never write the repo.** Snapshots use a copy of the index and a
   per-run object folder (ADR 0007, C21, C30), except as accepted risk 23 says:
   a clean filter the host defines, such as Git LFS's, can write the repo's git
   folder (issue 42).
@@ -337,12 +340,16 @@ candidate, so other work can point at it.
     because nothing restores a cache today. A workflow that restores one, such
     as issue 6's, is a reason to revisit.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+
+<!-- Accepted risks 21 and 22 belong to issue 6's work. -->
+
 23. **The git calls that record the work use the host's git config.** The
     snapshot's and the build context's git calls (`stash create`, `add`,
     `hash-object`) run with the host's git config and environment. A clean
     filter that the repo's attributes name runs on the host while they run;
     its output reaches the container and the build; and Git LFS's clean filter
-    writes the repo's `.git/lfs` folder, where the copy stays after the run.
+    writes the repo's `.git/lfs` folder, where the copy stays after the run,
+    including, with `--untracked`, untracked files the owner has not added.
     Accepted because the owner's own `git add` in the repo runs the same
     filters, and a fix changes what the snapshot holds (issue 42).
     Accepted 2026-10-24. From: issue 20, the Design review of spec revision 1 (executability-lens, the deferral of the snapshot side; data-lens F3; adversarial-lens F3). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.

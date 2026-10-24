@@ -21,7 +21,10 @@ host-side conversion beyond what athanor pins:
   `init`, and every `git archive`, run in a clean environment: the inherited
   one with every variable whose name starts with `GIT_` removed (on Windows,
   whatever its case), `GIT_CONFIG_GLOBAL` naming an empty file in the run's
-  scratch folder, `GIT_CONFIG_NOSYSTEM=1` and `GIT_ATTR_NOSYSTEM=1`. The archive also pins
+  scratch folder, `GIT_CONFIG_NOSYSTEM=1` and `GIT_ATTR_NOSYSTEM=1`. Only
+  `GIT_CONFIG_NOSYSTEM` keeps out the system config at git's built-in place,
+  and only `GIT_ATTR_NOSYSTEM` keeps out the system attributes file; no test
+  can see either, since a test may not write the machine's own files. The archive also pins
   `core.attributesFile` to that empty file, because git reads its default
   global attributes file even with no global config.
 - The snapshot's archive pins `tar.umask=0002`, git's default; the build
@@ -32,7 +35,8 @@ host-side conversion beyond what athanor pins:
   pinned `core.autocrlf=false` and `core.eol=lf` stay.
 - The image tag's format version is `athanor-image-v2`, so an image built from
   a stream that host settings could change is not reused. Every repo rebuilds
-  its image once.
+  its image once. The old images stay in the engine until `athanor prune`
+  removes them by age.
 - A Git LFS file reaches the container and the build as its pointer file.
 
 On git 2.55 for Windows, `git archive` did not read `GIT_ATTR_SOURCE` or
