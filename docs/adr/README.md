@@ -26,3 +26,4 @@ changed one gets a new record that names the one it replaces.
 | [0019](0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md) | Releases are staged by a trusted publisher and approved twice |
 | [0020](0020-the-archive-step-carries-the-tree-as-committed.md) | The archive step carries the tree as committed |
 | [0021](0021-docker-off-this-machine-refused-by-default.md) | A Docker engine or builder off this machine is refused by default |
+| [0024](0024-a-hook-holds-agent-fast-runs-to-athanor.md) | A hook holds an agent's fast runs to athanor |

@@ -34,12 +34,33 @@ lasting decisions are in [docs/adr/](docs/adr/).
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and
   `-filter` on every path. A change here is security-sensitive work.
+- **A user-facing accepted risk has a README line.** A change that adds or
+  changes an accepted risk a user has to act on or know about also adds or
+  changes its line in the README's "What athanor doesn't protect you from".
+  Every new accepted risk lists its number in the threat model's table of
+  who each risk concerns: in the User-facing row, or in the Maintainer-only
+  row for one that stays in the threat model alone. The
+  threat model stays the record; the README line names the class of risk and
+  what the user can do, never the steps of a path.
 - **Messages use plain words.** Each says what happened and, for a warning or
   an error, what to do next.
 - **Source files use LF line endings** (`.gitattributes`). The container's
   boot script is passed to `sh -c` and breaks on a carriage return.
 
 ## Running the tests
+
+**An agent session runs the tests through athanor** (ADR 0024), with the
+repo's own `athanor.json`: `athanor run fast` for the fast tier,
+`athanor run types` for both type checks, `athanor run check` for the source
+check; add `--untracked` for new files not yet added to git. The docker tier
+stays on the host, `node test/run.mjs docker`: it needs a Docker engine,
+which never reaches the container. A hook in `.claude/settings.json` refuses
+a host `node test/run.mjs fast` while athanor is installed. When athanor
+can't run (no Docker, or a run that ends 124, 125 or 137), rerun on the host
+with `--host-fallback='<reason>'`, the reason short and in plain words, and
+name the fallback in your report. A change to `.claude/settings.json` or
+`.claude/hooks/` runs on the next shell call of every agent session that
+checks it out.
 
 Run `npm ci --ignore-scripts` first, once per worktree: it installs the
 compiler from the lockfile (ADR 0018) and runs no package's install scripts,
@@ -84,7 +105,7 @@ Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
 issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
-issue 6). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 6; `H1` to `H4`, from the PR that added the agent test hook). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker

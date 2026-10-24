@@ -232,6 +232,15 @@ above; the software they run is not.
 The owner decided each of these on 2026-10-20. Each keeps the number it had as a
 candidate, so other work can point at it.
 
+Who each concerns. A user-facing risk is one a user has to act on or know
+about, and has a line in the README's "What athanor doesn't protect you
+from"; a maintainer-only risk stays here alone.
+
+| Who | Accepted risks |
+| --- | --- |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20 |
+
 1. **The image build has the network.** The image build runs the repo's own
    Dockerfile with network access, so a repo from someone else can run code
    that reaches the internet, and a `FROM` line can pull the owner's private
@@ -481,3 +490,12 @@ candidate, so other work can point at it.
     two-factor on every write, and the window lasts only from login to
     logout.
     Accepted 2026-10-24. From: issue 6, the follow-up Test review of `9fcdfcd` (data-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+29. **The agent test hook is a nudge, not a control.** The hook in
+    `.claude/settings.json` (ADR 0024) refuses an agent session's host run of
+    the fast tier while athanor is installed, but it fails open on any error,
+    stays silent when it cannot find athanor, and reads only the command's
+    plain forms: a run through another shell's command string, or from inside
+    `test/`, gets past it. Accepted because it exists to make a skipped rule
+    visible, the tests are the repo's own code, and the session names any
+    host run in its report.
+    Accepted 2026-10-24. From: the athanor-hook QA review of PR 50 (behaviour-lens F2). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
