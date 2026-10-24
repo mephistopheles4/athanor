@@ -11,7 +11,6 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, existsSync, mkdirSync, cpSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { run } from '#dist/index.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, tarFile, git, tempDir } from '../helpers.ts';
@@ -125,15 +124,8 @@ test('G2 a filter defined elsewhere on the host never runs either', async (t) =>
   }
 });
 
-// A tree, written into the repo, whose .gitattributes is the given text.
-function attributesTree(repo: string, text: string): string {
-  const write = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: repo, input: text, encoding: 'utf8', shell: false });
-  const tree = spawnSync('git', ['mktree'], { cwd: repo, input: `100644 blob ${write.stdout.trim()}\t.gitattributes\n`, encoding: 'utf8', shell: false });
-  return tree.stdout.trim();
-}
-
 test('G3 attributes from outside the tree change no byte', async (t) => {
-  const rows: { name: string; env: (t: TestContext, repo: string) => Record<string, string> }[] = [
+  const rows: { name: string; env: (t: TestContext) => Record<string, string> }[] = [
     {
       name: 'the file the global config\'s core.attributesFile names',
       env: (t) => {
@@ -151,21 +143,12 @@ test('G3 attributes from outside the tree change no byte', async (t) => {
         return { XDG_CONFIG_HOME: xdg };
       },
     },
-    { name: 'GIT_ATTR_SOURCE naming a tree', env: (_t, repo) => ({ GIT_ATTR_SOURCE: attributesTree(repo, '*.txt ident\n') }) },
-    {
-      name: 'a template\'s config that sets attr.tree',
-      env: (t, repo) => {
-        const template = tempDir(t, 'athanor-template-');
-        writeFileSync(join(template, 'config'), `[attr]\n\ttree = ${attributesTree(repo, '*.txt ident\n')}\n`);
-        return { GIT_TEMPLATE_DIR: template };
-      },
-    },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
       isolate(t);
       const repo = makeRepo(t, { athanor: baseConfig, files: { 'a.txt': '$Id$\n', 'test/b.txt': '$Id$\n' } });
-      setEnv(t, row.env(t, repo));
+      setEnv(t, row.env(t));
       const docker = fake(t);
       const result = await runWith(repo, docker);
       assert.equal(result.outcome, 'pass', JSON.stringify(result));

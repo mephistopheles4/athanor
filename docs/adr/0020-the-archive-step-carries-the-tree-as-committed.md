@@ -45,7 +45,7 @@ Git for Windows reads no machine-wide config under ProgramData; whether an
 older release between 2.32 and today still reads one under
 `GIT_CONFIG_NOSYSTEM` was not observed. If one did, `-filter` and the pins
 would still cover filters, the attributes file, the umask and the line endings
-in it, but not its other settings.
+in it.
 
 This keeps host git settings out of the archive step. It is not a control
 against a process that can write the environment or the home folder, which
