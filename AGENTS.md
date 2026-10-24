@@ -75,7 +75,7 @@ marks.
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
-issue 4; `U1` to `U7`, from the spec on issue 36; `L1` to `L14`, from the spec on issue 33). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 4; `U1` to `U7`, from the spec on issue 36; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker

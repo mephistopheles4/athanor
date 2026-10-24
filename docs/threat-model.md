@@ -156,9 +156,9 @@ above; the software they run is not.
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
   (C17, C18, C24, C31). The engine endpoint and every builder node are
-  checked for locality and plain tcp, read with a URL parser (or, for a pipe,
-  an exact form), pinned for the run and checked again once the slot is held
-  (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
+  checked for locality and plain tcp, read as Docker reads them (a value with
+  no "://" is tcp; a pipe in one exact form), pinned for the run and checked
+  again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
 - **Data migrations.** None. The state folder holds only marks, temporary
   indexes and per-run object folders, which are safe to delete.
 
@@ -238,9 +238,9 @@ candidate, so other work can point at it.
    as a builder, it can ask this machine for the owner's registry credentials.
    Accepted because the owner chose to let athanor run against any Docker the
    user sets up, and the user chooses whom to trust with that. Before athanor
-   decides on a builder, `buildx inspect` contacts the configured builder's
-   nodes, so a remote builder host sees the connection and, for an ssh node,
-   the owner's login, but no repo data.
+   decides on a builder, with or without the opt-out, `buildx inspect`
+   contacts the configured builder's nodes, so a remote builder host sees the
+   connection and, for an ssh node, the owner's login, but no repo data.
    Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F1, data-lens F2), after the owner removed C29. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
    Narrowed 2026-10-24. From: the spec on issue 33, S6, and the Design review of revision 2 (data-lens F5). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 8. **A shared engine's other users can read and change runs.** The slot lock
@@ -340,17 +340,19 @@ candidate, so other work can point at it.
     as issue 6's, is a reason to revisit.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
 24. **A local address that leads elsewhere.** An endpoint athanor counts as
-    local, a `unix://` socket or a loopback port, can lead elsewhere:
-    forwarded to another machine (an ssh tunnel, a socket proxy, a port
-    forward), or held by another local program, running as any user, that
-    owns that loopback port or socket path while the engine does not. The
-    refusal does not stop it. Setting up a forward takes the owner's own
+    local, a `unix://` socket, the local pipe or a loopback port, can lead
+    elsewhere: forwarded to another machine (an ssh tunnel, a socket proxy, a
+    port forward), or held by another local program, running as any user,
+    that owns that loopback port, socket path or pipe name while the engine
+    does not (for example while Docker Desktop is stopped). The name
+    `localhost` is trusted as loopback, so a resolver that answers it with
+    another address leads elsewhere too. The refusal does not stop it. Setting up a forward takes the owner's own
     configuration or a process that can already write the owner's home
     folder; holding a port or socket takes another local program, which this
     page already lists as an attacker. Accepted because athanor cannot tell
     where a local address leads without trusting the machine it runs on, and
     Docker offers no check of the engine's identity to build on.
-    Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 25. **A message names the machine file's full path.** The refusal messages
     for `allowRemoteDocker` and `allowPlainTcp` name the machine configuration
     file by its full path, which holds the OS account's home folder name.

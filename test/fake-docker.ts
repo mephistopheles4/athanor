@@ -121,9 +121,11 @@ async function main() {
       return 1;
     }
     // A context is a host, or { host, tls } for one with TLS material.
-    const entry = named !== undefined && scenario.contexts?.[named] !== undefined
+    // As real Docker does: with DOCKER_HOST set, the "default" context is DOCKER_HOST.
+    const fromHost = named === 'default' && scenario.contexts?.default === undefined && process.env.DOCKER_HOST ? process.env.DOCKER_HOST : undefined;
+    const entry = fromHost ?? (named !== undefined && scenario.contexts?.[named] !== undefined
       ? scenario.contexts[named]
-      : earlier > 0 && scenario.contextHostLater !== undefined ? scenario.contextHostLater : scenario.contextHost ?? 'unix:///var/run/docker.sock';
+      : earlier > 0 && scenario.contextHostLater !== undefined ? scenario.contextHostLater : scenario.contextHost ?? 'unix:///var/run/docker.sock');
     const host = typeof entry === 'string' ? entry : entry.host;
     // A name with no entry of its own is the default context, TLS material included.
     const tls = typeof entry === 'string' ? (scenario.contexts?.[named ?? ''] === undefined ? scenario.contextTls : undefined) : entry.tls;

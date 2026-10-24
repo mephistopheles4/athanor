@@ -12,7 +12,9 @@ engine or a buildx builder that is not on this machine, unless the machine
 configuration sets `"allowRemoteDocker": true`. `status` and `prune` send no
 repo data and keep using Docker as configured.
 
-**Local.** An endpoint is local only when it is a `unix://` address, an
+**Local.** Endpoints are read as Docker reads them: a value with no `://` is
+a tcp host, so `unix:/x` is tcp to a host named "unix" and `10.0.0.5:2375` is
+plain tcp. An endpoint is local only when it is a `unix://` address, an
 `npipe:` address in exactly the form `npipe:////./pipe/<name>` (read as raw
 text, since the URL parser drops the `.` that names this machine), or a
 `tcp://` or `http://` address on a loopback host with no user-info part, read
@@ -35,10 +37,14 @@ builder is not assumed to be the engine, since buildx lists every context as
 one. A node that names a context is looked up with
 `docker context inspect -- <name>`, only when the name fits Docker's
 context-name pattern. Other drivers, zero nodes, failed lookups and builders
-athanor cannot inspect are not local.
+athanor cannot inspect are not local. The engine's own docker builder (its
+context's, or `default` when the engine came from `DOCKER_HOST`) leads to the
+engine as already checked, and gets no second notice.
 
 **Plain tcp to a builder.** ADR 0013's rule now covers builder nodes. A
-builder whose transport athanor could not read counts as plain. Plain needs
+node's transport counts as read only for a local endpoint, `ssh://`, or tcp
+with TLS verified; anything else, a buildx connection helper among them, and
+a builder athanor could not read, counts as plain. Plain needs
 `allowPlainTcp` as well as `allowRemoteDocker`.
 
 **The opt-out.** `allowRemoteDocker` is read only from the machine
@@ -49,14 +55,17 @@ read, as they already control `DOCKER_HOST`.
 
 **The notice.** Each run the opt-out lets through names the engine or builder
 before any build, image check or `docker run`. Every endpoint and line of
-Docker's output that athanor shows has its user-info part removed and its
-control characters escaped.
+Docker's output that athanor shows has its user-info part removed (up to the
+value's last `@`), the ssh helper's login (`-l <user>`, `<user>@<host>`)
+dropped from Docker's error text, and its control characters escaped.
 
 **Pinned, and checked again.** What was checked is what is used: every later
 Docker call runs with the run's environment and `DOCKER_CONTEXT` and
-`BUILDX_BUILDER` set to the checked names. Once the run holds its slot, the
-engine and builder are read again under that pin, and any difference ends the
-run with exit 125 before `docker run`.
+`BUILDX_BUILDER` set to the checked names. When the builder cannot be
+inspected and no name is set, the notice says the run cannot pin it. Once the
+run holds its slot, just before the slot's container is cleared and the test
+runs, the engine and builder are read again under that pin, and any
+difference ends the run with exit 125 before `docker run`.
 
 Consequences: a remote engine, an ssh engine, CI running Docker inside Docker
 on another host, and a remote builder each need the opt-out set once per

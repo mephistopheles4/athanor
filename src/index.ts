@@ -211,14 +211,14 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     if (!slot) return interruptedResult(partial);
     partial.slot = slot.slot;
     await warnOnOtherLimits(prefix, slot.slot, limit, onProgress);
-    // A context or builder edited in place while this run waited would change
-    // where the pinned names lead.
-    await recheckDocker(docker, checked);
 
     // A prune may have removed the tag while this run waited.
     if (await settleImage(image, () => onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`))) {
       partial.image.built = true;
     }
+    // A context or builder edited in place while this run waited would change
+    // where the pinned names lead; checked as late as possible before the run.
+    await recheckDocker(docker, checked);
     const container = containerSettings({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
     await clearSlotContainer(docker, container.name, pinned);
     if (signal?.aborted) return interruptedResult(partial);
