@@ -267,8 +267,10 @@ async function main() {
       finish(path, plan.exitCode, false);
       process.exit(plan.exitCode);
     }
+    // When the run began, before the snapshot is read, so a test can time a run from here.
+    const at = Date.now();
     const input = await readStdin();
-    record({ tar: readTar(input) });
+    record({ at, tar: readTar(input) });
     if (plan.tarFails) { console.error('tar: short read'); finish(path, 2, false); return 2; }
     if (plan.marker) process.stderr.write('athanor-boot-ok\n');
     if (plan.stdout) process.stdout.write(plan.stdout);
