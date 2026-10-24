@@ -62,6 +62,17 @@ test('R1 the pack check passes only the allowed entries with dist/index.d.ts, an
     assert.equal(r.status, 1);
     assert.match(r.stderr, /package\/extra\//);
   });
+  await t.test('a file in a folder under bin/, or not .mjs in bin/, fails and is named', () => {
+    const r = check(tarball(tempDir(t), { ...allowed, 'package/bin/sub/x.mjs': 'export {};\n', 'package/bin/x.js': 'export {};\n' }));
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /package\/bin\/sub\/x\.mjs/);
+    assert.match(r.stderr, /package\/bin\/x\.js/);
+  });
+  await t.test('an entry outside package/ fails and is named', () => {
+    const r = check(tarball(tempDir(t), { ...allowed, 'x/package/README.md': '# other\n' }));
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /x\/package\/README\.md/);
+  });
   await t.test('a file in a folder under dist/ fails and is named', () => {
     const r = check(tarball(tempDir(t), { ...allowed, 'package/dist/sub/x.js': 'export {};\n' }));
     assert.equal(r.status, 1);
@@ -128,8 +139,10 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     fails(workflow('      - uses: actions/checkout@0123456789012345678901234567890123456789', ...checkout), 7, /persist-credentials: false/);
     fails(workflow('      - uses: actions/setup-node@0123456789012345678901234567890123456789', ...setupNode), 7, /package-manager-cache: false/);
   });
-  await t.test('an action name in another case is still read', () => {
+  await t.test('an action name or an input key in another case is still read', () => {
     fails(workflow('      - uses: Actions/Checkout@0123456789012345678901234567890123456789'), 7, /persist-credentials: false/);
+    fails(workflow(checkout[0], checkout[1], '          Persist-Credentials: True'), 9, /persist-credentials/);
+    fails(workflow(...setupNode, '          Registry-Url: https://registry.npmjs.org'), 11, /registry-url/);
   });
   await t.test('setup-node with a cache input fails', () => {
     fails(workflow(...setupNode, '          cache: npm'), 11, /cache/);
@@ -158,6 +171,9 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ secrets.NPM }}'), 9, /secret/);
     fails(workflow('      - run: echo "$T"', '        env:', "          T: ${{ secrets['NPM'] }}"), 9, /secret/);
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ toJSON(secrets) }}'), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ toJSON(secrets.*) }}'), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ SECRETS.NPM }}'), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ secrets }}'), 9, /secret/);
     fails(['name: planted', 'on: push', 'jobs:', '  one:', '    uses: ./.github/workflows/other.yml', '    secrets: inherit', ''].join('\n'), 6, /secret/);
   });
   await t.test('a .yaml file is read too', () => {

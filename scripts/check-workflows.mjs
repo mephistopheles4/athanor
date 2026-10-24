@@ -2,7 +2,7 @@
 // persist-credentials: false in its with: block, every actions/setup-node step
 // sets package-manager-cache: false there with no cache or registry-url input,
 // no step uses a cache action, and no line names an npm token or reads a
-// secret. Action names match in any case.
+// secret. Action names and input keys match in any case.
 // It reads each .yml and .yaml file by lines and step blocks, with no YAML
 // package, so it sees only the named actions written in block style, and it
 // refuses a step, or a with: on those actions, written in flow style. It
@@ -18,7 +18,10 @@ const folder = process.argv[2] ?? join(root, '.github', 'workflows');
 const indent = (line) => line.match(/^ */)[0].length;
 const meaningful = (line) => line.trim() !== '' && !line.trim().startsWith('#');
 // The value of a key on its line, without quotes or a trailing comment.
-const value = (line, key) => line.match(new RegExp(`^\\s*(?:-\\s+)?${key}:\\s*['"]?([^'"\\s#]*)`))?.[1];
+const value = (line, key) => line.match(new RegExp(`^\\s*(?:-\\s+)?${key}:\\s*['"]?([^'"\\s#]*)`, 'i'))?.[1]?.toLowerCase();
+// The secrets context named anywhere inside a ${{ }} expression, in any case
+// and any form (by name, by index, whole, or filtered with .*).
+const readsSecrets = (line) => [...line.matchAll(/\$\{\{(.*?)\}\}/g)].some((m) => /\bsecrets\b/i.test(m[1]));
 
 // The lines of the step that holds line i: from its "- " line to the next
 // line at or left of that dash.
@@ -45,8 +48,8 @@ for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort())
     const persist = value(line, 'persist-credentials');
     if (persist !== undefined && persist !== 'false') report(i, 'persist-credentials must be false, so the job\'s token is not left in the clone.');
     if (/NODE_AUTH_TOKEN|_authToken/.test(line)) report(i, 'an npm token is named here. Remove it: releases publish through the trusted publisher, and no npm token is kept anywhere.');
-    // The secrets context read by name, by index or whole, or passed on to a called workflow.
-    if (/\bsecrets\s*(\.[A-Za-z_]|\[)|\(\s*secrets\s*[,)]|^\s*secrets\s*:/.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
+    // The secrets context read in an expression, or passed on to a called workflow.
+    if (readsSecrets(line) || /^\s*secrets\s*:/i.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
     if (/^\s*-\s*\{/.test(line)) {
       report(i, 'this step is in flow style, which this check can\'t read. Write it in block style, one key per line.');
       return;
