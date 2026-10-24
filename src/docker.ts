@@ -291,11 +291,12 @@ async function checkBuilder(
     if (!isLocal(target.host)) away ??= node.endpoint;
     if (isPlainRemoteTcp(target)) plain = true;
   }
-  if (away !== null && !allowRemoteDocker) {
-    throw new AthanorError(`${setting} (driver ${shown(read.driver)}) builds at ${shown(away)}, which is not on this machine, so your build context would go there. Switch to a builder on this machine (for example docker buildx use default), or set ${optIn}.`);
-  }
+  // Plain tcp first, as for the engine.
   if (plain && !allowPlainTcp) {
     throw new AthanorError(`${setting} (driver ${shown(read.driver)}) is reached over plain tcp without TLS verification, or by a way athanor cannot read, so your build context could cross the network unencrypted. Use a builder on this machine, over ssh or tcp with TLS verification, or on a network you trust set "allowPlainTcp": true in the machine configuration (${machineFile}).`);
+  }
+  if (away !== null && !allowRemoteDocker) {
+    throw new AthanorError(`${setting} (driver ${shown(read.driver)}) builds at ${shown(away)}, which is not on this machine, so your build context would go there. Switch to a builder on this machine (for example docker buildx use default), or set ${optIn}.`);
   }
   // The engine notice already names the engine's own context's docker builder.
   const ownBuilder = read.driver === 'docker' && read.nodes.length === 1 && read.nodes[0]?.endpoint === engine.context;

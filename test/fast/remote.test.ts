@@ -8,6 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
+import { ask } from '#dist/slots.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.ts';
 import type { Fake } from '../helpers.ts';
 
@@ -191,6 +192,11 @@ test('L8 a builder sent in clear, or whose transport athanor could not read, nee
     { name: 'a failed context lookup', scenario: { builderDriver: 'docker-container', builderEndpoints: ['gone'], contexts: { gone: null } } },
     { name: 'a kubernetes driver', scenario: { builderDriver: 'kubernetes', builderEndpoints: ['kubernetes:///buildkit?deployment=x'] } },
   ];
+  await t.test('with neither key, a remote plain tcp node names allowPlainTcp first, as the engine does', async (t) => {
+    const { result } = await runRow(t, rows[0]!);
+    assert.equal(result.exitCode, 125, JSON.stringify(result));
+    assert.match(result.message!, /allowPlainTcp/);
+  });
   for (const row of rows) {
     await t.test(`refused with allowRemoteDocker alone: ${row.name}`, async (t) => {
       const { result, docker } = await runRow(t, { ...row, machine: remoteOptIn });
@@ -226,14 +232,16 @@ test('L13 a stopped engine says Start Docker, and each builder refusal says what
 });
 
 test('L4 no user name, password or control character from an endpoint is shown', async (t) => {
-  const secret = 'ssh://alice:p@ss@build-box';
+  // Built from parts, so the source never spells an address with a user and password in it.
+  const userInfo = ['alice', 'p@ss'].join(':') + '@';
+  const secret = `ssh://${userInfo}build-box`;
   const hidden = (texts: string[]) => {
     for (const text of texts) for (const bit of ['alice', 'p@ss', 'ss@']) assert.ok(!text.includes(bit), `"${bit}" shown in: ${text}`);
   };
   const rows: (Row & { extra?: string })[] = [
     { name: 'an ssh DOCKER_HOST, refused', env: { DOCKER_HOST: secret } },
     { name: 'an ssh DOCKER_HOST, named in the notice', env: { DOCKER_HOST: secret }, machine: remoteOptIn },
-    { name: 'a plain tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://alice:p@ss@10.0.0.5:2375' } },
+    { name: 'a plain tcp DOCKER_HOST', env: { DOCKER_HOST: `tcp://${userInfo}10.0.0.5:2375` } },
     { name: 'a builder node, refused', scenario: { builderDriver: 'docker-container', builderEndpoints: [`${secret}:22`] } },
     { name: 'a builder node, named in the notice', scenario: { builderDriver: 'docker-container', builderEndpoints: [`${secret}:22`] }, machine: remoteOptIn },
     { name: 'docker version failure text that repeats the endpoint', env: { DOCKER_HOST: secret }, machine: remoteOptIn, scenario: { engineDown: true, engineDownText: `error during connect: ${secret}: connection refused` } },
@@ -280,12 +288,14 @@ test('L11 a context or builder that changes while the run waits for its slot end
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
-      const { result, docker } = await runRow(t, row);
+      const prefix = uniquePrefix();
+      const { result, docker } = await runRow(t, row, { prefix });
       assert.equal(result.exitCode, 125, JSON.stringify(result));
       assert.equal(result.outcome, 'error');
       assert.match(result.message!, /changed while the run waited/);
       assert.equal(callsOf(docker.calls(), 'run').length, 0);
       assert.equal(result.slot, 1, 'the run had its slot');
+      assert.equal((await ask(prefix, 1)).held, false, 'the slot is free');
     });
   }
 });
