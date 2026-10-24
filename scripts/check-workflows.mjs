@@ -19,9 +19,29 @@ const indent = (line) => line.match(/^ */)[0].length;
 const meaningful = (line) => line.trim() !== '' && !line.trim().startsWith('#');
 // The value of a key on its line, without quotes or a trailing comment.
 const value = (line, key) => line.match(new RegExp(`^\\s*(?:-\\s+)?${key}:\\s*['"]?([^'"\\s#]*)`, 'i'))?.[1]?.toLowerCase();
-// The secrets context named anywhere inside a ${{ }} expression, in any case
-// and any form (by name, by index, whole, or filtered with .*).
-const readsSecrets = (line) => [...line.matchAll(/\$\{\{(.*?)\}\}/g)].some((m) => /\bsecrets\b/i.test(m[1]));
+// The text of a line that sits inside ${{ }} expressions, given whether an
+// expression is still open from the line before; an expression may run on
+// over several lines. Returns the inside text and whether one stays open.
+function insideExpressions(line, open) {
+  let inside = '';
+  let rest = line;
+  for (;;) {
+    if (open) {
+      const end = rest.indexOf('}}');
+      if (end < 0) return { inside: inside + rest, open: true };
+      inside += rest.slice(0, end) + ' ';
+      rest = rest.slice(end + 2);
+      open = false;
+    }
+    const start = rest.indexOf('${{');
+    if (start < 0) return { inside, open: false };
+    rest = rest.slice(start + 3);
+    open = true;
+  }
+}
+// The secrets context named anywhere inside an expression, in any case and
+// any form (by name, by index, whole, or filtered with .*).
+const namesSecrets = (inside) => /\bsecrets\b/i.test(inside);
 
 // The lines of the step that holds line i: from its "- " line to the next
 // line at or left of that dash.
@@ -43,13 +63,16 @@ for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort())
   const shown = relative(process.cwd(), path);
   const lines = readFileSync(path, 'utf8').split(/\r?\n/);
   const report = (i, why) => problems.push(`${shown}:${i + 1}: ${why}`);
+  let open = false;
 
   lines.forEach((line, i) => {
+    const expr = insideExpressions(line, open);
+    open = expr.open;
     const persist = value(line, 'persist-credentials');
     if (persist !== undefined && persist !== 'false') report(i, 'persist-credentials must be false, so the job\'s token is not left in the clone.');
     if (/NODE_AUTH_TOKEN|_authToken/.test(line)) report(i, 'an npm token is named here. Remove it: releases publish through the trusted publisher, and no npm token is kept anywhere.');
     // The secrets context read in an expression, or passed on to a called workflow.
-    if (readsSecrets(line) || /^\s*secrets\s*:/i.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
+    if (namesSecrets(expr.inside) || /^\s*secrets\s*:/i.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
     if (/^\s*-\s*\{/.test(line)) {
       report(i, 'this step is in flow style, which this check can\'t read. Write it in block style, one key per line.');
       return;

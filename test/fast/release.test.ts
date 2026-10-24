@@ -174,6 +174,7 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ toJSON(secrets.*) }}'), 9, /secret/);
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ SECRETS.NPM }}'), 9, /secret/);
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ secrets }}'), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', '          T: >-', '            ${{', '            secrets.NPM }}'), 11, /secret/);
     fails(['name: planted', 'on: push', 'jobs:', '  one:', '    uses: ./.github/workflows/other.yml', '    secrets: inherit', ''].join('\n'), 6, /secret/);
   });
   await t.test('a .yaml file is read too', () => {

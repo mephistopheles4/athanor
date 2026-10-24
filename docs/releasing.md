@@ -140,15 +140,25 @@ new, empty folder outside any checkout.
 
 A new trusted publisher expires if no publish uses it within 2 days, so add
 it only when a version is ready to release. Run every `npm login`, and what
-follows it, from a new, empty folder outside any checkout, so no project
-`.npmrc` applies.
+follows it, from a new, empty folder outside any checkout. npm takes a
+project `.npmrc` from the nearest parent folder that holds a `package.json`
+or a `node_modules`, so check the folder first, before each `npm login` and
+before the npm-side install in step 15:
+
+```powershell
+npm prefix
+npm config get registry
+```
+
+`npm prefix` must print the folder itself, and the registry must be
+`https://registry.npmjs.org/`. Otherwise, choose another folder.
 
 9. On the package's npm settings, add a trusted publisher: GitHub Actions,
    owner `mephistopheles4`, repository `athanor`, workflow `release.yml`,
    environment `npm`, with direct publish and dist-tag management left off.
-   With the CLI instead, log in as in step 5 of the first publish, check the
-   flags against `npm help trust`, and log out straight after, as in its
-   step 7:
+   With the CLI instead, check the folder as above, log in as in step 5 of
+   the first publish, check the flags against `npm help trust`, and log out
+   straight after, as in its step 7:
 
    ```powershell
    npm trust github @mephistopheles4/athanor --repo mephistopheles4/athanor --file release.yml --env npm --allow-stage-publish
@@ -156,8 +166,9 @@ follows it, from a new, empty folder outside any checkout, so no project
    ```
 
    Record on issue 6 what `npm trust list @mephistopheles4/athanor` and the
-   settings page show, the package's publishing access, and the `npm`
-   environment's settings.
+   settings page show, the package's publishing access, the `npm`
+   environment's settings, and that your npm account's two-factor mode is
+   authorization and writes.
 10. Run steps 12 to 17 for the version from the dry run. On this first
     workflow release there is no release tag yet: in step 13, diff against
     the hand-published commit instead, and in step 17 tag that commit too, as
@@ -182,6 +193,8 @@ follows it, from a new, empty folder outside any checkout, so no project
          email address.
 
 ### Each release
+
+Every log-out on this page ends with `npm whoami` failing, as in step 16.
 
 12. If the version is already on npm, bump it in a pull request, merge it, and
     wait for CI on `main`. Then start `release` on `main`.
@@ -211,12 +224,15 @@ follows it, from a new, empty folder outside any checkout, so no project
     ```
 
     `git status --porcelain` must print nothing, and the pack check must pass.
-15. Leave the checkout for a new, empty folder outside any checkout. Log in
-    there, as in step 5 of the first publish, and look. `<id>` is the stage id
-    that the publish job's summary and `npm stage list` show.
+15. Leave the checkout for a new, empty folder outside any checkout, and check
+    it as the first workflow release says. Log in there, as in step 5 of the
+    first publish, and look. `<id>` is the stage id that the publish job's
+    summary and `npm stage list` show.
 
     ```powershell
     Set-Location <outside>
+    npm prefix
+    npm config get registry
     npm login
     npm stage list @mephistopheles4/athanor
     npm stage view <id> --json
@@ -230,11 +246,6 @@ follows it, from a new, empty folder outside any checkout, so no project
     tar -xzf <staged>/<tarball> -C <staged-files>
     tar -xzf <local>/<tarball> -C <local-files>
     git -c core.autocrlf=false diff --no-index --exit-code <staged-files> <local-files>
-    New-Item -ItemType Directory <npm-files>
-    Push-Location <npm-files>
-    npm install <staged>/<tarball> --ignore-scripts --no-save
-    Pop-Location
-    git -c core.autocrlf=false -c core.filemode=false diff --no-index --exit-code <npm-files>/node_modules/@mephistopheles4/athanor <local-files>/package
     ```
 
     - The list must show exactly one staged entry, for this version.
@@ -248,11 +259,25 @@ follows it, from a new, empty folder outside any checkout, so no project
     - The two entry lists must be the same, so the staged tarball holds
       exactly the entries the pack check passed in step 14. Every extracted
       file must be the same.
-    - The staged tarball as npm unpacks it, with install scripts off, must
-      also match the local pack file for file. This covers a tarball that
-      `tar` and npm would read differently.
     - Only npm, `tar` and `git` run here: nothing from the repo or from the
       extracted folders.
+
+    Run this only after the integrity, manifest and `tar` checks above have
+    passed. It unpacks the staged tarball as npm would install it, with
+    install scripts, git dependencies and URL dependencies all off, and it
+    must match the local pack file for file. This covers a tarball that
+    `tar` and npm would read differently.
+
+    ```powershell
+    New-Item -ItemType Directory <npm-files>
+    Push-Location <npm-files>
+    npm prefix
+    npm config get registry
+    npm install <staged>/<tarball> --ignore-scripts --allow-git=none --allow-remote=none --no-save
+    Pop-Location
+    git -c core.autocrlf=false -c core.filemode=false diff --no-index --exit-code <npm-files>/node_modules/@mephistopheles4/athanor <local-files>/package
+    ```
+
 
     If anything differs, reject every staged entry with
     `npm stage reject <id>`, log out, and stop. Any other entry is an
@@ -282,8 +307,8 @@ follows it, from a new, empty folder outside any checkout, so no project
 
 - **Don't re-run a failed `publish` job.** Start a new run of `release`
   instead, so each staged entry belongs to one run you can name.
-- In a new, empty folder outside any checkout, log in and run
-  `npm stage list @mephistopheles4/athanor`.
+- In a new, empty folder outside any checkout, checked as the first workflow
+  release says, log in and run `npm stage list @mephistopheles4/athanor`.
 - An entry counts as left by your failed run only if both hold:
   - it is the one staged entry, for that run's version;
   - its integrity, in `npm stage view <id>`, matches that run's check job
