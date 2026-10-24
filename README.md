@@ -98,11 +98,12 @@ outside it.
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
 
-A browser can't start its own sandbox in the container: Docker's default
-seccomp profile, which athanor leaves in place, blocks it, and Chromium and
-Chrome (and so Puppeteer and Playwright) stop with "No usable sandbox!". Start
-the browser with `--no-sandbox`, or your repo's own equivalent such as a
-wrapper script that adds it. The container, with no network and no host
+Start Chromium or Chrome in the container with `--no-sandbox`, or your repo's
+own equivalent such as a wrapper script that adds it. Docker's default seccomp
+profile, which athanor leaves in place, stops the browser starting its own
+sandbox, so without the flag it fails with "No usable sandbox!" (or, run as
+root, "Running as root without --no-sandbox is not supported"); Puppeteer
+reports either as a failed launch. The container, with no network and no host
 folders, is the isolation in its place.
 
 A test keeps six Linux capabilities (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
@@ -209,8 +210,9 @@ file goes into the image build, which has network access.
 
 ## What athanor doesn't protect you from
 
-Each line is an accepted risk in [the threat model](docs/threat-model.md#accepted-risks),
-which holds the full entry.
+Each line names the accepted risks in
+[the threat model](docs/threat-model.md#accepted-risks) it comes from; the
+threat model holds the full entries.
 
 - **A repo you don't trust.** The image build runs the repo's Dockerfile with
   the network and gets your Docker client's proxy settings, passwords
@@ -219,8 +221,11 @@ which holds the full entry.
   build. Accepted risks 1 and 5.
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
-  builder's operator receives your work and decides the result. Don't share an
-  engine with people you don't trust. Accepted risks 7 and 8.
+  builder's operator receives your work and decides the result, and a builder
+  can ask this machine for your registry login. Don't share an engine with
+  people you don't trust, and set `allowRemoteDocker` only for an engine and
+  builder whose operator you trust with your work and your registry login.
+  Accepted risks 7 and 8.
 - **Plain tcp.** With `allowPlainTcp`, your work and the test output cross the
   network unencrypted. Set it only on a network you trust. Accepted risk 10.
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
@@ -228,21 +233,26 @@ which holds the full entry.
   another local program. Know where your Docker endpoint leads. Accepted risk
   24.
 - **Other local programs.** Any program on the machine can block runs, and
-  read or fake what `status` shows about slot holders. On Windows, one with
-  the privilege to impersonate clients can act as you on a slot connection.
+  read or fake what `status` shows about slot holders. On Windows, a user
+  elsewhere on the network may also be able to read those details, and a
+  program with the privilege to impersonate clients can act as you on a slot
+  connection.
   Don't run athanor on a machine where you don't trust the other programs.
   Accepted risks 2, 3 and 9.
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
-  engine has, and a test that ends its own timer can leave a container
-  running until the slot is next used. Set `maxCpus` for a bound. Accepted
+  engine has. A test that kills athanor's time limit inside the container,
+  when athanor itself is killed hard, can leave the container running until
+  the slot is next used. Set `maxCpus` for a bound. Accepted
   risks 4 and 17.
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters, and Git LFS can copy uncommitted files into `.git/lfs`
-  (see [Use](#use)). Accepted risk 23.
+  (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
+  work before a run, or know that the filter sees it. Accepted risk 23.
 - **Your account name in messages.** A refusal about `allowRemoteDocker` or
   `allowPlainTcp` names the machine configuration file by its full path,
-  which holds your home folder's name. With `--json` it reaches whatever
-  reads the output. Accepted risk 25.
+  which holds your home folder's name. It reaches whatever reads athanor's
+  output, such as an agent session's model provider; keep that output out of
+  places your account name shouldn't go. Accepted risk 25.
 
 ## More
 

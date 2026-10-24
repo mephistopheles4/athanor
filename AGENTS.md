@@ -36,8 +36,10 @@ lasting decisions are in [docs/adr/](docs/adr/).
   `-filter` on every path. A change here is security-sensitive work.
 - **A user-facing accepted risk has a README line.** A change that adds or
   changes an accepted risk a user has to act on or know about also adds or
-  changes its line in the README's "What athanor doesn't protect you from",
-  and its row in the threat model's table of who each risk concerns. The
+  changes its line in the README's "What athanor doesn't protect you from".
+  Every new accepted risk lists its number in the threat model's table of
+  who each risk concerns: in the User-facing row, or in the Maintainer-only
+  row for one that stays in the threat model alone. The
   threat model stays the record; the README line names the class of risk and
   what the user can do, never the steps of a path.
 - **Messages use plain words.** Each says what happened and, for a warning or
