@@ -15,7 +15,8 @@ Dockerfile with network access.
 
 ## Install
 
-Needs Node 24 or later, git, and a Docker engine (Docker Desktop on Windows).
+Needs Node 24 or later, git 2.32 or later, and a Docker engine (Docker Desktop
+on Windows).
 
 athanor uses the Docker engine and buildx builder you have configured
 (`DOCKER_HOST`, the Docker context and the buildx builder) when they are on
@@ -121,6 +122,17 @@ everything else goes to stderr.
 A run tests your tracked files as they are in the working tree, staged or
 not, and tells you how many untracked files it left out. It never changes
 your working tree, index, refs or stash list.
+
+The files reach the container and the image build as committed: athanor pins
+their line endings and file modes, and applies your repo's own
+`.gitattributes` settings for `text`, `eol`, `ident` and
+`working-tree-encoding`. The step that packs them into a tar stream
+(`git archive`) runs no git content filter and does not read your global or
+system git configuration, so a Git LFS file arrives as its pointer file. The git calls that record uncommitted work still run with your git
+configuration, clean filters included
+([issue 42](https://github.com/mephistopheles4/athanor/issues/42)). With Git
+LFS, its clean filter can copy uncommitted files, and with `--untracked`
+untracked ones, into the repo's `.git/lfs` folder, where they stay.
 
 ### Exit codes
 

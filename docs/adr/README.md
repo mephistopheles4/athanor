@@ -23,4 +23,5 @@ changed one gets a new record that names the one it replaces.
 | [0016](0016-the-container-keeps-six-capabilities.md) | The container keeps six capabilities (superseded in part by 0017) |
 | [0017](0017-no-cpu-limit-unless-one-is-configured.md) | No CPU limit unless one is configured |
 | [0018](0018-typescript-compiled-to-dist-with-install-scripts-off.md) | TypeScript compiled to dist, with install scripts off |
+| [0020](0020-the-archive-step-carries-the-tree-as-committed.md) | The archive step carries the tree as committed |
 | [0021](0021-docker-off-this-machine-refused-by-default.md) | A Docker engine or builder off this machine is refused by default |
