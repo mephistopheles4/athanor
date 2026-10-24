@@ -12,7 +12,6 @@ import { start } from './proc.js';
 import { firstLine } from './docker.js';
 import type { DockerCommand } from './docker.js';
 
-export const DEFAULT_MAX_OUTPUT_MEGABYTES = 1024;
 export const MAX_ENTRIES = 100_000;
 export const COPY_TIME_MS = 10 * 60 * 1000;
 // The most a PAX or GNU header's own data may hold.
@@ -60,7 +59,7 @@ export function showName(name: string): string {
 // case from another. Returns the problem, or null.
 export function checkOutputs(outputs: unknown): string | null {
   if (!Array.isArray(outputs)) return 'must be a list of paths inside the work folder, such as ["reports/mutation"]';
-  const seen: string[] = [];
+  const seen: { key: string; entry: string }[] = [];
   for (const entry of outputs) {
     if (typeof entry !== 'string' || entry === '') return 'must hold non-empty strings';
     if (entry.startsWith('/')) return `has "${showName(entry)}", which is absolute; give a path relative to the work folder`;
@@ -72,11 +71,11 @@ export function checkOutputs(outputs: unknown): string | null {
     }
     const key = entry.toLowerCase();
     for (const other of seen) {
-      if (key === other || key.startsWith(other + '/') || other.startsWith(key + '/')) {
-        return `has "${showName(entry)}" next to another entry that is the same, inside it or differs only in case`;
+      if (key === other.key || key.startsWith(other.key + '/') || other.key.startsWith(key + '/')) {
+        return `has "${showName(entry)}", which is the same as, inside, or around "${showName(other.entry)}", or differs from it only in case`;
       }
     }
-    seen.push(key);
+    seen.push({ key, entry });
   }
   return null;
 }
@@ -183,6 +182,7 @@ export async function copyOut(req: CopyRequest): Promise<Copied> {
 }
 
 class Job {
+  readonly maxEntries: number;
   private made: Made[] = [];
   // Every folder and file written, by exact name, and by lower-case name for the case check.
   private kinds = new Map<string, 'file' | 'dir'>();
@@ -193,6 +193,7 @@ class Job {
 
   constructor(req: CopyRequest) {
     this.req = req;
+    this.maxEntries = req.maxEntries;
     this.root = join(req.target.realParent, req.target.name);
   }
 
@@ -200,7 +201,7 @@ class Job {
     const { req } = this;
     const deadline = Date.now() + req.timeMs;
     const parentNow = (() => { try { return realpathSync.native(req.target.parent); } catch { return null; } })();
-    if (parentNow !== req.target.realParent) throw new CopyError('the folder that holds the output folder changed while the run was going.');
+    if (parentNow !== req.target.realParent) throw new CopyError(`the folder that holds ${req.target.asTyped} changed while the run was going.`);
     try {
       mkdirSync(this.root, { mode: 0o700 });
     } catch {
@@ -240,12 +241,12 @@ class Job {
       reader.close();
       if (aborted) throw new CopyInterrupted();
       if (failure) throw failure;
-      if (timedOut) throw new CopyError('it took longer than the time limit for a copy.');
+      if (timedOut) throw new CopyError(`it took longer than the copy's own limit of ${req.timeMs >= 60000 ? `${req.timeMs / 60000} minutes` : `${req.timeMs} ms`} (not timeoutMinutes). Declare narrower "outputs".`);
       const text = Buffer.concat(stderr).toString('utf8');
       if (ended.code !== 0) {
         if (MISSING.test(text) && reader.entries === 0) {
           this.counts.missing.push(output);
-          req.onProgress(`the output "${showName(output)}" is not in the container, so nothing was copied for it.`);
+          req.onProgress(`the output "${showName(output)}" is not in the container, so nothing was copied for it. Check the path in "outputs".`);
           continue;
         }
         throw new CopyError(`docker cp of "${showName(output)}" failed: ${firstLine(text) || `exit ${ended.code}`}.`);
@@ -395,7 +396,7 @@ class Reader {
 
   push(chunk: Buffer): void {
     this.bytes += chunk.length;
-    if (this.bytes > this.maxBytes) throw new CopyError('the outputs are bigger than the size limit (maxOutputMegabytes in the machine configuration).');
+    if (this.bytes > this.maxBytes) throw new CopyError(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
     this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
     for (;;) {
       if (this.state === 'done') { this.buffer = Buffer.alloc(0); return; }
@@ -454,7 +455,7 @@ class Reader {
 
   private header(block: Buffer): void {
     if (block.every((b) => b === 0)) { this.state = 'done'; return; }
-    if (++this.entries > this.maxEntries) this.fail('the outputs hold more entries than the limit allows.');
+    if (++this.entries > this.maxEntries) this.fail(`the outputs hold more entries than the limit of ${this.job.maxEntries}. Declare narrower "outputs".`);
     // The checksum: all bytes, with the checksum field read as spaces.
     let sum = 0;
     for (let i = 0; i < BLOCK; i++) sum += i >= 148 && i < 156 ? 32 : block[i]!;
@@ -463,7 +464,7 @@ class Reader {
     const type = String.fromCharCode(block[156] ?? 0);
     let size = this.number(block.subarray(124, 136), 'size');
     const remainingCap = this.maxBytes - this.bytes;
-    if (size > remainingCap) this.fail('the outputs are bigger than the size limit (maxOutputMegabytes in the machine configuration).');
+    if (size > remainingCap) this.fail(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
     if (type === 'x' || type === 'g' || type === 'L' || type === 'K') {
       if (size > MAX_META_BYTES) this.fail('a header record in the stream is too large.');
       this.meta = { kind: type, chunks: [] };
@@ -474,7 +475,7 @@ class Reader {
     const own = this.text(block.subarray(0, 100));
     const name = this.next.path ?? (prefix ? `${prefix}/${own}` : own);
     if (this.next.size !== undefined) {
-      if (this.next.size > remainingCap) this.fail('the outputs are bigger than the size limit (maxOutputMegabytes in the machine configuration).');
+      if (this.next.size > remainingCap) this.fail(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
       size = this.next.size;
     }
     this.next = {};

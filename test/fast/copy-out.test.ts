@@ -77,6 +77,7 @@ test('M10 a bad outputs entry exits 125 before any Docker call', async (t) => {
     { name: 'right-to-left override', outputs: ['a‮b'] },
     { name: 'two equal', outputs: ['a', 'a'] },
     { name: 'one under another', outputs: ['a', 'a/b'] },
+    { name: 'one around another', outputs: ['a/b', 'a'] },
     { name: 'differ only in case', outputs: ['A', 'a'] },
   ];
   for (const row of rows) {
@@ -221,10 +222,10 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
   // Only the header of an x record that claims more data than a header may hold.
   const bigHeader = buildTar([{ name: 'PaxHeader/x', type: 'x', declaredSize: MEGABYTE + 1 }], { end: false }).subarray(0, 512);
   const rows: { name: string; tar: Buffer; says: RegExp; late?: boolean; machine?: Record<string, unknown>; extra?: RunOptions }[] = [
-    { name: 'parent part', tar: one('../x'), says: /\.\.\/x/ },
-    { name: 'absolute', tar: one('/abs'), says: /\/abs/ },
-    { name: 'backslash', tar: one('a\\b'), says: /a\\b/ },
-    { name: 'a part that climbs out', tar: one('a/../../x'), says: /a\/\.\.\/\.\.\/x/ },
+    // Each of these starts with the output's own name, so only the segment rules can refuse it.
+    { name: 'parent part', tar: one('out/../x'), says: /out\/\.\.\/x/ },
+    { name: 'backslash', tar: one('out/a\\b'), says: /out\/a\\b/ },
+    { name: 'a part that climbs out', tar: one('out/a/../../x'), says: /out\/a\/\.\.\/\.\.\/x/ },
     { name: 'empty part', tar: one('out//x'), says: /out\/\/x/ },
     { name: 'a newline in the name', tar: one('out/a\nb'), says: /out\/a\\u\{a\}b/ },
     { name: 'a first part that is not the output', tar: one('other/x'), says: /other\/x.*not inside the output "out"/ },
@@ -240,11 +241,15 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     { name: 'a trailing dot', tar: one('out/x.'), says: /out\/x\./ },
     { name: 'a trailing space', tar: one('out/x '), says: /out\/x /s },
     { name: 'a right-to-left override', tar: one('out/a‮b'), says: /out\/a\\u\{202e\}b/ },
-    { name: 'an at sign and a prefix before a refused name', tar: one('out/me@host:x'), says: /out\/me@host:x/ },
+    // firstLine would strip "me@" after a space, so the name must be shown in full.
+    { name: 'an at sign and a prefix before a refused name', tar: one('out/x me@host:y'), says: /out\/x me@host:y/ },
     { name: 'names that differ only in case', tar: buildTar([{ name: 'out/a' }, { name: 'out/A' }]), says: /differs only in case/ },
     { name: 'a PAX path holding ..', tar: one('out/x', { pax: { path: 'out/../../x' } }), says: /out\/\.\.\/\.\.\/x/ },
     { name: 'a PAX record with the wrong length', tar: one('out/x', { pax: ['99 path=out/y\n'] }), says: /PAX record/ },
     { name: 'a size that is not a number', tar: one('out/x', { sizeField: 'zzzzzzzzzzz\0' }), says: /size.*not a number/ },
+    { name: 'a PAX size that is not a number', tar: one('out/x', { pax: { size: 'zz' } }), says: /size.*not a number/ },
+    { name: 'a PAX size over the size limit', tar: one('out/x', { pax: { size: String(5 * MEGABYTE) } }), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
+    { name: 'a header that declares more than the size limit, before any of it arrives', tar: buildTar([{ name: 'out/big', declaredSize: 2 * MEGABYTE }], { end: false }).subarray(0, 512), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'an x header over 1 MiB', tar: bigHeader, says: /too large/ },
     { name: 'a bad checksum', tar: one('out/x', { badChecksum: true }), says: /bad checksum/ },
     { name: 'an unknown header type', tar: one('out/x', { type: 'S' }), says: /kind athanor does not copy/ },
@@ -276,12 +281,35 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
   }
 });
 
-test('M14 links, devices and FIFOs are skipped and counted, and act-on-view files are written unless the engine is remote', async (t) => {
+test('M13 the caps hold across several outputs, and the test\'s own exit is reported', async (t) => {
+  const big = (name: string) => served(buildTar([{ name: `${name}/f`, content: Buffer.alloc(700 * 1024, 1) }]));
+  await t.test('size', async (t) => {
+    const s = scene(t, { outputs: ['one', 'two'], cp: { one: big('one'), two: big('two') }, machine: { maxOutputMegabytes: 1 }, plan: { exitCode: 3 } });
+    const { result } = await copy(s);
+    assert.equal(result.outcome, 'error', JSON.stringify(result));
+    assert.match(result.message!, /size limit/);
+    assert.equal(result.testExitCode, 3);
+    assert.match(result.message!, /test exited 3/);
+    assert.equal(existsSync(s.dir), false);
+  });
+  await t.test('entries', async (t) => {
+    const small = (name: string) => served(buildTar([{ name: `${name}/a` }, { name: `${name}/b` }]));
+    const s = scene(t, { outputs: ['one', 'two'], cp: { one: small('one'), two: small('two') } });
+    const { result } = await copy(s, { maxOutputEntries: 3 });
+    assert.equal(result.outcome, 'error', JSON.stringify(result));
+    assert.match(result.message!, /more entries/);
+    assert.equal(existsSync(s.dir), false);
+  });
+});
+
+test('M14 links, devices and FIFOs are skipped and counted, and act-on-view files are written unless the machine allows a remote engine', async (t) => {
+  const viewed = ['out/a.lnk', 'out/b.scf', 'out/c.library-ms', 'out/d.searchConnector-ms', 'out/e.theme', 'out/f.themepack'];
   const tar = buildTar([
     { name: 'out/', type: '5' },
     { name: 'out/real.txt', content: 'real' },
     { name: 'out/desktop.ini', content: '[x]' },
     { name: 'out/x.URL', content: '[InternetShortcut]' },
+    ...viewed.map((name) => ({ name, content: 'x' })),
     { name: 'out/link', type: '2' },
     { name: 'out/hard', type: '1' },
     { name: 'out/dev', type: '3' },
@@ -290,15 +318,15 @@ test('M14 links, devices and FIFOs are skipped and counted, and act-on-view file
   const s = scene(t, { cp: { out: served(tar) } });
   const { result } = await copy(s);
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
-  assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/desktop.ini', 'out/real.txt', 'out/x.URL']);
-  assert.equal(result.outputs!.files, 3);
+  assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/desktop.ini', 'out/real.txt', 'out/x.URL', ...viewed].sort());
+  assert.equal(result.outputs!.files, 9);
   assert.equal(result.outputs!.skipped, 4);
 
   const remote = scene(t, { cp: { out: served(tar) }, machine: { allowRemoteDocker: true } });
   const again = await copy(remote);
   assert.equal(again.result.outcome, 'pass', JSON.stringify(again.result));
   assert.deepEqual(Object.keys(tree(remote.dir)).sort(), ['out', 'out/real.txt']);
-  assert.equal(again.result.outputs!.skipped, 6, 'the two act-on-view files are skipped too');
+  assert.equal(again.result.outputs!.skipped, 12, 'the eight act-on-view files are skipped too');
 });
 
 test('M15 nothing is copied unless the test ran and exited; a hanging cp, the time bound and an ssh login', async (t) => {
@@ -316,6 +344,7 @@ test('M15 nothing is copied unless the test ran and exited; a hanging cp, the ti
       assert.equal(callsOf(calls, 'cp').length, 0);
       assert.equal(existsSync(s.dir), false);
       assert.equal(result.outputs, undefined);
+      assert.equal(result.testExitCode, undefined, 'the run ended before a copy was tried');
     });
   }
 
@@ -358,6 +387,22 @@ test('M15 nothing is copied unless the test ran and exited; a hanging cp, the ti
     assert.ok(callsOf(calls, 'rm').some((c) => c.args.at(-1) === idOfSlot(s.prefix)));
   });
 
+  await t.test('the time bound runs from the copy\'s start, not from each output', async (t) => {
+    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 1000 });
+    // The same run with a second output that is simply missing: the cost of everything but the wait.
+    const baseline = scene(t, { outputs: ['one', 'two'], cp: { one: first } });
+    const base = Date.now();
+    assert.equal((await copy(baseline, { copyTimeMs: 1500 })).result.outcome, 'pass');
+    const baseMs = Date.now() - base;
+    // The second output hangs. From the copy's start the bound ends it 500 ms after the first output; a fresh bound would end it 1500 ms after.
+    const s = scene(t, { outputs: ['one', 'two'], cp: { one: first, two: { hang: true } } });
+    const started = Date.now();
+    const { result } = await copy(s, { copyTimeMs: 1500 });
+    assert.equal(result.outcome, 'error', JSON.stringify(result));
+    assert.match(result.message!, /took longer/);
+    assert.ok(Date.now() - started - baseMs < 1000, 'the second output did not get a fresh 1500 ms');
+  });
+
   await t.test('a cp failing with an ssh login in its text gives a message without the login', async (t) => {
     const s = scene(t, { cp: { out: { fails: 'error: ssh -l mallory me@example.com docker system dial-stdio: connection refused' } } });
     const { result } = await copy(s);
@@ -391,6 +436,8 @@ test('M17 the work line never reaches the caller, and a run that copies needs ex
     { name: 'no work line', work: [] },
     { name: 'two work lines', work: ['/a', '/b'] },
     { name: 'one invalid work line', work: ['rel'] },
+    { name: 'a work line with a control character', work: ['/a\u0001b'] },
+    { name: 'a work line with a format character', work: ['/a‮b'] },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {

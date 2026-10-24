@@ -40,7 +40,7 @@ export const BOOT = [
   '  git -c user.name=athanor -c user.email=athanor@localhost commit -qm athanor',
   'fi',
   '( sleep "$ATHANOR_GRACE_LIMIT"; kill -s KILL -1 ) &',
-  'echo "athanor-work $(pwd)" >&2',
+  `echo "${WORK_PREFIX}$(pwd)" >&2`,
   `echo ${MARKER} >&2`,
   'exec "$@"',
 ].join('\n');

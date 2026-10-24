@@ -111,8 +111,9 @@ A command can be an object, to give it limits, arguments or outputs of its own:
 ```
 
 `argv` is required. `args` (default `false`) lets `athanor run mutation -- …`
-add arguments. `outputs` lists paths in the container's work folder to copy
-out (see Use). `memory`, `cpus` and `timeoutMinutes` take the command's own
+add arguments. `outputs` lists paths to copy out (see Use), relative to the
+work folder: `$HOME/work` in the container, where the snapshot is unpacked, so
+a repo-relative path. `memory`, `cpus` and `timeoutMinutes` take the command's own
 value first, then the repo's top level, then the machine configuration, then
 the default. The machine's `max*` ceilings hold for a command's own value.
 
@@ -150,27 +151,32 @@ athanor prune --days 7
 Every command takes `--json`: stdout then holds exactly one JSON object, and
 everything else goes to stderr.
 
-Everything after `--` is an argument for the named command, passed as literal
-words, `--json` included. Stryker scopes a run with `--mutate`; its positional
-argument is a config file. Don't pass secrets as arguments. Give a command
-whole, with no name, as `athanor run -- <cmd…>`.
+After a command name, everything after `--` is an argument for that command,
+passed as literal words, `--json` included; with no name, `--` starts a whole
+command, as `athanor run -- <cmd…>`. Stryker scopes a run with `--mutate`; its positional
+argument is a config file. Don't pass secrets as arguments.
 
 `--output <dir>` copies the command's `outputs` out of the stopped container
 into `<dir>`, a folder athanor makes and that must not exist yet. It copies
 after a test that passed or failed, and not after a timeout, a memory stop, an
-interrupt or an error. `<dir>` is `$HOME/athanor-reports/mutation-1` on Linux
-and `%USERPROFILE%\athanor-reports\mutation-1` on Windows:
+interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
+`%USERPROFILE%` on Windows, and `athanor-reports` must exist already; athanor
+makes only the last folder:
 
 - Pick a parent under your user profile and outside any folder a sync client
   mirrors. On Windows the folder inherits its parent's access rules.
 - A folder inside the repo shows up as untracked files, so add it to
   `.gitignore`.
 - A folder is complete only when the run's result reports `outputs`: a run
-  killed hard in the middle of a copy can leave a partial folder.
+  killed hard in the middle of a copy can leave a partial folder. Check
+  `outputs.missing` for declared paths the container did not have.
 
 athanor copies regular files and folders, checks every name, and refuses the
-whole copy on a bad one; links and devices are skipped. A copy that fails ends
-the run with exit 125 and the test's own exit in `testExitCode`.
+whole copy on a bad one; links and devices are skipped, and so are the files
+Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url` and the
+like) when the machine configuration sets `allowRemoteDocker`. A copy reads at
+most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
+ends the run with exit 125 and the test's own exit in `testExitCode`.
 
 A run tests your tracked files as they are in the working tree, staged or
 not (a file added with `git add -N` counts), and tells you how many untracked
@@ -271,13 +277,14 @@ threat model holds the full entries.
   build. Accepted risks 1 and 5.
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
-  builder's operator receives your work and decides the result, and a builder
+  builder's operator receives your work, decides the result and chooses the
+  files an `--output` copy brings back, and a builder
   can ask this machine for your registry login. Don't share an engine with
   people you don't trust, and set `allowRemoteDocker` only for an engine and
   builder whose operator you trust with your work and your registry login.
   Accepted risks 7 and 8.
-- **Plain tcp.** With `allowPlainTcp`, your work and the test output cross the
-  network unencrypted. Set it only on a network you trust. Accepted risk 10.
+- **Plain tcp.** With `allowPlainTcp`, your work, the test output and copied
+  outputs cross the network unencrypted. Set it only on a network you trust. Accepted risk 10.
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
   that athanor counts as local can be forwarded to another machine, or held by
   another local program. Know where your Docker endpoint leads. Accepted risk

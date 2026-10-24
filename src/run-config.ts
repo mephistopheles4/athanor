@@ -5,7 +5,7 @@ import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync,
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
-import { checkOutputs, DEFAULT_MAX_OUTPUT_MEGABYTES } from './copy-out.js';
+import { checkOutputs } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -14,6 +14,7 @@ export const DEFAULTS = Object.freeze({
   pruneDays: 30,
   maxMemory: '8g',
   maxTimeoutMinutes: 120,
+  maxOutputMegabytes: 1024,
 });
 
 // Where a value came from.
@@ -150,7 +151,7 @@ export interface RunRequest {
   extraNames?: string[];
 }
 
-// The old message for two names, when the first is not a command of the repo.
+// The message for two names, when the first is not a command of the repo.
 function oneNameMessage(request: RunRequest): string {
   const names = [request.name ?? 'test', ...(request.extraNames ?? [])];
   return `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To run a command of your own, put it after --.`;
@@ -428,7 +429,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     limits,
     timeLimitSeconds: limits.timeoutMinutes * 60,
     outputs: own?.outputs ?? [],
-    maxOutputBytes: (machine.values.maxOutputMegabytes ?? DEFAULT_MAX_OUTPUT_MEGABYTES) * 1024 * 1024,
+    maxOutputBytes: (machine.values.maxOutputMegabytes ?? DEFAULTS.maxOutputMegabytes) * 1024 * 1024,
     docker: { allowPlainTcp: machine.values.allowPlainTcp === true, allowRemoteDocker: machine.values.allowRemoteDocker === true, machineFile: machine.file },
     from: {
       memory: picked.memory.source,

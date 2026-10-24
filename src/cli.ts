@@ -70,8 +70,8 @@ export function parseArgs(argv: string[]): Parsed {
       else if (arg === '--dry-run') options.dryRun = true;
       else if (arg === '--output') {
         const value = rest[++i];
-        if (value === undefined || value === '') {
-          throw new AthanorError('--output needs a folder to copy into, such as --output reports/run-1. The folder must not exist yet.');
+        if (value === undefined || value === '' || value.startsWith('-')) {
+          throw new AthanorError('--output needs a folder to copy into, which must not exist yet. Put a folder name right after it, for example one under your user profile.');
         }
         options.output = value;
       }
@@ -170,7 +170,7 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
 
 function resultLine(result: RunResult): string {
   // The test ran and exited, but its outputs could not be copied: the message says both.
-  if (result.testExitCode !== undefined) return `${result.message} (exit ${result.exitCode}).`;
+  if (result.testExitCode !== undefined) return `${result.message?.replace(/\.$/, '')} (exit ${result.exitCode}).`;
   switch (result.outcome) {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;

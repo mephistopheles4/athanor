@@ -1,6 +1,6 @@
 # 0023. A named command carries its own limits, arguments and outputs
 
-Date: 2026-10-24 · Status: accepted · Extends: 0007, 0009 · Source: the
+Date: 2026-10-24 · Status: accepted · Extends: 0003, 0007, 0009 · Source: the
 owner's decisions q1 to q16, relayed by the lead session and recorded in the
 spec on issue 46 (revision 4)
 
@@ -52,7 +52,10 @@ repairs:
   merges into a folder.
 - athanor reads the tar itself (ADR 0001): ustar headers with their checksums,
   PAX `path` and `size`, and GNU long names. Links, devices and FIFOs are
-  skipped and counted. Any other header type, a bad record or a truncated
+  skipped and counted. When the machine configuration sets `allowRemoteDocker`,
+  the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`,
+  `.url`, `.scf`, `.library-ms`, `.searchConnector-ms`, `.theme`, `.themepack`)
+  are skipped and counted too. Any other header type, a bad record or a truncated
   stream is an error.
 - Names are read as text and never resolved. Each segment must pass rules that
   hold on every platform: no empty, `.` or `..` part, no `.git` in either case
@@ -66,6 +69,10 @@ repairs:
   `testExitCode` field holding the test's own exit. A hard kill during the copy
   can leave a partial folder; a folder is complete only when the result reports
   `outputs`.
+
+The core takes two more options for tests only, marked `@internal` (ADR 0003):
+`maxOutputEntries` and `copyTimeMs`, which lower the entry cap and the time
+bound so a test does not need 100 000 entries or ten minutes.
 
 Consequences: the threat model gains a boundary, "What comes back from the
 container", and accepted risks 28 (a copied file's content is the test code's

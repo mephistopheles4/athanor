@@ -159,6 +159,7 @@ test('M6 without args set, arguments are refused with the two ways out; the othe
   const strayOptions = { name: 'mutation', extraNames: ['src/a.ts'] };
   const two = await runIn(t, plainRepo, strayOptions);
   assertSetupError(two.result, two.calls, /"args": true/);
+  assert.match(two.result.message!, /after -- with no name/, 'both ways out');
   const optedIn = mutationRepo(t, true);
   const named = await runIn(t, optedIn, strayOptions);
   assertSetupError(named.result, named.calls, /athanor run mutation -- src\/a\.ts/);

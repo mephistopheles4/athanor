@@ -265,6 +265,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
         tail = await copyStep({
           docker, env: pinned, handed, outputs: config.outputs, target, maxBytes: config.maxOutputBytes,
           maxEntries: options.maxOutputEntries ?? MAX_ENTRIES, timeMs: options.copyTimeMs ?? COPY_TIME_MS,
+          // A machine that allows a remote engine may be copying files an operator chose (accepted risks 7 and 28).
           skipActOnView: config.docker.allowRemoteDocker, signal, onProgress,
         });
       }
@@ -303,14 +304,15 @@ async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
       maxBytes: c.maxBytes, maxEntries: c.maxEntries, timeMs: c.timeMs, skipActOnView: c.skipActOnView,
       signal: c.signal, onProgress: c.onProgress,
     });
-    c.onProgress(`copied ${copied.files} file${copied.files === 1 ? '' : 's'} into ${c.target.asTyped} (${copied.skipped} skipped).`);
+    const notFound = copied.missing.length > 0 ? `, ${copied.missing.length} declared output${copied.missing.length === 1 ? '' : 's'} not found` : '';
+    c.onProgress(`copied ${copied.files} file${copied.files === 1 ? '' : 's'} into ${c.target.asTyped} (${copied.skipped} skipped${notFound}).`);
     return { outputs: { dir: c.target.asTyped, ...copied } };
   } catch (error) {
     if (error instanceof CopyInterrupted) return { outcome: 'interrupted', exitCode: EXIT.interrupted };
     if (error instanceof CopyError) {
       return {
         outcome: 'error', exitCode: EXIT.setup, testExitCode: testExit,
-        message: `The test exited ${testExit}, but its outputs could not be copied: ${error.message}`,
+        message: `The test exited ${testExit}, but its outputs could not be copied: ${error.message} Fix that and run again, or run without --output.`,
       };
     }
     throw error;

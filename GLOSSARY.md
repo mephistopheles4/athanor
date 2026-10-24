@@ -29,8 +29,8 @@
   the machine configuration, the image last-use marks, temporary indexes and
   per-run object folders. Run output is never written there.
 - **Machine configuration.** The optional `config.json` in the state folder:
-  the run limit, default per-run limits, their ceilings, and the default age
-  for `prune`.
+  the run limit, default per-run limits, their ceilings, the copy-out size cap,
+  and the default age for `prune`.
 - **Repo configuration.** What the repo sets for athanor: the `athanor.json`
   file at the repo root, or the `athanor` key in its `package.json`, never
   both. A run with both exits 125.
