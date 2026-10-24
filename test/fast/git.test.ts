@@ -64,7 +64,7 @@ test('T11 the tar streams keep their pinned line endings and file modes against 
 // ("not uptodate"); issue 46, spec M8 and M9. The snapshot holds it at its
 // working-tree content, and the repo's own state does not change (ADR 0007).
 test('M8 a file added with git add -N is in the snapshot at its working-tree content, and the repo is unchanged', async (t) => {
-  const rows = [
+  const rows: { name: string; config: Record<string, unknown>; setup: Record<string, string>; modified: boolean; untracked: boolean; red: boolean }[] = [
     { name: 'a -N file alone', config: baseConfig, setup: { 'new.txt': 'intent\n' }, modified: false, untracked: false, red: true },
     { name: 'a -N file beside a modified file', config: baseConfig, setup: { 'new.txt': 'intent\n' }, modified: true, untracked: false, red: true },
     { name: 'a -N file under context, also in the build tar', config: { ...baseConfig, context: 'test' }, setup: { 'test/new.txt': 'intent\n' }, modified: false, untracked: false, red: true },
@@ -78,15 +78,16 @@ test('M8 a file added with git add -N is in the snapshot at its working-tree con
       writeFiles(repo, row.setup);
       const [path] = Object.keys(row.setup);
       git(repo, ['add', '-N', '--', path]);
-      if (row.modified) writeFiles(repo, { 'tracked.txt': 'two\n' });
+      // A different length, so git's stat check sees the change at once.
+      if (row.modified) writeFiles(repo, { 'tracked.txt': 'changed longer\n' });
       const before = gitState(repo);
       const docker = fake(t);
       const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix(), untracked: row.untracked });
       assert.equal(result.outcome, 'pass', JSON.stringify(result));
       const snapshot = callsOf(docker.calls(), 'run').at(-1)!.tar!;
       assert.equal(tarFile(snapshot, path), 'intent\n', 'the snapshot holds the -N file at its working-tree content');
-      if (row.modified) assert.equal(tarFile(snapshot, 'tracked.txt'), 'two\n');
-      if (row.config.context) {
+      if (row.modified) assert.equal(tarFile(snapshot, 'tracked.txt'), 'changed longer\n');
+      if (row.config.context !== undefined) {
         const build = callsOf(docker.calls(), 'build').at(-1)!.tar!;
         assert.equal(tarFile(build, 'new.txt'), 'intent\n', 'the build context holds the -N file under context');
       }
