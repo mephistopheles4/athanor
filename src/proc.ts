@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, extname, join, resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { AthanorError } from './errors.js';
 
@@ -55,18 +55,25 @@ function isProgram(file: string): boolean {
   }
 }
 
+// The file names a program is looked for by in each PATH folder. Windows
+// cannot start a file with no extension, so there a name without one is tried
+// with .com, then .exe, as Node itself would; never .cmd or .bat, which need a
+// shell. A name with an extension is tried as given.
+export function programNames(name: string): string[] {
+  return windows && extname(name) === '' ? [`${name}.com`, `${name}.exe`] : [name];
+}
+
 // The full path of a program named without a folder, found in PATH's absolute
 // entries only (ADR 0020): never in the working folder or a relative entry,
-// which Windows would otherwise search first. On Windows the name is tried as
-// given, then with .com, then with .exe; never .cmd or .bat, which need a shell.
+// which Windows would otherwise search first.
 export function findProgram(name: string, { path = process.env.PATH ?? '', cwd = process.cwd() }: { path?: string; cwd?: string } = {}): string {
-  const endings = windows ? ['', '.com', '.exe'] : [''];
+  const names = programNames(name);
   for (const raw of path.split(delimiter)) {
     const entry = windows ? raw.replace(/^"(.*)"$/, '$1') : raw;
     const folder = resolve(cwd, entry);
     if (!absolute(entry) || sameFolder(folder, cwd)) continue;
-    for (const ending of endings) {
-      const file = join(folder, name + ending);
+    for (const each of names) {
+      const file = join(folder, each);
       if (isProgram(file)) return file;
     }
   }

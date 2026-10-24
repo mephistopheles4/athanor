@@ -90,10 +90,12 @@ above; the software they run is not.
   host git setting changes a file in that step. This keeps host git settings
   out of the archive step; it is not a control against a process that can
   write the environment or the home folder, which already chooses the git that
-  runs. git and docker start by a full path from PATH's absolute entries,
-  never from the working folder or a relative entry, so the Windows case, where
-  a program of that name in the repo could run in their place, is closed (ADR
-  0020, G8). The line endings and file modes are pinned, and the tree's own
+  runs. git and docker start by a full path from PATH's absolute entries, so a
+  program of that name in the working folder, or one found through a relative
+  or empty PATH entry, never runs in their place, which on Windows was the
+  repo's own folder (ADR 0020, G8). A full PATH entry into the repo, such as
+  the one npm adds for its scripts, or another spelling of the working folder,
+  is the environment's choice, as above. The line endings and file modes are pinned, and the tree's own
   `text`, `eol`, `ident` and `working-tree-encoding` attributes still apply
   (ADR 0020, C32, G1–G6). The git calls that make the snapshot's and the build context's trees still run
   with the host's git config and environment (accepted risk 23, issue 42).

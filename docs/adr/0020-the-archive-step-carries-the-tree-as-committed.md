@@ -61,19 +61,28 @@ those calls run, such as Git LFS's, can write the repo's git folder.
 
 ## Amendment, 2026-10-24: programs start by a full path
 
-Source: the owner's H2 from the Test review of issue 20, relayed by the lead
-session.
+Source: the owner's H2 from the Test review of issue 20, and the owner's q2 to
+q4 from H2's own review, each relayed by the lead session.
 
 On every platform, athanor starts git and docker by a full path it finds in
 PATH, never by the bare name. It searches only PATH's absolute entries and
-skips the working folder and every relative entry, so a program of the same
-name in the repo or the current folder never runs in their place; on Windows,
-starting a bare name would search the child's folder first. On Windows an entry
-that hangs off the current drive, such as `\tools`, counts as relative, and
-the name is tried as given, then with `.com`, then with `.exe`; never
-`.cmd` or `.bat`, which need a shell. Each name is looked up once, and every
-later start of it runs the same file. A path given as the program, such as the
-tests' fake Docker, starts unchanged.
+skips the working folder and every relative or empty entry, so a program of
+the same name in the working folder, or one found through such an entry, never
+runs in their place; on Windows, starting a bare name would search the child's
+folder, the repo, first. On Windows an entry that hangs off a drive or its
+current folder, such as `\tools` or `C:tools`, counts as relative. Windows
+cannot start a file with no extension, so there a name without one is tried
+with `.com`, then `.exe`, as Node itself would, and a name with one is tried
+as given; never `.cmd` or `.bat`, which need a shell. Each name is looked up
+once, and every later start of it runs the same file. A path given as the
+program, such as the tests' fake Docker, starts unchanged.
+
+The skip compares folders by their resolved text, ignoring case on Windows. A
+full PATH entry into the repo, such as the `node_modules/.bin` folder npm puts
+first for its scripts, or another spelling of the working folder, such as a
+share or long-path form, is searched like any other: that is the environment's
+choice, and a process that sets the environment already chooses the git that
+runs. The owner chose no guard for these and no accepted risk.
 
 When no entry holds the program, athanor stops with exit 125 and says so, for
 example "git was not found on PATH. Install it, or add its folder to PATH, then
