@@ -21,9 +21,11 @@ command reaching a shell on the host.
 
 athanor is for repos you trust to build: the image build runs the repo's own
 Dockerfile with network access. athanor sends the build context and snapshot
-to the Docker engine you have configured, local or remote, but refuses a plain
-tcp engine without TLS verification unless the machine configuration allows
-it. Which of these risks are accepted is decided in the threat model.
+to the Docker engine and buildx builder you have configured. It refuses one on
+another machine unless the machine configuration sets `allowRemoteDocker`, and
+refuses plain tcp without TLS verification unless it sets `allowPlainTcp`.
+The machine configuration is read from the state folder, which `ATHANOR_HOME`
+moves. Which of these risks are accepted is decided in the threat model.
 
 Don't run athanor on a Docker engine shared with people you don't trust:
 anyone with access to the engine can read your runs and change their results.

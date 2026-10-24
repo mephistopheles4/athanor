@@ -1,6 +1,6 @@
 # 0013. A plain tcp Docker endpoint is refused by default
 
-Date: 2026-10-20 · Status: accepted · Source: the owner's answer to q8 (A2),
+Date: 2026-10-20 · Status: accepted, extended by 0021 to every buildx builder node · Source: the owner's answer to q8 (A2),
 after the security pair's review, recorded as a spec amendment on issue 1
 
 athanor uses Docker as configured (ADR 0012), but before any build or run it

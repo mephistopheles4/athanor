@@ -111,7 +111,7 @@ export function isolate(t: TestContext, env: Record<string, string> = {}): strin
 
 // A fake Docker with its own scenario folder. calls() returns the recorded
 // argument arrays (and tar listings), oldest first.
-export interface Call { args: string[]; tar?: TarEntry[] }
+export interface Call { args: string[]; tar?: TarEntry[]; env?: { context?: string; builder?: string; tlsVerify?: string; hasPath: boolean } }
 export interface TarEntry { name: string; type: string; mode: string; content: string | undefined }
 
 export type Fake = ReturnType<typeof fake>;

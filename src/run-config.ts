@@ -35,8 +35,9 @@ const memory = (example: string): Check => ({
 
 // The one table of configuration keys: which file may set each, and the check
 // for its value. Messages list the keys in this order. The repo-only keys are
-// checked by checkRepoValues. allowPlainTcp is machine-only, so a repo cannot
-// open a plain tcp endpoint for itself (ADR 0013).
+// checked by checkRepoValues. allowPlainTcp and allowRemoteDocker are
+// machine-only, so a repo cannot open a plain tcp endpoint, or a Docker engine
+// or builder off this machine, for itself (ADR 0013, ADR 0021).
 const KEYS = {
   dockerfile: { repo: true, machine: false },
   context: { repo: true, machine: false },
@@ -51,6 +52,7 @@ const KEYS = {
   maxCpus: { repo: false, machine: true, check: positiveNumber },
   maxTimeoutMinutes: { repo: false, machine: true, check: positiveNumber },
   allowPlainTcp: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
+  allowRemoteDocker: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
 } satisfies Record<string, KeyRule>;
 
 interface KeyRule {
@@ -76,6 +78,7 @@ export interface MachineValues {
   maxCpus: number;
   maxTimeoutMinutes: number;
   allowPlainTcp: boolean;
+  allowRemoteDocker: boolean;
 }
 
 // The machine configuration: its file, which may not exist, and its checked values.
@@ -112,8 +115,8 @@ export interface RunConfig {
   command: string[];
   limits: Limits;
   timeLimitSeconds: number;
-  docker: { allowPlainTcp: boolean; machineFile: string };
-  from: Record<LimitKey | 'allowPlainTcp', Source>;
+  docker: { allowPlainTcp: boolean; allowRemoteDocker: boolean; machineFile: string };
+  from: Record<LimitKey | 'allowPlainTcp' | 'allowRemoteDocker', Source>;
 }
 
 export function memoryBytes(value: string): number {
@@ -334,12 +337,13 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     command,
     limits,
     timeLimitSeconds: limits.timeoutMinutes * 60,
-    docker: { allowPlainTcp: machine.values.allowPlainTcp === true, machineFile: machine.file },
+    docker: { allowPlainTcp: machine.values.allowPlainTcp === true, allowRemoteDocker: machine.values.allowRemoteDocker === true, machineFile: machine.file },
     from: {
       memory: picked.memory.source,
       cpus: picked.cpus.source,
       timeoutMinutes: picked.timeoutMinutes.source,
       allowPlainTcp: machine.values.allowPlainTcp !== undefined ? machineSource : { kind: 'default' },
+      allowRemoteDocker: machine.values.allowRemoteDocker !== undefined ? machineSource : { kind: 'default' },
     },
   };
 }

@@ -8,7 +8,7 @@ import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream } from './git.js';
 import type { Scratch, BuildContext } from './git.js';
-import { prepareDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
+import { prepareDocker, recheckDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { acquire, ask } from './slots.js';
 import type { Slot } from './slots.js';
@@ -172,7 +172,10 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  const { driver } = await prepareDocker(docker, env, config.docker);
+  const { driver, notices, checked } = await prepareDocker(docker, env, config.docker);
+  for (const notice of notices) onProgress(notice);
+  // Every Docker call from here on runs with the checked context and builder pinned.
+  const pinned = checked.env;
   // A docker-container builder keeps its result in the build cache unless told to load it.
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
@@ -181,7 +184,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   try {
     // The image: found, or built before waiting for a slot (T1).
     const ctx = await buildContext(root, scratch, config.build);
-    const image: ImageBuild = { docker, root, scratch, ctx, dockerfile: config.build.dockerfileInContext, buildOptions, stderr, signal };
+    const image: ImageBuild = { docker, env: pinned, root, scratch, ctx, dockerfile: config.build.dockerfileInContext, buildOptions, stderr, signal };
     partial.image = { tag: ctx.tag, built: false };
     if (await settleImage(image, () => onProgress(`building the test image ${ctx.tag} from ${config.dockerfileAsSet}.`))) {
       partial.image.built = true;
@@ -208,17 +211,20 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     if (!slot) return interruptedResult(partial);
     partial.slot = slot.slot;
     await warnOnOtherLimits(prefix, slot.slot, limit, onProgress);
+    // A context or builder edited in place while this run waited would change
+    // where the pinned names lead.
+    await recheckDocker(docker, checked);
 
     // A prune may have removed the tag while this run waited.
     if (await settleImage(image, () => onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`))) {
       partial.image.built = true;
     }
     const container = containerSettings({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
-    await clearSlotContainer(docker, container.name);
+    await clearSlotContainer(docker, container.name, pinned);
     if (signal?.aborted) return interruptedResult(partial);
 
     const ran = await runContainer({
-      docker, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
+      docker, env: pinned, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
     });
     markUse(home, ctx.hash);
     return { schema: 1, ...partial, ...ran };
@@ -242,6 +248,8 @@ async function warnOnOtherLimits(prefix: string, slot: number, limit: number, on
 // What building the run's image needs.
 interface ImageBuild {
   docker: DockerCommand;
+  // The run's environment with the checked Docker context and builder pinned.
+  env: NodeJS.ProcessEnv;
   root: string;
   scratch: Scratch;
   ctx: BuildContext;
@@ -255,16 +263,16 @@ interface ImageBuild {
 // Build the image unless Docker already has it; onBuild says so first.
 // Returns whether it built.
 async function settleImage(b: ImageBuild, onBuild: () => void): Promise<boolean> {
-  if (await imageExists(b.docker, b.ctx.tag)) return false;
+  if (await imageExists(b.docker, b.ctx.tag, b.env)) return false;
   onBuild();
   await build(b);
   return true;
 }
 
-async function build({ docker, root, scratch, ctx, dockerfile, buildOptions, stderr, signal }: ImageBuild): Promise<void> {
+async function build({ docker, env, root, scratch, ctx, dockerfile, buildOptions, stderr, signal }: ImageBuild): Promise<void> {
   const archive = tarStream(root, scratch, ctx.commit, 'build context');
   const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfile, '-'], {
-    stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
+    env, stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
   });
   feed(archive, builder);
   // On an interrupt, stop waiting once docker has exited: a buildx plugin it
@@ -293,7 +301,7 @@ async function build({ docker, root, scratch, ctx, dockerfile, buildOptions, std
   if (b.code !== 0) {
     throw new AthanorError(`The image build failed (docker build exit ${b.code}). Its output is above; fix the Dockerfile or the context, then run again.`);
   }
-  if (!(await imageExists(docker, ctx.tag))) {
+  if (!(await imageExists(docker, ctx.tag, env))) {
     throw new AthanorError(`The image build finished, but the image ${ctx.tag} is not in Docker. Check that the buildx builder loads its images into the local engine.`);
   }
 }
