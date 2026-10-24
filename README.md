@@ -98,6 +98,13 @@ outside it.
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
 
+A browser can't start its own sandbox in the container: Docker's default
+seccomp profile, which athanor leaves in place, blocks it, and Chromium and
+Chrome (and so Puppeteer and Playwright) stop with "No usable sandbox!". Start
+the browser with `--no-sandbox`, or your repo's own equivalent such as a
+wrapper script that adds it. The container, with no network and no host
+folders, is the isolation in its place.
+
 A test keeps six Linux capabilities (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
 `SETUID` and `SETGID`) and loses the other eight of Docker's defaults. A test
 that needs one of the eight, such as `MKNOD` or `NET_RAW`, fails with a
@@ -199,6 +206,43 @@ settings as build arguments, so a Dockerfile can read them. See
 Keep secrets out of the files a run sends: everything tracked in the repo goes
 into the container, and everything tracked under `context` plus each `inputs`
 file goes into the image build, which has network access.
+
+## What athanor doesn't protect you from
+
+Each line is an accepted risk in [the threat model](docs/threat-model.md#accepted-risks),
+which holds the full entry.
+
+- **A repo you don't trust.** The image build runs the repo's Dockerfile with
+  the network and gets your Docker client's proxy settings, passwords
+  included. The tests run as root unless the Dockerfile names another user,
+  and keep six Linux capabilities. Use athanor only on repos you trust to
+  build. Accepted risks 1 and 5.
+- **A shared or remote engine.** Anyone who can use the engine can read your
+  runs and change their results. With `allowRemoteDocker`, the engine's or
+  builder's operator receives your work and decides the result. Don't share an
+  engine with people you don't trust. Accepted risks 7 and 8.
+- **Plain tcp.** With `allowPlainTcp`, your work and the test output cross the
+  network unencrypted. Set it only on a network you trust. Accepted risk 10.
+- **A local address that leads elsewhere.** A socket, pipe or loopback port
+  that athanor counts as local can be forwarded to another machine, or held by
+  another local program. Know where your Docker endpoint leads. Accepted risk
+  24.
+- **Other local programs.** Any program on the machine can block runs, and
+  read or fake what `status` shows about slot holders. On Windows, one with
+  the privilege to impersonate clients can act as you on a slot connection.
+  Don't run athanor on a machine where you don't trust the other programs.
+  Accepted risks 2, 3 and 9.
+- **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
+  engine has, and a test that ends its own timer can leave a container
+  running until the slot is next used. Set `maxCpus` for a bound. Accepted
+  risks 4 and 17.
+- **Your git configuration.** The git calls that record uncommitted work run
+  your clean filters, and Git LFS can copy uncommitted files into `.git/lfs`
+  (see [Use](#use)). Accepted risk 23.
+- **Your account name in messages.** A refusal about `allowRemoteDocker` or
+  `allowPlainTcp` names the machine configuration file by its full path,
+  which holds your home folder's name. With `--json` it reaches whatever
+  reads the output. Accepted risk 25.
 
 ## More
 
