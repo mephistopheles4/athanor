@@ -46,18 +46,20 @@ fresh container that runs the test command. It writes only to its state folder (
   result. It reaches `main`, and the owner's machine through `npm ci`, only
   through a merge. The compiler is the one dev package that runs: once merged,
   it runs as the owner in every test run and in the build before a publish
-  (accepted risk 18). The same holds for the actions the release workflow
-  uses, among them `actions/upload-artifact` and `actions/download-artifact`,
-  and for the build on the runner before a staged release (accepted risks 21
-  and 22).
-- **Whoever controls the owner's GitHub account, or can merge to `main`,** can
+  (accepted risk 18). These, too, run once merged: the actions the release
+  workflow uses, among them `actions/upload-artifact` and
+  `actions/download-artifact`, and the build on the runner before a staged
+  release (accepted risks 21 and 22).
+- **Whoever controls the owner's GitHub account, or can push a branch to this repo,** can
   change and start the release workflow and approve its deployment. They can
   stage a version, but cannot make one live without the owner's npm
   two-factor approval. Before that approval the owner checks that they
   started the run, on the commit they merged, and reads the diff since the
   last release tag. The GitHub approval guards the token only as far as npm
   enforces the environment the trusted publisher names, which is unconfirmed
-  (R10).
+  (claim R10 of the spec on issue 6). The actor stays "can push a branch"
+  until R10 or R8 shows that npm refuses a job with no environment, or with a
+  different one.
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -125,10 +127,12 @@ above; the software they run is not.
     GitHub issues an identity token there only after the owner approves the
     `npm` environment. That token proves the job's identity to any service
     that trusts it, including Sigstore for provenance. npm exchanges it for a
-    token that can only stage.
+    token that can only stage, once the owner has set it before the merge
+    (R10).
   - A staged version goes live only when the owner approves it with npm 2FA.
     The owner logs in only after the local build and logs out straight after.
-    Publishing access disallows tokens.
+    Publishing access disallows tokens, once the owner has set it before the
+    merge (R10).
   - See ADR 0018, A1 to A6, and ADR 0019.
 
 ## The sensitive-work list
@@ -157,7 +161,11 @@ above; the software they run is not.
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token, and the owner's npm login around an approval
-  (the supply-chain bullet above; ADR 0019; accepted risk 22).
+  (the supply-chain bullet above; ADR 0019; accepted risk 22). The owner's
+  npm session token sits in the user npm configuration from login to logout,
+  unencrypted at file level. It relies on the machine's disk encryption, which
+  the owner confirmed is on (2026-10-24), and on npm's two-factor check on
+  every write.
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
   its image (accepted risk 8). Temporary names use Node's crypto random source.
@@ -174,6 +182,11 @@ above; the software they run is not.
   each validated before use, and a bad value exits 125 with a plain message
   (C17, C18, C24, C31). The Docker endpoint is checked only for plain tcp
   (ADR 0013). Holder answers are shown as reported, never as checked facts.
+  The release path's untrusted inputs are the artifact `publish` takes from
+  `check`, the staged tarball and manifest the owner downloads, and the
+  registry's answer to the version check. They are covered by the owner's
+  look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
+  ADR 0019.
 - **Data migrations.** None. The state folder holds only marks, temporary
   indexes and per-run object folders, which are safe to delete.
 
@@ -350,13 +363,14 @@ candidate, so other work can point at it.
 20. **A hijacked action could leave cache entries for a later workflow.** An
     action's code, run on a push to `main`, can write Actions cache entries,
     and a later workflow that restores the cache would read them. Accepted
-    because nothing restores a cache today. A workflow that restores one, such
-    as issue 6's, is a reason to revisit. The release workflow restores no
+    because nothing restores a cache today. A workflow that restores one is a
+    reason to revisit. The release workflow restores no
     cache. The workflow check fails a workflow that uses the cache actions or
     setup-node's cache in the block style it reads, and refuses a flow-style
     `with:` on those actions.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
     Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM4); the Design review of spec revision 1 (adversarial-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+    Edited 2026-10-24, to drop "such as issue 6's" from the revisit sentence. From: issue 6, the Test review of `9a1b0ba` (reader-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 21. **Code in the release's check job shapes the tarball.** A dev package,
     the compiler, the test code, an action, or a process an earlier step left
     running in `check` can change any file that is packed, and `publish`
