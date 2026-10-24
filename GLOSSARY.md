@@ -5,9 +5,10 @@
   and exit with its exit code.
 - **Snapshot.** The work a run tests, as git sees it: a commit made by
   `git stash create` from a copy of the index (tracked files, staged and
-  unstaged), or `HEAD` on a clean tree, or with `--untracked` a tree that also
-  holds the untracked, non-ignored files. It reaches the container as a tar
-  stream on stdin, made with no git content filter in the archive step.
+  unstaged, and files added with `git add -N` at their working-tree content),
+  or `HEAD` on a clean tree, or with `--untracked` a tree that also holds the
+  untracked, non-ignored files. It reaches the container as a tar stream on
+  stdin, made with no git content filter in the archive step.
 - **Archive step.** The `git archive` that turns the snapshot's or the build
   context's tree into a tar stream. It runs in athanor's own git folder, with
   no host git config and no content filter (ADR 0020). The git calls that make
@@ -35,8 +36,10 @@
   both. A run with both exits 125.
 - **Run configuration.** Everything a run needs from the repo configuration
   and the machine configuration: the build settings, the command, the limits,
-  the time limit and the Docker endpoint settings (`allowPlainTcp` and
-  `allowRemoteDocker`, machine only). Its paths are checked to
+  the time limit, the command's outputs, the copy-out size cap
+  (`maxOutputMegabytes`, machine only) and the Docker endpoint settings
+  (`allowPlainTcp` and `allowRemoteDocker`, machine only). A command's own
+  limits come before the repo's and the machine's. Its paths are checked to
   stay inside the repo, its limits are held to the machine's ceilings where the machine
   configuration sets them, and
   each value keeps the file it came from, so a message names the file to fix.
@@ -52,7 +55,19 @@
   snapshot in, ending it on an interrupt or at the time limit, finding the
   boot marker, and reading how it ended into the run's outcome.
 - **Boot script.** The short `sh` script that unpacks the snapshot in the
-  container, prints the boot marker, and runs the test command.
+  container, prints the work line and the boot marker, and runs the test
+  command.
+- **Work line.** The line `athanor-work <path>` the boot script prints on
+  stderr just before the boot marker, naming the work folder. The run strips it
+  and, with `--output`, copies from that folder (ADR 0023).
+- **Named command.** An entry of `commands`: an argument array, or an object
+  with `argv` and optionally `args`, `outputs` and limits of its own (ADR 0023).
+- **Outputs.** The paths a named command declares, relative to the work folder
+  in the container, for copy-out.
+- **Copy-out.** With `--output <dir>`, copying a command's outputs from the
+  stopped container into a new folder on the host, by the container's ID, after
+  a test that passed or failed. athanor reads the tar itself, checks every name
+  and caps size, entries and time (ADR 0023).
 - **Boot marker.** The line `athanor-boot-ok` the boot script prints on stderr
   just before the test command. Without it the test never started, and the
   outcome is `error`.

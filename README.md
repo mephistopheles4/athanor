@@ -89,11 +89,32 @@ outside it.
   so keep it small.
 - `inputs` lists files outside `context` that the build needs. Each must be
   tracked by git, and keeps its repo-relative path under the context root.
-- `commands` maps names to argument arrays. A string is an error.
+- `commands` maps names to argument arrays, or to objects (below). A string is
+  an error.
 - `memory` (`512m`, `2g`), `cpus` and `timeoutMinutes` default to the machine
   configuration. If that does not set them, `memory` is 2g and `timeoutMinutes`
   is 30. `cpus` has no default: with no `cpus` in either file (and no `maxCpus`),
   the container gets no CPU limit and may use every CPU the engine has.
+
+A command can be an object, to give it limits, arguments or outputs of its own:
+
+```json
+"commands": {
+  "test": ["npm", "test"],
+  "mutation": {
+    "argv": ["npx", "stryker", "run"],
+    "args": true,
+    "outputs": ["reports/mutation"],
+    "timeoutMinutes": 90, "cpus": 4, "memory": "4g"
+  }
+}
+```
+
+`argv` is required. `args` (default `false`) lets `athanor run mutation -- …`
+add arguments. `outputs` lists paths in the container's work folder to copy
+out (see Use). `memory`, `cpus` and `timeoutMinutes` take the command's own
+value first, then the repo's top level, then the machine configuration, then
+the default. The machine's `max*` ceilings hold for a command's own value.
 
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
@@ -119,6 +140,8 @@ athanor run                 # run the "test" command
 athanor run fast            # run another named command
 athanor run --untracked     # include untracked, non-ignored files
 athanor run -- node --test test/one.test.mjs
+athanor run mutation -- --mutate src/a.ts   # arguments for a command that sets "args": true
+athanor run mutation --output <your profile>/athanor-reports/mutation-1
 athanor status              # who holds the slots, which containers exist
 athanor prune --dry-run     # list images unused for 30 days
 athanor prune --days 7
@@ -127,9 +150,32 @@ athanor prune --days 7
 Every command takes `--json`: stdout then holds exactly one JSON object, and
 everything else goes to stderr.
 
+Everything after `--` is an argument for the named command, passed as literal
+words, `--json` included. Stryker scopes a run with `--mutate`; its positional
+argument is a config file. Don't pass secrets as arguments. Give a command
+whole, with no name, as `athanor run -- <cmd…>`.
+
+`--output <dir>` copies the command's `outputs` out of the stopped container
+into `<dir>`, a folder athanor makes and that must not exist yet. It copies
+after a test that passed or failed, and not after a timeout, a memory stop, an
+interrupt or an error. `<dir>` is `$HOME/athanor-reports/mutation-1` on Linux
+and `%USERPROFILE%\athanor-reports\mutation-1` on Windows:
+
+- Pick a parent under your user profile and outside any folder a sync client
+  mirrors. On Windows the folder inherits its parent's access rules.
+- A folder inside the repo shows up as untracked files, so add it to
+  `.gitignore`.
+- A folder is complete only when the run's result reports `outputs`: a run
+  killed hard in the middle of a copy can leave a partial folder.
+
+athanor copies regular files and folders, checks every name, and refuses the
+whole copy on a bad one; links and devices are skipped. A copy that fails ends
+the run with exit 125 and the test's own exit in `testExitCode`.
+
 A run tests your tracked files as they are in the working tree, staged or
-not, and tells you how many untracked files it left out. It never changes
-your working tree, index, refs or stash list.
+not (a file added with `git add -N` counts), and tells you how many untracked
+files it left out. It never changes your working tree, index, refs or stash
+list; it writes outside the state folder only into an `--output` folder.
 
 The files reach the container and the image build as committed: athanor pins
 their line endings and file modes, and applies your repo's own
@@ -148,7 +194,7 @@ untracked ones, into the repo's `.git/lfs` folder, where they stay.
 | --- | --- |
 | the test's own | the test command ran and exited with it |
 | 124 | the time limit ended the run |
-| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment |
+| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment; or the test ran but its outputs could not be copied (the test's exit is `testExitCode`) |
 | 130 | an interrupt ended the run |
 | 137 | with outcome `memory`, the memory limit ended the run |
 
@@ -163,7 +209,7 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 ```json
 { "maxRuns": 2, "memory": "2g", "timeoutMinutes": 30, "pruneDays": 30,
   "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false,
-  "allowRemoteDocker": false }
+  "allowRemoteDocker": false, "maxOutputMegabytes": 1024 }
 ```
 
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
@@ -172,7 +218,9 @@ above a `max*` ceiling is an error. `maxMemory` and `maxTimeoutMinutes` default 
 no `cpus` that many CPUs. Docker refuses a `cpus` above the CPUs the engine
 has, and the run then ends with exit 125 and Docker's message. On Docker
 Desktop the engine's CPUs are the VM's, which can be fewer than the host's, so
-keep `maxCpus` at or below the engine's CPUs.
+keep `maxCpus` at or below the engine's CPUs. `maxOutputMegabytes` (default
+1024) is the most a copy to `--output` reads from the container; a repo cannot
+set it.
 
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. If you set `ATHANOR_HOME`,
@@ -204,9 +252,11 @@ settings as build arguments, so a Dockerfile can read them. See
 
 ## Secrets
 
-Keep secrets out of the files a run sends: everything tracked in the repo goes
-into the container, and everything tracked under `context` plus each `inputs`
-file goes into the image build, which has network access.
+Keep secrets out of the files a run sends: everything tracked in the repo (a
+file added with `git add -N` included) goes into the container, and everything
+tracked under `context` plus each `inputs` file goes into the image build,
+which has network access. With a remote engine, an operator can also choose the
+files a copy to `--output` brings back.
 
 ## What athanor doesn't protect you from
 
@@ -248,6 +298,17 @@ threat model holds the full entries.
   your clean filters, and Git LFS can copy uncommitted files into `.git/lfs`
   (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
   work before a run, or know that the filter sees it. Accepted risk 23.
+- **What a copied file holds.** With `--output`, a report the test code wrote
+  lands on your machine as written, and athanor checks names and types, never
+  content. Opening it, or a viewer previewing it, does what it holds, and on
+  Windows, showing or previewing the folder can make the machine sign in to a
+  place a copied file names (`desktop.ini`, `.lnk`, `.url`, theme files and
+  others), sending your account name and a password-derived response. Open
+  outputs from a repo you trust to build. Accepted risk 28.
+- **Who can change the `--output` parent.** On Windows the folder inherits its
+  parent's access rules, and under a parent other accounts can change, on any
+  platform, they can read the copy or redirect a write while it runs. Pick a
+  parent under your user profile. Accepted risk 30.
 - **Your account name in messages.** A refusal about `allowRemoteDocker` or
   `allowPlainTcp` names the machine configuration file by its full path,
   which holds your home folder's name. It reaches whatever reads athanor's
