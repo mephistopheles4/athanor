@@ -17,6 +17,8 @@ export interface Scratch {
   env(fromRealIndex?: boolean): Env;
   objectsEnv: Env;
   archiveEnv: Env;
+  // An empty file, for the archive's global config and attributes file.
+  emptyFile: string;
   remove(): void;
 }
 
@@ -37,13 +39,26 @@ export interface BuildContext {
 // What a tar stream carries (ADR 0006).
 export type TarOf = 'build context' | 'snapshot';
 
-const TAG_FORMAT = 'athanor-image-v1';
+// v2: the archive step carries the tree as committed (ADR 0020), so an image
+// built from a v1 stream, which host settings could change, is not reused.
+const TAG_FORMAT = 'athanor-image-v2';
 const STALE_MS = 24 * 60 * 60 * 1000;
 // Line endings pinned for every archive athanor makes (C32).
 const ARCHIVE_CONFIG = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
-// File modes pinned for the build context's archive, so every machine builds
-// the image from the same modes (ADR 0006).
+// File modes pinned for each archive: the build context's, so every machine
+// builds the image from the same modes (ADR 0006); the snapshot's at git's
+// default, so a host umask changes none (ADR 0020).
 const BUILD_ARCHIVE_CONFIG = ['-c', 'tar.umask=0022'];
+const SNAPSHOT_ARCHIVE_CONFIG = ['-c', 'tar.umask=0002'];
+
+// The environment for the archive step (ADR 0020): the inherited one with
+// every GIT_* variable removed (on Windows, whatever its case, as Windows
+// reads names), no global or system config and no system attributes.
+function cleanGitEnv(emptyFile: string): Env {
+  const gitVariable = process.platform === 'win32' ? /^git_/i : /^GIT_/;
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !gitVariable.test(name)));
+  return { ...env, GIT_CONFIG_GLOBAL: emptyFile, GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' };
+}
 
 async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env; what: string }): Promise<string> {
   const r = await call(['git', ...args], { cwd, env });
@@ -84,16 +99,21 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
   const repoObjects = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { cwd: root, what: 'find the object store' })).trim();
   writeFileSync(join(objects, 'info', 'alternates'), resolve(repoObjects) + '\n');
   const realIndex = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'], { cwd: root, what: 'find the index' })).trim();
-  // A git folder of athanor's own for every archive: its info/attributes,
-  // which outranks the tree's .gitattributes, unsets export-ignore and
-  // export-subst, so the archive holds exactly the tree. The tree's eol
-  // attributes still apply.
+  // A git folder of athanor's own for every archive, made with no template in
+  // the clean environment, so its config holds only what init writes. Its
+  // info/attributes, which outranks the tree's .gitattributes, unsets
+  // export-ignore, export-subst and filter, so the archive holds exactly the
+  // tree and runs no content filter. The tree's text, eol, ident and
+  // working-tree-encoding attributes still apply (ADR 0020).
+  const emptyFile = join(dir, 'empty');
+  writeFileSync(emptyFile, '');
+  const clean = cleanGitEnv(emptyFile);
   const archiveDir = join(dir, 'archive.git');
   // The same object format as the repo (sha1 or sha256), or it cannot read its objects.
   const format = (await git(['rev-parse', '--show-object-format'], { cwd: root, what: 'read the object format' })).trim();
-  await git(['init', '--bare', '-q', `--object-format=${format}`, archiveDir], { cwd: dir, what: 'make a folder for archives' });
+  await git(['init', '--bare', '-q', '--template=', `--object-format=${format}`, archiveDir], { cwd: dir, env: clean, what: 'make a folder for archives' });
   mkdirSync(join(archiveDir, 'info'), { recursive: true });
-  writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst\n');
+  writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst -filter\n');
   let copies = 0;
   return {
     dir,
@@ -104,7 +124,8 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
       return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' };
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
-    archiveEnv: { ...process.env, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
+    archiveEnv: { ...clean, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
+    emptyFile,
     remove(): void {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     },
@@ -207,9 +228,15 @@ export async function buildContext(
 }
 
 // A tar stream of a commit or tree, for a Docker child's stdin. It comes from
-// athanor's own git folder, so it holds exactly the tree, with the archive
-// settings pinned here. Returns the git child; its stdout is the stream.
+// athanor's own git folder in the clean environment, so it holds exactly the
+// tree, with the archive settings pinned here; the attributes file is pinned
+// empty, as git reads its default one even with no global config. Returns the
+// git child; its stdout is the stream.
 export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf): Started {
-  const pinned = of === 'build context' ? [...ARCHIVE_CONFIG, ...BUILD_ARCHIVE_CONFIG] : ARCHIVE_CONFIG;
+  const pinned = [
+    ...ARCHIVE_CONFIG,
+    '-c', `core.attributesFile=${scratch.emptyFile}`,
+    ...(of === 'build context' ? BUILD_ARCHIVE_CONFIG : SNAPSHOT_ARCHIVE_CONFIG),
+  ];
   return start(['git', ...pinned, 'archive', '--format=tar', id], { cwd: root, env: scratch.archiveEnv, capture: false });
 }

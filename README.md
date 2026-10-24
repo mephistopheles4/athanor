@@ -15,7 +15,8 @@ Dockerfile with network access.
 
 ## Install
 
-Needs Node 24 or later, git, and a Docker engine (Docker Desktop on Windows).
+Needs Node 24 or later, git 2.32 or later, and a Docker engine (Docker Desktop
+on Windows).
 
 athanor uses Docker as you have it configured (`DOCKER_HOST`, the Docker
 context and the buildx builder), local or remote. With a remote engine or
@@ -113,6 +114,14 @@ everything else goes to stderr.
 A run tests your tracked files as they are in the working tree, staged or
 not, and tells you how many untracked files it left out. It never changes
 your working tree, index, refs or stash list.
+
+The files reach the container and the image build as git stores them, with
+the line endings and file modes athanor pins and your repo's own
+`.gitattributes` applied. The archive step runs no git content filter and
+reads none of your git configuration, so a Git LFS file arrives as its pointer
+file. The git calls that record uncommitted work still run with your git
+configuration, clean filters included
+([issue 42](https://github.com/mephistopheles4/athanor/issues/42)).
 
 ### Exit codes
 
