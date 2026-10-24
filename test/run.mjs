@@ -25,7 +25,10 @@ function fail(message) {
 
 const args = process.argv.slice(2);
 const flags = args.filter((a) => a.startsWith(FLAG));
-const [tier, filter, ...stray] = args.filter((a) => !a.startsWith(FLAG));
+const [tier, filter] = args.filter((a) => !a.startsWith(FLAG));
+// An unquoted reason reaches the runner as more words after the flag; one of
+// them would otherwise become the file filter.
+const stray = args.slice(args.findIndex((a) => a.startsWith(FLAG)) + 1).filter((a) => !a.startsWith(FLAG));
 if (!tiers[tier]) fail(`usage: node test/run.mjs <${Object.keys(tiers).join('|')}> [filter] [${FLAG}=<reason>]`);
 if (flags.length > 0) {
   const [flag] = flags;

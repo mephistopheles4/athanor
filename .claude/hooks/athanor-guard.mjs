@@ -158,7 +158,7 @@ function segmentsOf(command, bash) {
 
 // Words that only wrap the command that follows them. `env` takes options of
 // its own first: `-u NAME`, `--unset NAME` or `--unset=NAME`, `-uNAME`, `-i`.
-const WRAPPERS = new Set(['&', 'time', 'call']);
+const WRAPPERS = new Set(['&', 'time', 'call', 'nohup']);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const NODE = /^node(?:\.exe)?$/i;
 const RUNNER = /(?:^|\/)test\/run\.mjs$/i;

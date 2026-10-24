@@ -28,9 +28,9 @@ function fakeAthanor(dir: string): string {
   return dir;
 }
 
-function runHook(input: unknown, path: string): string {
+function runHook(input: unknown, path: string, cwd?: string): string {
   const env = { ...process.env, PATH: path, Path: path };
-  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, encoding: 'utf8', shell: false });
+  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, cwd, encoding: 'utf8', shell: false });
   assert.equal(r.status, 0, 'the hook always exits 0');
   assert.equal(r.stderr, '');
   return r.stdout;
@@ -45,6 +45,8 @@ test('H1 a host run of the fast tier is refused while athanor is on the machine'
     ['cd x && node ./test/run.mjs fast run', 'Bash'],
     ['node test\\run.mjs fast', 'PowerShell'],
     ['npm ci; & node test/run.mjs fast', 'PowerShell'],
+    ['npm ci; node test/run.mjs fast', 'Bash'],
+    ['nohup node test/run.mjs fast', 'Bash'],
   ]) {
     const out = JSON.parse(runHook(call(command!, tool), path));
     assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', command);
@@ -57,12 +59,16 @@ test('H2 everything else passes in silence: no athanor, the docker tier, a named
   const path = fakeAthanor(tempDir(t));
   const none = tempDir(t);
   assert.equal(runHook(call('node test/run.mjs fast'), none), '', 'athanor missing');
-  assert.equal(runHook(call('node test/run.mjs fast'), 'relative'), '', 'a relative PATH entry finds nothing');
+  // A relative entry that would find an athanor from the working folder is never searched.
+  const here = tempDir(t);
+  fakeAthanor(join(here, 'rel'));
+  assert.equal(runHook(call('node test/run.mjs fast'), 'rel', here), '', 'a relative PATH entry is not searched');
   for (const command of [
     'node test/run.mjs docker',
     "node test/run.mjs fast --host-fallback='docker is stopped'",
     'athanor run fast',
-    "echo 'node test/run.mjs fast'",
+    "echo 'x; node test/run.mjs fast'",
+    'echo "x && node test/run.mjs fast"',
     'node scripts/check-source.mjs',
   ]) assert.equal(runHook(call(command), path), '', command);
   assert.equal(runHook({ tool_name: 'Read', tool_input: { command: 'node test/run.mjs fast' } }, path), '');
@@ -85,6 +91,9 @@ test('H3 the runner takes --host-fallback=<reason> on the fast tier only, prints
     [['fast', '--host-fallback='], /needs a reason/],
     [['fast', '--host-fallback=see C:\\secret\\path'], /plain words/],
     [['fast', '--host-fallback=docker', 'is', 'stopped'], /quote/],
+    [['fast', '--host-fallback=no', 'docker'], /quote/],
+    [['fast', '--host-fallback=a supercalifragilisticexpia word'], /plain words/],
+    [['fast', `--host-fallback=${'word '.repeat(17)}`], /plain words/],
     [['docker', '--host-fallback=docker is stopped'], /fast tier only/],
   ] as const) {
     const r = runs(...args);
@@ -99,5 +108,5 @@ test('H4 the tracked settings file runs the hook before every Bash and PowerShel
   assert.deepEqual(Object.keys(settings), ['hooks']);
   const [entry] = settings.hooks.PreToolUse;
   assert.equal(entry.matcher, 'Bash|PowerShell');
-  assert.deepEqual(entry.hooks[0].args, ['${CLAUDE_PROJECT_DIR}/.claude/hooks/athanor-guard.mjs']);
+  assert.deepEqual(entry.hooks, [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.claude/hooks/athanor-guard.mjs'], timeout: 15 }]);
 });

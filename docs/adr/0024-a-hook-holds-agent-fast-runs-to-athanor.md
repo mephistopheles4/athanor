@@ -38,5 +38,9 @@ aymandiab.com hold the same rule.
 
 ## Limits
 
-- `npm test` and a bare `node --test` pass, as they don't name the runner.
+- `npm test` and a bare `node --test` pass, as they don't name the runner,
+  and so do a run through `bash -c` or from inside `test/`.
+- On Windows the probe looks for npm's `athanor.cmd` with the package beside
+  it. If the hook's PATH lacks npm's global folder, as with a version
+  manager's own shim alone, it finds nothing and stays silent.
 - It adds a Node start to every shell call an agent makes in this repo.
