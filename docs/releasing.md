@@ -177,7 +177,8 @@ it only when a version is ready to release.
     artifact lasts. If it has expired, reject the deployment and start again.
 14. Before logging in, in a clean checkout at that commit, build and pack.
     `npm --version` must be 11.19.1, the npm that Node 24.22.0 bundles, which
-    the release jobs pin. No install or build runs after the login.
+    the release jobs pin. No install, build or repo script runs after the
+    login.
 
     ```powershell
     npm --version
@@ -186,10 +187,11 @@ it only when a version is ready to release.
     node scripts/build.mjs
     New-Item -ItemType Directory <local>
     npm pack --pack-destination <local>
+    node scripts/check-pack.mjs <local>/<tarball>
     ```
 
-    `git status --porcelain` must print nothing. `<local>` is a new, empty
-    folder outside any checkout.
+    `git status --porcelain` must print nothing, and the pack check must pass.
+    `<local>` is a new, empty folder outside any checkout.
 15. Log in, as in step 5 of the first publish, and look. `<id>` is the stage
     id that the publish job's summary and `npm stage list` show.
 
@@ -201,7 +203,6 @@ it only when a version is ready to release.
     Push-Location <staged>
     npm stage download <id>
     Pop-Location
-    node scripts/check-pack.mjs <staged>/<tarball>
     tar -tzf <staged>/<tarball> > <staged>/entries.txt
     tar -tzf <local>/<tarball> > <local>/entries.txt
     git diff --no-index --exit-code <staged>/entries.txt <local>/entries.txt
@@ -216,10 +217,10 @@ it only when a version is ready to release.
       `dependencies`, `optionalDependencies`, `peerDependencies` or
       `bundleDependencies`, and the same `scripts` and `bin` as the local
       `package.json`.
-    - `scripts/check-pack.mjs` must pass the staged tarball, the two entry
-      lists must be the same, and every extracted file must be the same.
-      Extract with no other tar options, and run nothing from the extracted
-      folders.
+    - The two entry lists must be the same, so the staged tarball holds
+      exactly the entries the pack check passed in step 14, and every
+      extracted file must be the same. Only npm, `tar` and `git` run here:
+      nothing from the repo or from the extracted folders.
 
     If anything differs, reject every staged entry with
     `npm stage reject <id>`, log out, and stop. An entry you didn't stage is
