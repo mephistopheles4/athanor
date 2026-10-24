@@ -190,6 +190,15 @@ above; the software they run is not.
 The owner decided each of these on 2026-10-20. Each keeps the number it had as a
 candidate, so other work can point at it.
 
+Who each concerns. A user-facing risk is one a user has to act on or know
+about, and has a line in the README's "What athanor doesn't protect you
+from"; a maintainer-only risk stays here alone.
+
+| Who | Accepted risks |
+| --- | --- |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20 |
+
 1. **The image build has the network.** The image build runs the repo's own
    Dockerfile with network access, so a repo from someone else can run code
    that reaches the internet, and a `FROM` line can pull the owner's private
