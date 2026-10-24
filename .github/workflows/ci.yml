@@ -1,11 +1,13 @@
 # One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4; spec on
-# issue 34, S3 to S7): zizmor on the workflows, a check that install scripts
+# issue 34, S3 to S7; spec on issue 6, S6): zizmor on the workflows, the
+# workflows' own rules (scripts/check-workflows.mjs), a check that install scripts
 # are off and every package comes from the public registry, npm ci from the
 # lockfile, a check of the installed packages' registry signatures, a strict
 # tsc check of src/ and of test/, a syntax check of every .mjs file, the
 # source check, both test tiers (each builds dist/ first; the docker tier uses
 # the runner's own Docker engine), and npm pack after an explicit build,
-# followed by a check of what the packed file holds, a comparison of its dist/
+# followed by a check of what the packed file holds (scripts/check-pack.mjs,
+# which the release workflow shares), a comparison of its dist/
 # with a fresh build, an install of it into a temporary prefix, and a type
 # check of a file that imports it by its name and sees no test-only option.
 # Locked down for a public repo: a read-only token, no secrets, each action
@@ -51,6 +53,13 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+          package-manager-cache: false
+      # Every checkout keeps persist-credentials: false, setup-node restores no
+      # cache and writes no registry .npmrc, and no workflow names an npm token
+      # or reads a secret (spec on issue 6, S6). zizmor at the regular persona
+      # does not flag an explicit persist-credentials: true.
+      - name: Check the workflows' own rules
+        run: node scripts/check-workflows.mjs
       # Proves CI reads the repo's .npmrc, and that the install and the
       # signature check below use the public registry and its keys. It reads
       # .npmrc and the lockfile as text and prints no line of either.
@@ -132,11 +141,9 @@ jobs:
           npm pack --pack-destination "$RUNNER_TEMP"
           tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
           # Only bin/, dist/ (compiled JavaScript and its declarations), the
-          # README, the LICENSE and package.json ship.
-          packed=$(tar -tzf "$tgz")
-          unexpected=$(printf '%s\n' "$packed" | grep -Ev '^package/(bin/[^/]+\.mjs|dist/[^/]+\.(m?js|d\.m?ts)|README\.md|LICENSE|package\.json)$' || true)
-          test -z "$unexpected" || { echo "unexpected files in the package: $unexpected"; exit 1; }
-          printf '%s\n' "$packed" | grep -qx 'package/dist/index.d.ts'
+          # README, the LICENSE and package.json ship, with dist/index.d.ts.
+          # The release workflow runs the same check on what it stages.
+          node scripts/check-pack.mjs "$tgz"
           packed_dist="$RUNNER_TEMP/athanor-packed-dist"
           rm -rf "$packed_dist"
           mkdir -p "$packed_dist"
