@@ -239,7 +239,10 @@ from"; a maintainer-only risk stays here alone.
 | Who | Accepted risks |
 | --- | --- |
 | User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25 |
-| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29 |
+
+Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
+the lead session's chat, relayed by head-chef-field-test.
 
 1. **The image build has the network.** The image build runs the repo's own
    Dockerfile with network access, so a repo from someone else can run code
