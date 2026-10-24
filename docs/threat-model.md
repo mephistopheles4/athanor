@@ -14,8 +14,9 @@ updates this page in the same pull request.
 **The setup.** One person, the owner, runs many Claude Code sessions on one
 Windows 11 machine with Docker Desktop, often in clones or worktrees of one
 repo. Each session runs `athanor run` to test its work in a Linux container.
-CI runs athanor on Linux. athanor uses Docker as the user has it configured,
-local or remote (ADR 0012).
+CI runs athanor on Linux. athanor uses the Docker engine and builder the user
+has configured, on this machine, or on another one when the machine
+configuration allows it (ADR 0012, ADR 0021).
 
 **What athanor does.** It reads the repo configuration (`athanor.json`, or the
 `athanor` key in `package.json`) and an optional machine
@@ -33,11 +34,12 @@ fresh container that runs the test command. It writes only to its state folder (
 - **A process that can write the owner's home folder,** which can change the
   machine configuration or the Docker configuration, as it could the
   environment.
-- **Whoever runs the Docker engine or builder the user has configured**
-  (accepted risk 7).
+- **Whoever runs the Docker engine or builder the user has configured**, when
+  the machine configuration allows a remote one (accepted risk 7).
 - **Other users of a Docker engine shared between machines or people**
   (accepted risk 8).
-- **Someone on the network path to a remote engine** (accepted risk 10).
+- **Someone on the network path to a remote engine or builder node**
+  (accepted risk 10).
 - **An authenticated network user who can reach the Windows slot pipe**
   (accepted risk 3).
 - **Whoever can publish a release of a dev package or an action that CI uses,
@@ -98,11 +100,15 @@ above; the software they run is not.
   be tracked: no untracked or ignored file and no git folder (ADR 0006, C28).
 - **The repo is never written.** Snapshots use a copy of the index and a
   per-run object folder (ADR 0007, C21, C30).
-- **Docker as configured, but not in clear.** athanor does not check where the
-  engine or the builder runs (ADR 0012, which supersedes ADR 0008; C29 is
-  removed). It refuses a plain `tcp://` engine endpoint without TLS
-  verification unless the machine configuration sets `allowPlainTcp`, which a
-  repo cannot set (ADR 0013). Loopback, ssh and local pipes and sockets pass.
+- **Docker on this machine, unless the machine allows otherwise, and never in
+  clear.** A run refuses an engine or builder that is not local (a unix
+  socket, the local pipe in its exact form, or tcp to loopback) unless the
+  machine configuration sets `allowRemoteDocker`, which a repo cannot set; the
+  machine file follows `ATHANOR_HOME`. It refuses plain tcp to the engine and
+  to every builder node, and any builder whose transport it could not read,
+  unless `allowPlainTcp` is set (ADR 0013, ADR 0021). What was checked is
+  pinned by name for the whole run and checked again once the slot is held
+  (ADR 0021; L2, L5, L6, L8, L10, L11).
 - **The run limit holds through a hard kill.** The slot is an OS lock that the
   OS frees when the process ends, and a run removes its slot's labelled
   container before starting its own (ADR 0004, C8, C10).
@@ -144,16 +150,18 @@ above; the software they run is not.
   relies on the operating system's user separation for the state folder
   (mode 0700 on Linux; on Windows, the home folder's own access rules), and on
   whatever access control the configured Docker engine has. Docker Desktop's
-  local engine is the owner's; a remote engine's access control is its
-  operator's (accepted risks 7 and 8). The release path has its own: npm's
-  trusted-publisher binding to this repo, workflow and environment, the `npm`
-  environment's required reviewer, and the owner's npm two-factor approval
-  (the supply-chain bullet above; ADR 0019).
+  local engine is the owner's; when the machine configuration allows a remote
+  engine, its access control is its operator's (accepted risks 7 and 8). The
+  release path has its own: npm's trusted-publisher binding to this repo,
+  workflow and environment, the `npm` environment's required reviewer, and
+  the owner's npm two-factor approval (the supply-chain bullet above;
+  ADR 0019).
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
   (accepted risk 1). With a remote engine or builder, those copies go to that
-  machine (accepted risk 7), and a remote builder can ask this machine for the
+  machine when the machine configuration allows it (accepted risk 7), and a
+  remote builder can ask this machine for the
   owner's registry credentials (accepted risk 7). The Docker client's proxy
   settings can hold a password: the run blocks it (ADR 0016), and the build
   receives it (accepted risk 1). Plain tcp transport is refused
@@ -172,19 +180,22 @@ above; the software they run is not.
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
   its image (accepted risk 8). Temporary names use Node's crypto random source.
-  athanor encrypts nothing itself; transport to a remote engine is ssh or TLS
-  unless the owner opts out (ADR 0013). Image layers, the build cache and a
-  container's writable layer sit unencrypted on the engine's or builder's
-  disk: on this machine they rely on its disk encryption; on a remote one, on
-  that machine's owner (accepted risk 7). `prune` does not clear Docker's build
+  athanor encrypts nothing itself; transport to a remote engine or builder is
+  ssh or verified TLS unless `allowPlainTcp` is set (ADR 0013, ADR 0021).
+  Image layers, the build cache and a container's writable layer sit
+  unencrypted on the engine's or builder's disk: on this machine they rely on
+  its disk encryption; on a remote one, which the machine configuration must
+  allow, on that machine's owner (accepted risk 7). `prune` does not clear Docker's build
   cache; the README names the commands that do. Each released version's
   provenance is signed by npm through Sigstore (the supply-chain bullet above;
   ADR 0019).
 - **Input validation.** Repo configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
-  (C17, C18, C24, C31). The Docker endpoint is checked only for plain tcp
-  (ADR 0013). Holder answers are shown as reported, never as checked facts.
+  (C17, C18, C24, C31). The engine endpoint and every builder node are
+  checked for locality and plain tcp, read as Docker reads them (a value with
+  no "://" is tcp; a pipe in one exact form), pinned for the run and checked
+  again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
   The release path's untrusted inputs are the artifact `publish` takes from
   `check`, the staged tarball and manifest the owner downloads, and the
   registry's answer to the version check. They are covered by the owner's
@@ -259,7 +270,8 @@ candidate, so other work can point at it.
    here so the owner can see it was considered. The owner confirmed on
    2026-10-20 that it does not arise.
 7. **The configured engine or builder's operator has full control of a run.**
-   athanor uses the Docker engine and builder the user has configured,
+   With `"allowRemoteDocker": true` in the machine configuration, athanor uses
+   the Docker engine and builder the user has configured,
    including one on another machine or a cloud builder. Whoever runs it
    receives the build context and the snapshot, uncommitted changes and any
    committed secret included, and keeps copies in its image layers and build
@@ -267,8 +279,12 @@ candidate, so other work can point at it.
    the limits are enforced, and the text streamed back into the session; and,
    as a builder, it can ask this machine for the owner's registry credentials.
    Accepted because the owner chose to let athanor run against any Docker the
-   user sets up, and the user chooses whom to trust with that.
+   user sets up, and the user chooses whom to trust with that. Before athanor
+   decides on a builder, with or without the opt-out, `buildx inspect`
+   contacts the configured builder's nodes, so a remote builder host sees the
+   connection and, for an ssh node, the owner's login, but no repo data.
    Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F1, data-lens F2), after the owner removed C29. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+   Narrowed 2026-10-24. From: the spec on issue 33, S6, and the Design review of revision 2 (data-lens F5). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 8. **A shared engine's other users can read and change runs.** The slot lock
    is per machine, but the container names `athanor-slot-<n>`, the images and
    their tags are per engine. Anyone else who can use the engine can put their
@@ -290,8 +306,12 @@ candidate, so other work can point at it.
     machine configuration, the snapshot, the build context, the build arguments and the test output
     cross the network unencrypted, readable and changeable by anyone on the
     path. Accepted because the opt-out is for networks the owner trusts, and
-    only the machine configuration can set it.
+    only the machine configuration can set it. Plain tcp to another host,
+    engine or builder node, now needs `allowRemoteDocker` as well, and the
+    opt-in covers builder nodes and builders whose transport athanor could not
+    read (ADR 0021).
     Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F2, data-lens F1); the owner's q8 A2. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+    Extended 2026-10-24. From: the spec on issue 33, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 11. **A proxy setting a later Docker client adds.** athanor blanks the ten
     proxy names the Docker client fills from the five proxy settings it reads
     today (ADR 0016). A setting that a later client adds, beyond those five,
@@ -398,8 +418,30 @@ candidate, so other work can point at it.
     the public log.
     Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 
-Numbers 23 to 25 belong to other changes.
+Number 23 belongs to another change.
 
+24. **A local address that leads elsewhere.** An endpoint athanor counts as
+    local, a `unix://` socket, the local pipe or a loopback port, can lead
+    elsewhere: forwarded to another machine (an ssh tunnel, a socket proxy, a
+    port forward), or held by another local program, running as any user,
+    that owns that loopback port, socket path or pipe name while the engine
+    does not (for example while Docker Desktop is stopped). The name
+    `localhost` is trusted as loopback, so a resolver that answers it with
+    another address leads elsewhere too. The refusal does not stop it. Setting up a forward takes the owner's own
+    configuration or a process that can already write the owner's home
+    folder; holding a port or socket takes another local program, which this
+    page already lists as an attacker. Accepted because athanor cannot tell
+    where a local address leads without trusting the machine it runs on, and
+    Docker offers no check of the engine's identity to build on.
+    Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+25. **A message names the machine file's full path.** The refusal messages
+    for `allowRemoteDocker` and `allowPlainTcp` name the machine configuration
+    file by its full path, which holds the OS account's home folder name.
+    That path reaches stderr, the JSON `message` and the calling session's
+    model provider. Accepted because it is the owner's own account name, going
+    to the owner's own session, and naming the file to fix is what makes the
+    message actionable.
+    Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 26. **A program running as the owner can read the npm session token.** From
     `npm login` to `npm logout`, around a release's approval, the session
     token sits in the owner's user npm configuration, unencrypted at file
