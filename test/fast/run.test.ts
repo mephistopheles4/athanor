@@ -180,7 +180,7 @@ test('C11 a command past the time limit ends with exit 124 and its container is 
   const ended = Date.now();
   assert.equal(result.outcome, 'timeout');
   assert.equal(result.exitCode, 124);
-  // Timed from the fake's run call, as the host-side timer is, so the snapshot and image build don't count (issue 32).
+  // Timed from the fake's run call, just after the host-side timer starts, so the snapshot and image build don't count (issue 32).
   const runCall = callsOf(docker.calls(), 'run')[0];
   assert.ok(ended - runCall.at! < 10000, 'ended by the host-side timer, well before the 20 second hang');
   const args = runCall.args;
