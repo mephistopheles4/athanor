@@ -3,14 +3,14 @@
 // It reads every JavaScript and TypeScript file tsc can compile (.js, .mjs,
 // .cjs, .jsx, .ts, .mts, .cts, .tsx), never the compiled dist/.
 // Each file is checked as a whole, so a match split across lines still counts.
-//   node scripts/check-source.mjs [dir...]   (default: bin, src, scripts)
+//   node scripts/check-source.mjs [dir...]   (default: bin, src, scripts, .claude/hooks)
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const self = fileURLToPath(import.meta.url);
-const dirs = process.argv.length > 2 ? process.argv.slice(2) : ['bin', 'src', 'scripts'].map((d) => join(root, d));
+const dirs = process.argv.length > 2 ? process.argv.slice(2) : ['bin', 'src', 'scripts', '.claude/hooks'].map((d) => join(root, d));
 
 const rules = [
   { pattern: /\bshell\s*:\s*(?!false\b)[^\s,}]/g, why: 'a child process started with a shell' },
