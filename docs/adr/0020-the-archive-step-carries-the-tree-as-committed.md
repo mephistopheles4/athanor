@@ -35,11 +35,17 @@ host-side conversion beyond what athanor pins:
   its image once.
 - A Git LFS file reaches the container and the build as its pointer file.
 
-`git archive` reads attributes only from the archived tree and the folder's
-`info/attributes`; it does not read `GIT_ATTR_SOURCE` or `attr.tree`. git 2.32
-is the oldest that honours `GIT_CONFIG_GLOBAL`; on an older git the global
-config is read again, but `-filter`, `--template=` and the command-line pins
-still hold.
+On git 2.55 for Windows, `git archive` did not read `GIT_ATTR_SOURCE` or
+`attr.tree`, though `git check-attr` did (a probe at the build); other versions
+were not tried. git 2.32 is the oldest that honours `GIT_CONFIG_GLOBAL`; on an
+older git the global config is read again, but `-filter`, `--template=` and
+the command-line pins still hold. Under the clean environment, git on the
+owner's machine listed only athanor's own folder config as a source. Current
+Git for Windows reads no machine-wide config under ProgramData; whether an
+older release between 2.32 and today still reads one under
+`GIT_CONFIG_NOSYSTEM` was not observed. If one did, `-filter` and the pins
+would still cover filters, the attributes file, the umask and the line endings
+in it, but not its other settings.
 
 This keeps host git settings out of the archive step. It is not a control
 against a process that can write the environment or the home folder, which
