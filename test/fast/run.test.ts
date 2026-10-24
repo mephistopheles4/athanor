@@ -176,12 +176,14 @@ test('C11 a command past the time limit ends with exit 124 and its container is 
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t, { run: { hangMs: 20000 } });
   const prefix = uniquePrefix();
-  const started = Date.now();
   const result = await run({ cwd: repo, docker: docker.docker, prefix, timeLimitSeconds: 1, graceSeconds: 2 });
+  const ended = Date.now();
   assert.equal(result.outcome, 'timeout');
   assert.equal(result.exitCode, 124);
-  assert.ok(Date.now() - started < 10000, 'ended by the host-side timer');
-  const args = callsOf(docker.calls(), 'run')[0].args;
+  // Timed from the fake's run call, as the host-side timer is, so the snapshot and image build don't count (issue 32).
+  const runCall = callsOf(docker.calls(), 'run')[0];
+  assert.ok(ended - runCall.at! < 10000, 'ended by the host-side timer, well before the 20 second hang');
+  const args = runCall.args;
   assert.ok(args.includes('ATHANOR_GRACE_LIMIT=3'), 'the in-container timer is the limit plus the grace');
   assert.equal(readdirSync(join(docker.dir, 'containers')).length, 0, 'the container is gone');
 });
