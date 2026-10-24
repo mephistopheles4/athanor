@@ -51,6 +51,12 @@ test('R1 the pack check passes only the allowed entries with dist/index.d.ts, an
     assert.equal(r.status, 1);
     assert.match(r.stderr, /package\/src\/index\.ts/);
   });
+  await t.test('an entry that only begins like an allowed one fails and is named', () => {
+    const r = check(tarball(tempDir(t), { ...allowed, 'package/dist/index.js.map': '{}\n', 'package/README.md.bak': 'old\n' }));
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /package\/dist\/index\.js\.map/);
+    assert.match(r.stderr, /package\/README\.md\.bak/);
+  });
   await t.test('a directory entry fails and is named', () => {
     const r = check(tarball(tempDir(t), allowed, ['package/extra']));
     assert.equal(r.status, 1);
@@ -72,6 +78,7 @@ test('R1 the pack check passes only the allowed entries with dist/index.d.ts, an
     writeFiles(dir, { 'not.tgz': 'plain text\n' });
     const r = check(join(dir, 'not.tgz'));
     assert.equal(r.status, 1);
+    assert.match(r.stderr, /Could not list/);
   });
 });
 
@@ -94,7 +101,7 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     assert.match(r.stderr, what);
   };
 
-  await t.test('a workflow that keeps every rule passes', () => {
+  await t.test('a workflow that keeps every rule passes, so the shared fixtures are clean', () => {
     const r = planted(workflow(...checkout, ...setupNode, '      - run: node --version'));
     assert.equal(r.status, 0, r.stderr);
   });
@@ -105,11 +112,24 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
   await t.test('a checkout without persist-credentials fails', () => {
     fails(workflow('      - uses: actions/checkout@0123456789012345678901234567890123456789'), 7, /persist-credentials: false/);
   });
-  await t.test('a checkout with persist-credentials: true fails', () => {
+  await t.test('a checkout with persist-credentials other than false fails', () => {
     fails(workflow(checkout[0], checkout[1], '          persist-credentials: true'), 9, /persist-credentials/);
+    fails(workflow(checkout[0], checkout[1], '          persist-credentials: ${{ inputs.keep }}'), 9, /persist-credentials/);
   });
   await t.test('setup-node without package-manager-cache: false fails', () => {
     fails(workflow(setupNode[0], setupNode[1], setupNode[2]), 7, /package-manager-cache: false/);
+    fails(workflow(setupNode[0], setupNode[1], setupNode[2], '          package-manager-cache: true'), 7, /package-manager-cache: false/);
+  });
+  await t.test('a setting outside the with: block does not count', () => {
+    fails(workflow(checkout[0], '        env:', '          persist-credentials: false'), 7, /persist-credentials: false/);
+    fails(workflow(setupNode[0], setupNode[1], setupNode[2], '        env:', '          package-manager-cache: false'), 7, /package-manager-cache: false/);
+  });
+  await t.test('a step does not borrow the inputs of the step after it', () => {
+    fails(workflow('      - uses: actions/checkout@0123456789012345678901234567890123456789', ...checkout), 7, /persist-credentials: false/);
+    fails(workflow('      - uses: actions/setup-node@0123456789012345678901234567890123456789', ...setupNode), 7, /package-manager-cache: false/);
+  });
+  await t.test('an action name in another case is still read', () => {
+    fails(workflow('      - uses: Actions/Checkout@0123456789012345678901234567890123456789'), 7, /persist-credentials: false/);
   });
   await t.test('setup-node with a cache input fails', () => {
     fails(workflow(...setupNode, '          cache: npm'), 11, /cache/);
@@ -126,6 +146,9 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     fails(workflow(checkout[0], '        with: { persist-credentials: false }'), 8, /flow style/);
     fails(workflow(setupNode[0], "        with: { node-version: '24', package-manager-cache: false }"), 8, /flow style/);
   });
+  await t.test('a step written in flow style fails', () => {
+    fails(workflow('      - { uses: actions/checkout@0123456789012345678901234567890123456789 }'), 7, /flow style/);
+  });
   await t.test('a step whose uses comes after its name is still read', () => {
     fails(workflow('      - name: Check out', '        uses: actions/checkout@0123456789012345678901234567890123456789'), 8, /persist-credentials: false/);
   });
@@ -133,6 +156,9 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
     fails(workflow('      - run: npm publish', '        env:', '          NODE_AUTH_TOKEN: x'), 9, /token/);
     fails(workflow("      - run: echo '//registry.npmjs.org/:_authToken=x' > .npmrc"), 7, /token/);
     fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ secrets.NPM }}'), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', "          T: ${{ secrets['NPM'] }}"), 9, /secret/);
+    fails(workflow('      - run: echo "$T"', '        env:', '          T: ${{ toJSON(secrets) }}'), 9, /secret/);
+    fails(['name: planted', 'on: push', 'jobs:', '  one:', '    uses: ./.github/workflows/other.yml', '    secrets: inherit', ''].join('\n'), 6, /secret/);
   });
   await t.test('a .yaml file is read too', () => {
     fails(workflow('      - uses: actions/cache@0123456789012345678901234567890123456789'), 7, /cache/, 'planted.yaml');

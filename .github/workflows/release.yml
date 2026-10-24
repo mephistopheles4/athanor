@@ -54,6 +54,8 @@ jobs:
         with:
           node-version: '24.22.0'
           package-manager-cache: false
+      # The same check runs in both jobs; publish has no checkout to share a
+      # script from, so change the two together.
       - name: Check the npm version
         run: |
           set -e
@@ -93,7 +95,13 @@ jobs:
                 console.error("Could not read the package from npm (HTTP " + res.status + "). Start the release again later.");
                 process.exit(1);
               }
-              const doc = await res.json();
+              let doc;
+              try {
+                doc = await res.json();
+              } catch (err) {
+                console.error("Could not read the package from npm (" + err.message + "). Start the release again later.");
+                process.exit(1);
+              }
               if (doc.versions && Object.hasOwn(doc.versions, version)) {
                 console.error("Version " + version + " is already on npm. Bump the version in package.json, merge, and start the release again.");
                 process.exit(1);
@@ -118,6 +126,8 @@ jobs:
           set -e
           tgz=$(ls "$RUNNER_TEMP"/release/mephistopheles4-athanor-*.tgz)
           node scripts/check-pack.mjs "$tgz"
+          # The same integrity line runs in both jobs, and the owner compares the
+          # two summaries; change the two together.
           integrity=$(node -e 'const fs = require("node:fs"); const crypto = require("node:crypto"); console.log("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$tgz")
           {
             echo "tarball: $(basename "$tgz")"
@@ -152,6 +162,8 @@ jobs:
         with:
           node-version: '24.22.0'
           package-manager-cache: false
+      # The same check runs in both jobs; publish has no checkout to share a
+      # script from, so change the two together.
       - name: Check the npm version
         run: |
           set -e
@@ -169,8 +181,11 @@ jobs:
         run: |
           set -e
           names=$(ls -A)
+          test -n "$names" || { echo "The artifact holds no file. Start the release again."; exit 1; }
           test "$(printf '%s\n' "$names" | wc -l)" -eq 1 || { echo "The artifact holds more than one file: $names. Start the release again."; exit 1; }
           printf '%s\n' "$names" | grep -Eqx 'mephistopheles4-athanor-[0-9]+\.[0-9]+\.[0-9]+\.tgz' || { echo "The artifact's file is not a release tarball: $names. Start the release again."; exit 1; }
+          # The same integrity line runs in both jobs, and the owner compares the
+          # two summaries; change the two together.
           integrity=$(node -e 'const fs = require("node:fs"); const crypto = require("node:crypto"); console.log("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$names")
           echo "integrity of the tarball to stage: $integrity" >> "$GITHUB_STEP_SUMMARY"
       # Runs outside any checkout, so no project .npmrc applies. --provenance
@@ -181,8 +196,9 @@ jobs:
           set -e
           tgz=$(ls mephistopheles4-athanor-*.tgz)
           npm stage publish "./$tgz" --provenance --access public --ignore-scripts --json > "$RUNNER_TEMP/stage.json"
-          cat "$RUNNER_TEMP/stage.json"
-          stage_id=$(node -e 'const out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const id = out.stageId ?? Object.values(out)[0]?.stageId; if (!id) process.exit(1); console.log(id)' "$RUNNER_TEMP/stage.json") || { echo "npm staged the tarball but printed no stage id. Find it with npm stage list @mephistopheles4/athanor."; exit 1; }
+          # npm 11.19.1 writes { "<package name>": { ..., "stageId": "..." } }; a
+          # top-level stageId is read too, in case a later npm flattens it.
+          stage_id=$(node -e 'const out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const id = out.stageId ?? Object.values(out)[0]?.stageId; if (!id) process.exit(1); console.log(id)' "$RUNNER_TEMP/stage.json") || { echo "npm staged the tarball but printed no stage id. Do not re-run this job: follow \"If a run fails\" in docs/releasing.md."; exit 1; }
           {
             echo "staged: $tgz"
             echo "stage id: $stage_id"

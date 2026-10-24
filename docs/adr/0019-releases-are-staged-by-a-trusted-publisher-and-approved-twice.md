@@ -13,8 +13,11 @@ Direct `npm publish` and `npm dist-tag` are left off, so the workflow can only
 run `npm stage publish`. A staged version goes live only when the owner
 approves it with npm two-factor authentication, from a login held just for
 that step, after building and packing the same commit locally and comparing
-every file. Publishing access is set to require two-factor authentication and
-disallow tokens, so no npm token can publish around the staging step.
+every file. The owner sets the package's publishing access to require
+two-factor authentication and disallow tokens before the workflow is merged,
+so no npm token can publish around the staging step. The trusted publisher
+and the environment are the owner's own settings too; the release steps have
+the owner record what each shows (claim R10 of the spec on issue 6).
 
 **Two jobs.** The workflow starts only by hand (`workflow_dispatch`), only on
 `main`, and only when CI passed on the commit.

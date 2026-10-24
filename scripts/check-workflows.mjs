@@ -1,11 +1,12 @@
 // The workflow check (spec on issue 6, S6): every actions/checkout step sets
-// persist-credentials: false, every actions/setup-node step sets
-// package-manager-cache: false with no cache or registry-url input, no step
-// uses a cache action, and no line names an npm token or reads a secret.
+// persist-credentials: false in its with: block, every actions/setup-node step
+// sets package-manager-cache: false there with no cache or registry-url input,
+// no step uses a cache action, and no line names an npm token or reads a
+// secret. Action names match in any case.
 // It reads each .yml and .yaml file by lines and step blocks, with no YAML
 // package, so it sees only the named actions written in block style, and it
-// refuses a flow-style with: on them. It guards against mistakes, not against
-// someone set on getting round it.
+// refuses a step, or a with: on those actions, written in flow style. It
+// guards against mistakes, not against someone set on getting round it.
 //   node scripts/check-workflows.mjs [folder]   (default: .github/workflows)
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
@@ -44,9 +45,14 @@ for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort())
     const persist = value(line, 'persist-credentials');
     if (persist !== undefined && persist !== 'false') report(i, 'persist-credentials must be false, so the job\'s token is not left in the clone.');
     if (/NODE_AUTH_TOKEN|_authToken/.test(line)) report(i, 'an npm token is named here. Remove it: releases publish through the trusted publisher, and no npm token is kept anywhere.');
-    if (/\bsecrets\.[A-Za-z_]/.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
+    // The secrets context read by name, by index or whole, or passed on to a called workflow.
+    if (/\bsecrets\s*(\.[A-Za-z_]|\[)|\(\s*secrets\s*[,)]|^\s*secrets\s*:/.test(line)) report(i, 'a secret is read here. Remove it: no workflow in this repo holds a secret.');
+    if (/^\s*-\s*\{/.test(line)) {
+      report(i, 'this step is in flow style, which this check can\'t read. Write it in block style, one key per line.');
+      return;
+    }
 
-    const uses = value(line, 'uses');
+    const uses = value(line, 'uses')?.toLowerCase();
     if (uses === undefined) return;
     if (/^actions\/cache(\/restore|\/save)?@/.test(uses)) {
       report(i, `${uses.split('@')[0]} must not be used: no workflow restores or saves an Actions cache.`);
@@ -58,19 +64,28 @@ for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort())
     const action = checkout ? 'actions/checkout' : 'actions/setup-node';
     const { start, end } = stepAround(lines, i);
     const step = lines.slice(start, end).map((text, k) => ({ text, at: start + k }));
-    const flow = step.find((l) => /^\s*(?:-\s+)?with:\s*\{/.test(l.text));
-    if (flow) {
-      report(flow.at, `${action}'s with: is in flow style, which this check can't read. Write it in block style, one input per line.`);
+    const withLine = step.find((l) => /^\s*(?:-\s+)?with:/.test(l.text));
+    if (withLine && /^\s*(?:-\s+)?with:\s*\{/.test(withLine.text)) {
+      report(withLine.at, `${action}'s with: is in flow style, which this check can't read. Write it in block style, one input per line.`);
       return;
     }
-    if (checkout && !step.some((l) => value(l.text, 'persist-credentials') !== undefined)) {
-      report(i, 'actions/checkout must set persist-credentials: false, so the job\'s token is not left in the clone.');
+    // The action's inputs: the lines indented under its with: line, and no other.
+    const inputs = [];
+    if (withLine) {
+      const under = indent(withLine.text);
+      for (const l of step.filter((s) => s.at > withLine.at)) {
+        if (meaningful(l.text) && indent(l.text) <= under) break;
+        inputs.push(l);
+      }
+    }
+    if (checkout && !inputs.some((l) => value(l.text, 'persist-credentials') !== undefined)) {
+      report(i, 'actions/checkout must set persist-credentials: false in its with: block, so the job\'s token is not left in the clone.');
     }
     if (setupNode) {
-      if (!step.some((l) => value(l.text, 'package-manager-cache') === 'false')) {
-        report(i, 'actions/setup-node must set package-manager-cache: false, so no Actions cache is restored.');
+      if (!inputs.some((l) => value(l.text, 'package-manager-cache') === 'false')) {
+        report(i, 'actions/setup-node must set package-manager-cache: false in its with: block, so no Actions cache is restored.');
       }
-      for (const l of step) {
+      for (const l of inputs) {
         if (value(l.text, 'cache') !== undefined) report(l.at, 'actions/setup-node must not set cache: no workflow restores an Actions cache.');
         if (value(l.text, 'registry-url') !== undefined) report(l.at, 'actions/setup-node must not set registry-url, which writes an .npmrc that reads an npm token.');
       }

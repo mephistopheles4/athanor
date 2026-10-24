@@ -92,9 +92,11 @@ one-time checks by the owner recorded on issue 6; no test carries their names.
 
 Releases after the first are staged by `.github/workflows/release.yml` and
 made live by the owner ([ADR 0019](docs/adr/0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md),
-[the release steps](docs/releasing.md)). A change to `release.yml`, or to a
-script it runs (`scripts/check-pack.mjs`, `scripts/check-workflows.mjs`,
-`scripts/build.mjs`), is security-sensitive work. So is a bot pull request
+[the release steps](docs/releasing.md)). A change to `release.yml`, or to any
+script, test or dev package it runs, is security-sensitive work: among them
+`scripts/check-pack.mjs`, `scripts/check-workflows.mjs`, `scripts/build.mjs`,
+`scripts/check-source.mjs`, `test/run.mjs` with the fast tier, and the
+compiler in `package-lock.json`. So is a bot pull request
 that moves an action SHA in `release.yml`, and a hand change to its
 `node-version`, which the update bot never moves: the pull request names each
 release and its date, at least 7 days old.
