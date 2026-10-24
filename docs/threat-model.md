@@ -398,3 +398,12 @@ candidate, so other work can point at it.
     to the owner's own session, and naming the file to fix is what makes the
     message actionable.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+29. **The agent test hook is a nudge, not a control.** The hook in
+    `.claude/settings.json` (ADR 0024) refuses an agent session's host run of
+    the fast tier while athanor is installed, but it fails open on any error,
+    stays silent when it cannot find athanor, and reads only the command's
+    plain forms: a run through another shell's command string, or from inside
+    `test/`, gets past it. Accepted because it exists to make a skipped rule
+    visible, the tests are the repo's own code, and the session names any
+    host run in its report.
+    Accepted 2026-10-24. From: the athanor-hook QA review of PR 50 (behaviour-lens F2). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
