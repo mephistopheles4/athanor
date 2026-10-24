@@ -69,7 +69,7 @@ PATH, never by the bare name. It searches only PATH's absolute entries and
 skips the working folder and every relative entry, so a program of the same
 name in the repo or the current folder never runs in their place; on Windows,
 starting a bare name would search the child's folder first. On Windows an entry
-that hangs off the current drive, such as `	ools`, counts as relative, and
+that hangs off the current drive, such as `\tools`, counts as relative, and
 the name is tried as given, then with `.com`, then with `.exe`; never
 `.cmd` or `.bat`, which need a shell. Each name is looked up once, and every
 later start of it runs the same file. A path given as the program, such as the
