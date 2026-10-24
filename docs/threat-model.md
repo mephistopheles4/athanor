@@ -90,12 +90,12 @@ above; the software they run is not.
   host git setting changes a file in that step. This keeps host git settings
   out of the archive step; it is not a control against a process that can
   write the environment or the home folder, which already chooses the git that
-  runs. On Windows, how athanor finds the git and docker programs it starts is
-  not yet a control either; a follow-up to issue 20 closes that. The line
-  endings and
-  file modes are pinned, and the tree's own `text`, `eol`, `ident` and
-  `working-tree-encoding` attributes still apply (ADR 0020, C32, G1–G6). The
-  git calls that make the snapshot's and the build context's trees still run
+  runs. git and docker start by a full path from PATH's absolute entries,
+  never from the working folder or a relative entry, so the Windows case, where
+  a program of that name in the repo could run in their place, is closed (ADR
+  0020, G8). The line endings and file modes are pinned, and the tree's own
+  `text`, `eol`, `ident` and `working-tree-encoding` attributes still apply
+  (ADR 0020, C32, G1–G6). The git calls that make the snapshot's and the build context's trees still run
   with the host's git config and environment (accepted risk 23, issue 42).
 - **athanor's own git calls never write the repo.** Snapshots use a copy of the index and a
   per-run object folder (ADR 0007, C21, C30), except as accepted risk 23 says:

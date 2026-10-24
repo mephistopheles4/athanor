@@ -1,6 +1,6 @@
 # 0020. The archive step carries the tree as committed
 
-Date: 2026-10-24 · Status: accepted · Source: spec revision 4 on issue 20 (S2, S6, G1 to G7)
+Date: 2026-10-24 · Status: accepted · Source: spec revision 4 on issue 20 (S2, S6, G1 to G7); amended 2026-10-24 (H2, G8)
 
 Both tar streams, the snapshot's and the build context's, come from
 `git archive` in athanor's own git folder (ADR 0006). That folder used to take
@@ -58,3 +58,24 @@ already chooses the git that runs. And the git calls that record the work
 environment, clean filters included: the threat model's accepted risk 23, and
 issue 42. ADR 0007 still holds for git's own files; a host clean filter that
 those calls run, such as Git LFS's, can write the repo's git folder.
+
+## Amendment, 2026-10-24: programs start by a full path
+
+Source: the owner's H2 from the Test review of issue 20, relayed by the lead
+session.
+
+On every platform, athanor starts git and docker by a full path it finds in
+PATH, never by the bare name. It searches only PATH's absolute entries and
+skips the working folder and every relative entry, so a program of the same
+name in the repo or the current folder never runs in their place; on Windows,
+starting a bare name would search the child's folder first. On Windows an entry
+that hangs off the current drive, such as `	ools`, counts as relative, and
+the name is tried as given, then with `.com`, then with `.exe`; never
+`.cmd` or `.bat`, which need a shell. Each name is looked up once, and every
+later start of it runs the same file. A path given as the program, such as the
+tests' fake Docker, starts unchanged.
+
+When no entry holds the program, athanor stops with exit 125 and says so, for
+example "git was not found on PATH. Install it, or add its folder to PATH, then
+run again." It never falls back to the bare name. (`findProgram` in
+`src/proc.ts`, G8.)
