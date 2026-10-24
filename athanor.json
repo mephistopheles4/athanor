@@ -1,0 +1,13 @@
+{
+  "dockerfile": "test/container/Dockerfile",
+  "context": "test/container",
+  "inputs": ["package.json", "package-lock.json", ".npmrc"],
+  "commands": {
+    "test": ["node", "test/run.mjs", "fast"],
+    "fast": ["node", "test/run.mjs", "fast"],
+    "types": ["sh", "-c", "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit && node node_modules/typescript/bin/tsc -p test/tsconfig.json"],
+    "check": ["node", "scripts/check-source.mjs"]
+  },
+  "memory": "2g",
+  "timeoutMinutes": 15
+}

@@ -49,6 +49,19 @@ lasting decisions are in [docs/adr/](docs/adr/).
 
 ## Running the tests
 
+**An agent session runs the tests through athanor** (ADR 0024), with the
+repo's own `athanor.json`: `athanor run fast` for the fast tier,
+`athanor run types` for both type checks, `athanor run check` for the source
+check; add `--untracked` for new files not yet added to git. The docker tier
+stays on the host, `node test/run.mjs docker`: it needs a Docker engine,
+which never reaches the container. A hook in `.claude/settings.json` refuses
+a host `node test/run.mjs fast` while athanor is installed. When athanor
+can't run (no Docker, or a run that ends 124, 125 or 137), rerun on the host
+with `--host-fallback='<reason>'`, the reason short and in plain words, and
+name the fallback in your report. A change to `.claude/settings.json` or
+`.claude/hooks/` runs on the next shell call of every agent session that
+checks it out.
+
 Run `npm ci --ignore-scripts` first, once per worktree: it installs the
 compiler from the lockfile (ADR 0018) and runs no package's install scripts,
 as CI does. The repo's `.npmrc` turns install scripts off for every npm command
@@ -89,7 +102,7 @@ marks.
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
-issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `H1` to `H4`, from the PR that added the agent test hook). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
