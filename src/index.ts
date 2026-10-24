@@ -30,6 +30,10 @@ export interface RunOptions {
   // A command name from the repo configuration's commands, or `command` to give one.
   name?: string;
   command?: string[];
+  // Arguments for the named command, which must set "args": true. Not with `command`.
+  args?: string[];
+  // Words the caller gave after the name without --. The run ends with a message that says how to give them.
+  extraNames?: string[];
   untracked?: boolean;
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
@@ -152,6 +156,8 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     cwd = process.cwd(),
     name,
     command: override,
+    args,
+    extraNames,
     untracked = false,
     signal,
     onProgress = () => {},
@@ -167,7 +173,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const machine = readMachineConfig(home);
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
-  const config = resolveRunConfig(root, machine, { name, command: override });
+  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames });
   const { limits, command } = config;
   const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;

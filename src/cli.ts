@@ -11,6 +11,10 @@ interface CliOptions {
   json: boolean;
   name?: string;
   command?: string[];
+  // Arguments for the named command, from after --.
+  args?: string[];
+  // Words after the name given without --, passed on so the core can say how to give them.
+  extraNames?: string[];
   untracked?: boolean;
   dryRun?: boolean;
   days?: number;
@@ -51,7 +55,9 @@ export function parseArgs(argv: string[]): Parsed {
     if (command === 'run' && arg === '--') {
       const after = rest.slice(i + 1);
       if (after.length === 0) throw new AthanorError('There is nothing after --. Give the command to run after it, or leave -- out.');
-      options.command = after;
+      // With no name before it, -- starts a whole command; after a name, the words are its arguments.
+      if (names.length === 0) options.command = after;
+      else options.args = after;
       break;
     }
     if (arg.startsWith('-')) {
@@ -73,10 +79,8 @@ export function parseArgs(argv: string[]): Parsed {
     if (command !== 'run') throw new AthanorError(`athanor ${command} takes no names, but got "${arg}".`);
     names.push(arg);
   }
-  if (names.length > 1) {
-    throw new AthanorError(`athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To run a command of your own, put it after --.`);
-  }
-  if (names.length === 1) options.name = names[0] as string;
+  if (names.length >= 1) options.name = names[0] as string;
+  if (names.length > 1) options.extraNames = names.slice(1);
   return { command, options };
 }
 
@@ -139,6 +143,8 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
       cwd: process.cwd(),
       name: options.name,
       command: options.command,
+      args: options.args,
+      extraNames: options.extraNames,
       untracked: options.untracked === true,
       signal: controller.signal,
       onProgress,
