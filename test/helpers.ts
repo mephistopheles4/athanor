@@ -91,7 +91,7 @@ export function writeFiles(dir: string, files: Record<string, string>): void {
   }
 }
 
-const ISOLATED_ENV = ['ATHANOR_HOME', 'ATHANOR_MAX_RUNS', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'BUILDX_BUILDER'];
+const ISOLATED_ENV = ['ATHANOR_HOME', 'ATHANOR_MAX_RUNS', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'BUILDX_BUILDER', 'ATHANOR_ALLOW_REMOTE_DOCKER'];
 
 // Give a test its own state folder and clear every environment value athanor
 // reads; restore them afterwards. Returns the state folder.
@@ -111,7 +111,7 @@ export function isolate(t: TestContext, env: Record<string, string> = {}): strin
 
 // A fake Docker with its own scenario folder. calls() returns the recorded
 // argument arrays (and tar listings), oldest first.
-export interface Call { args: string[]; tar?: TarEntry[] }
+export interface Call { args: string[]; tar?: TarEntry[]; env?: { context?: string; builder?: string; tlsVerify?: string; hasPath: boolean } }
 export interface TarEntry { name: string; type: string; mode: string; content: string | undefined }
 
 export type Fake = ReturnType<typeof fake>;

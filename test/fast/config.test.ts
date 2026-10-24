@@ -232,7 +232,7 @@ test('T8 a configuration message names the file the bad value came from, in its 
 
 test('T9 a key only the machine may set is refused in the repo configuration, and a repo key in the machine file', async (t) => {
   const repoKeys = 'dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes';
-  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp';
+  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp, allowRemoteDocker';
   const machineOnly = { maxRuns: 3, pruneDays: 7, maxMemory: '4g', maxCpus: 2, maxTimeoutMinutes: 60, allowPlainTcp: true };
   for (const [key, value] of Object.entries(machineOnly)) {
     await t.test(`${key} in the repo`, async (t) => {

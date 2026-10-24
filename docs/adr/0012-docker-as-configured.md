@@ -1,6 +1,6 @@
 # 0012. Docker as configured
 
-Date: 2026-10-20 · Status: accepted · Supersedes: 0008 · Source: the owner's
+Date: 2026-10-20 · Status: superseded in part by 0021 (a run refuses an engine or builder off this machine unless the machine allows it) · Supersedes: 0008 · Source: the owner's
 decision, recorded as a spec amendment on issue 1 (C29 and S4's "local Docker
 only" paragraph removed)
 

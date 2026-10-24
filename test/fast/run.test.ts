@@ -467,19 +467,16 @@ test('C28 only the hashed set reaches the build', async (t) => {
   });
 });
 
-test('S4 athanor uses Docker as configured, but refuses a plain tcp endpoint unless the machine allows it', async (t) => {
-  // The owner removed C29's local-Docker check, then chose q8 A2: plain tcp
-  // without TLS is refused by default, with a machine-config opt-out.
+test('S4 athanor refuses a plain tcp endpoint unless the machine allows it', async (t) => {
+  // The owner chose q8 A2: plain tcp without TLS is refused by default, with a
+  // machine-config opt-out. An engine or builder off this machine also needs
+  // allowRemoteDocker (ADR 0021); those cases are in remote.test.ts (L1 to L13).
   const tls = { 'docker': ['ca.pem', 'cert.pem', 'key.pem'] };
   const passes: { name: string; env?: Record<string, string>; scenario?: Record<string, unknown>; machine?: Record<string, unknown> }[] = [
-    { name: 'a tcp DOCKER_HOST with TLS verification', env: { DOCKER_HOST: 'tcp://10.0.0.5:2376', DOCKER_TLS_VERIFY: '1' } },
-    { name: 'an ssh DOCKER_HOST', env: { DOCKER_HOST: 'ssh://builder@10.0.0.5' } },
     { name: 'a loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://127.0.0.1:2375' } },
     { name: 'a localhost tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://localhost:2375' } },
     { name: 'an IPv6 loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://[::1]:2375' } },
-    { name: 'a context with a TLS-verified tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2376', contextTls: tls } },
-    { name: 'a remote builder', env: { BUILDX_BUILDER: 'far' }, scenario: { builderDriver: 'remote', builderEndpoint: 'tcp://10.0.0.5:1234' } },
-    { name: 'a plain tcp DOCKER_HOST with the machine opt-out', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, machine: { allowPlainTcp: true } },
+    { name: 'a plain tcp DOCKER_HOST with the machine opt-outs', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, machine: { allowPlainTcp: true, allowRemoteDocker: true } },
   ];
   for (const row of passes) {
     await t.test(`passes: ${row.name}`, async (t) => {
