@@ -51,15 +51,16 @@ fresh container that runs the test command. It writes only to its state folder (
   `actions/download-artifact`, and the build on the runner before a staged
   release (accepted risks 21 and 22).
 - **Whoever controls the owner's GitHub account, or can push a branch to this repo,** can
-  change and start the release workflow and approve its deployment. They can
+  change and start the release workflow; whoever controls the account can
+  also approve its deployment. They can
   stage a version, but cannot make one live without the owner's npm
   two-factor approval. Before that approval the owner checks that they
   started the run, on the commit they merged, and reads the diff since the
   last release tag. The GitHub approval guards the token only as far as npm
   enforces the environment the trusted publisher names, which is unconfirmed
   (claim R10 of the spec on issue 6). The actor stays "can push a branch"
-  until R10 or R8 shows that npm refuses a job with no environment, or with a
-  different one.
+  until npm's docs say the environment is enforced, or a deliberate run from
+  a job with no environment, or another one, is shown refused.
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -127,12 +128,13 @@ above; the software they run is not.
     GitHub issues an identity token there only after the owner approves the
     `npm` environment. That token proves the job's identity to any service
     that trusts it, including Sigstore for provenance. npm exchanges it for a
-    token that can only stage, once the owner has set it before the merge
-    (R10).
+    token that can only stage, once the owner has added the trusted publisher
+    with staging as its only allowed action (step 9 of `docs/releasing.md`,
+    R10).
   - A staged version goes live only when the owner approves it with npm 2FA.
     The owner logs in only after the local build and logs out straight after.
     Publishing access disallows tokens, once the owner has set it before the
-    merge (R10).
+    merge (`docs/releasing.md` step 2, recorded in step 9).
   - See ADR 0018, A1 to A6, and ADR 0019.
 
 ## The sensitive-work list
@@ -160,8 +162,9 @@ above; the software they run is not.
   container with `--log-driver none`. When the caller is an agent session, the
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
-  publish job's identity token, and the owner's npm login around an approval
-  (the supply-chain bullet above; ADR 0019; accepted risk 22). The owner's
+  publish job's identity token (accepted risk 22), and the owner's npm login
+  around an approval (accepted risk 26); see the supply-chain bullet above
+  and ADR 0019. The owner's
   npm session token sits in the user npm configuration from login to logout,
   unencrypted at file level. It relies on the machine's disk encryption, which
   the owner confirmed is on (2026-10-24), and on npm's two-factor check on
@@ -394,3 +397,14 @@ candidate, so other work can point at it.
     look and approval, and a stray signature names this workflow's run in
     the public log.
     Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+
+Numbers 23 to 25 belong to other changes.
+
+26. **A program running as the owner can read the npm session token.** From
+    `npm login` to `npm logout`, around a release's approval, the session
+    token sits in the owner's user npm configuration, unencrypted at file
+    level. Any program running as the owner can read it then, including one
+    left behind by the local build just before. Accepted because npm requires
+    two-factor on every write, and the window lasts only from login to
+    logout.
+    Accepted 2026-10-24. From: issue 6, the follow-up Test review of `9fcdfcd` (data-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.

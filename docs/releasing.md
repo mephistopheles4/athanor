@@ -230,6 +230,11 @@ follows it, from a new, empty folder outside any checkout, so no project
     tar -xzf <staged>/<tarball> -C <staged-files>
     tar -xzf <local>/<tarball> -C <local-files>
     git -c core.autocrlf=false diff --no-index --exit-code <staged-files> <local-files>
+    New-Item -ItemType Directory <npm-files>
+    Push-Location <npm-files>
+    npm install <staged>/<tarball> --ignore-scripts --no-save
+    Pop-Location
+    git -c core.autocrlf=false -c core.filemode=false diff --no-index --exit-code <npm-files>/node_modules/@mephistopheles4/athanor <local-files>/package
     ```
 
     - The list must show exactly one staged entry, for this version.
@@ -242,8 +247,12 @@ follows it, from a new, empty folder outside any checkout, so no project
       record it on issue 6 for the owner's decision.
     - The two entry lists must be the same, so the staged tarball holds
       exactly the entries the pack check passed in step 14. Every extracted
-      file must be the same. Only npm, `tar` and `git` run here: nothing from
-      the repo or from the extracted folders.
+      file must be the same.
+    - The staged tarball as npm unpacks it, with install scripts off, must
+      also match the local pack file for file. This covers a tarball that
+      `tar` and npm would read differently.
+    - Only npm, `tar` and `git` run here: nothing from the repo or from the
+      extracted folders.
 
     If anything differs, reject every staged entry with
     `npm stage reject <id>`, log out, and stop. Any other entry is an
@@ -308,7 +317,8 @@ follows it, from a new, empty folder outside any checkout, so no project
   `npm login` to `npm logout`, the session token is in your user npm
   configuration file. That file is not encrypted: it relies on your disk
   encryption, and any program running as you can read it. npm's two-factor
-  check on every write is what keeps the token alone from approving.
+  check on every write is what keeps the token alone from approving
+  (accepted risk 26 in the threat model).
 - **A publish makes your npm account's name and email address public** in the
   registry's records. Publish from an account whose email address you are
   content to show.
