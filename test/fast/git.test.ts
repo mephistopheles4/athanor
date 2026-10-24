@@ -6,12 +6,12 @@
 // One top-level test per acceptance claim, and one for the stream's pins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TarEntry } from '../helpers.ts';
 import { run } from '#dist/index.js';
-import { isolate, makeRepo, fake, uniquePrefix, baseConfig, callsOf, tarFile, tempDir } from '../helpers.ts';
+import { isolate, makeRepo, fake, uniquePrefix, baseConfig, callsOf, tarFile, tempDir, writeFiles, git, gitState } from '../helpers.ts';
 
 const dist = fileURLToPath(new URL('../../dist', import.meta.url));
 
@@ -58,4 +58,53 @@ test('T11 the tar streams keep their pinned line endings and file modes against 
   const modes = (entries: TarEntry[]) => entries.filter((e) => e.type === '0').map((e) => e.mode);
   assert.ok(modes(build).every((m) => /644$/.test(m)), `the build context pins its file modes (ADR 0006): ${modes(build)}`);
   assert.ok(modes(snapshot).every((m) => /664$/.test(m)), `the snapshot pins git's default umask (ADR 0020): ${modes(snapshot)}`);
+});
+
+// A file staged with `git add -N` (intent to add) made every run exit 125
+// ("not uptodate"); issue 46, spec M8 and M9. The snapshot holds it at its
+// working-tree content, and the repo's own state does not change (ADR 0007).
+test('M8 a file added with git add -N is in the snapshot at its working-tree content, and the repo is unchanged', async (t) => {
+  const rows = [
+    { name: 'a -N file alone', config: baseConfig, setup: { 'new.txt': 'intent\n' }, modified: false, untracked: false, red: true },
+    { name: 'a -N file beside a modified file', config: baseConfig, setup: { 'new.txt': 'intent\n' }, modified: true, untracked: false, red: true },
+    { name: 'a -N file under context, also in the build tar', config: { ...baseConfig, context: 'test' }, setup: { 'test/new.txt': 'intent\n' }, modified: false, untracked: false, red: true },
+    // The --untracked path builds a fresh index, so this row is a guard and is green on the base.
+    { name: 'a -N file with --untracked', config: baseConfig, setup: { 'new.txt': 'intent\n' }, modified: false, untracked: true, red: false },
+  ];
+  for (const row of rows) {
+    await t.test(`${row.name}${row.red ? '' : ' (guard)'}`, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, { athanor: row.config, files: { 'tracked.txt': 'one\n' } });
+      writeFiles(repo, row.setup);
+      const [path] = Object.keys(row.setup);
+      git(repo, ['add', '-N', '--', path]);
+      if (row.modified) writeFiles(repo, { 'tracked.txt': 'two\n' });
+      const before = gitState(repo);
+      const docker = fake(t);
+      const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix(), untracked: row.untracked });
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      const snapshot = callsOf(docker.calls(), 'run').at(-1)!.tar!;
+      assert.equal(tarFile(snapshot, path), 'intent\n', 'the snapshot holds the -N file at its working-tree content');
+      if (row.modified) assert.equal(tarFile(snapshot, 'tracked.txt'), 'two\n');
+      if (row.config.context) {
+        const build = callsOf(docker.calls(), 'build').at(-1)!.tar!;
+        assert.equal(tarFile(build, 'new.txt'), 'intent\n', 'the build context holds the -N file under context');
+      }
+      assert.deepEqual(gitState(repo), before, 'the index file, status, refs and stash list are unchanged');
+    });
+  }
+});
+
+test('M9 a -N file since deleted is in neither tar, and the run passes', async (t) => {
+  isolate(t);
+  const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test' }, files: { 'tracked.txt': 'one\n' } });
+  writeFiles(repo, { 'test/gone.txt': 'intent\n', 'gone.txt': 'intent\n' });
+  git(repo, ['add', '-N', '--', 'test/gone.txt', 'gone.txt']);
+  unlinkSync(join(repo, 'test', 'gone.txt'));
+  unlinkSync(join(repo, 'gone.txt'));
+  const docker = fake(t);
+  const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix() });
+  assert.equal(result.outcome, 'pass', JSON.stringify(result));
+  assert.equal(tarFile(callsOf(docker.calls(), 'run').at(-1)!.tar!, 'gone.txt'), undefined);
+  assert.equal(tarFile(callsOf(docker.calls(), 'build').at(-1)!.tar!, 'gone.txt'), undefined);
 });
