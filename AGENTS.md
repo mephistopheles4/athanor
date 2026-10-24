@@ -13,7 +13,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
 - **No shell, ever.** Every child process is started with an argument array
   and `shell: false`. Never build a command string, and never use `exec`,
   `execSync`, or `execFile` with a shell. `scripts/check-source.mjs` fails the
-  build on any of these (ADR 0002).
+  build on any of these (ADR 0002). git and docker start by a full path found
+  in PATH's absolute entries, never by bare name, and never from the working
+  folder or a relative entry (ADR 0020's amendment).
 - **The core never prints, exits or registers signal handlers.** It takes
   options, returns results, and reports progress through a callback. Only
   `src/cli.ts` prints, sets the exit code and handles signals (ADR 0003).
@@ -28,6 +30,10 @@ lasting decisions are in [docs/adr/](docs/adr/).
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. A change here is security-sensitive work.
+- **The archive step carries the tree as committed.** Every `git archive`,
+  and the `git init` of its folder, run in the clean environment of ADR 0020:
+  no inherited `GIT_*` variable, no global or system config or attributes, no template, and
+  `-filter` on every path. A change here is security-sensitive work.
 - **Messages use plain words.** Each says what happened and, for a warning or
   an error, what to do next.
 - **Source files use LF line endings** (`.gitattributes`). The container's
@@ -77,7 +83,7 @@ marks.
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
-issue 4; `U1` to `U7`, from the spec on issue 36; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
+issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
 issue 6). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by

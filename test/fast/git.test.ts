@@ -1,7 +1,8 @@
 // git owns the tar stream of a commit (spec on issue 8, candidate 3): where
-// its pinned settings live, and that they hold against the git configuration
-// the archive does read. The archive runs in athanor's own git folder, so it
-// never reads the repo's config; global config and the -c pins do apply.
+// its pinned settings live, and that they hold against a hostile global git
+// config. The archive runs in athanor's own git folder in a clean environment
+// (ADR 0020), so it reads neither the repo's config nor the global one; only
+// that folder and the -c pins apply.
 // One top-level test per acceptance claim, and one for the stream's pins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ test('T11 git keeps its archive settings private, and the core gets the tar stre
     'git exports these functions and no archive setting; a new export must keep the settings private');
   assert.equal(typeof git.tarStream, 'function');
   // Only the compiled git module starts git archive or names its settings.
-  const startsArchive = /['"`](archive|core\.autocrlf=false|core\.eol=lf|tar\.umask=0022)['"`]/;
+  const startsArchive = /['"`](archive|core\.autocrlf=false|core\.eol=lf|tar\.umask=0022|tar\.umask=0002|\* -export-ignore -export-subst -filter\\n)['"`]|['"`]core\.attributesFile=/;
   const compiled = readdirSync(dist).filter((f) => /\.m?js$/.test(f));
   assert.ok(compiled.includes('git.js'));
   for (const file of compiled) {
@@ -56,5 +57,5 @@ test('T11 the tar streams keep their pinned line endings and file modes against 
   assert.equal(tarFile(build, 'lf.sh'), 'one\ntwo\n', 'the build context keeps LF');
   const modes = (entries: TarEntry[]) => entries.filter((e) => e.type === '0').map((e) => e.mode);
   assert.ok(modes(build).every((m) => /644$/.test(m)), `the build context pins its file modes (ADR 0006): ${modes(build)}`);
-  assert.ok(modes(snapshot).every((m) => /664$/.test(m)), `the snapshot takes git's umask, unpinned: ${modes(snapshot)}`);
+  assert.ok(modes(snapshot).every((m) => /664$/.test(m)), `the snapshot pins git's default umask (ADR 0020): ${modes(snapshot)}`);
 });

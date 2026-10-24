@@ -22,7 +22,7 @@ configuration allows it (ADR 0012, ADR 0021).
 `athanor` key in `package.json`) and an optional machine
 configuration, builds the repo's Dockerfile into an image, takes a snapshot of
 the work with git, holds one of N slot locks, and pipes the snapshot into a
-fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`).
+fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`), except that a host clean filter can write the repo's git folder (accepted risk 23).
 
 **Who could act against it.**
 
@@ -98,8 +98,28 @@ above; the software they run is not.
 - **Only the hashed set reaches the build.** The build context is exactly the
   tracked files under `context` plus the listed `inputs`, each of which must
   be tracked: no untracked or ignored file and no git folder (ADR 0006, C28).
-- **The repo is never written.** Snapshots use a copy of the index and a
-  per-run object folder (ADR 0007, C21, C30).
+- **The archive step carries the tree as committed.** Every `git archive`, and
+  the `git init` of athanor's archive folder, run with every inherited `GIT_*`
+  variable removed, no global or system git config or attributes (on git 2.32
+  or later), and no git template; the archive also has `-filter` on every
+  path. So no content filter runs on the host while the stream is made, and no
+  host git setting changes a file in that step. This keeps host git settings
+  out of the archive step; it is not a control against a process that can
+  write the environment or the home folder, which already chooses the git that
+  runs. git and docker start by a full path from PATH's absolute entries, so a
+  program of that name in the working folder, or one found through a relative
+  or empty PATH entry, never runs in their place, which on Windows was the
+  repo's own folder (ADR 0020, G8). A full PATH entry into the repo, such as
+  the one npm adds for its scripts, or another spelling of the working folder,
+  is the environment's choice, as above. The line endings and file modes are
+  pinned, and the tree's own `text`, `eol`, `ident` and
+  `working-tree-encoding` attributes still apply (ADR 0020, C32, G1–G6). The
+  git calls that make the snapshot's and the build context's trees still run
+  with the host's git config and environment (accepted risk 23, issue 42).
+- **athanor's own git calls never write the repo.** Snapshots use a copy of the index and a
+  per-run object folder (ADR 0007, C21, C30), except as accepted risk 23 says:
+  a clean filter the host defines, such as Git LFS's, can write the repo's git
+  folder (issue 42).
 - **Docker on this machine, unless the machine allows otherwise, and never in
   clear.** A run refuses an engine or builder that is not local (a unix
   socket, the local pipe in its exact form, or tcp to loopback) unless the
@@ -196,6 +216,9 @@ above; the software they run is not.
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), pinned for the run and checked
   again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
+  git settings, attributes, templates and `GIT_*` variables inherited from the
+  host are kept out of the archive step (ADR 0020); the git calls that record
+  the work still use them (accepted risk 23).
   The release path's untrusted inputs are the artifact `publish` takes from
   `check`, the staged tarball and manifest the owner downloads, and the
   registry's answer to the version check. They are covered by the owner's
@@ -417,9 +440,17 @@ candidate, so other work can point at it.
     look and approval, and a stray signature names this workflow's run in
     the public log.
     Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-
-Number 23 belongs to another change.
-
+23. **The git calls that record the work use the host's git config.** The
+    snapshot's and the build context's git calls (`stash create`, `add`,
+    `hash-object`) run with the host's git config and environment. A clean
+    filter that the repo's attributes name runs on the host while they run;
+    its output reaches the container and the build; and Git LFS's clean filter
+    writes the repo's `.git/lfs` folder, where the copy stays after the run,
+    including, with `--untracked`, untracked files the owner has not added.
+    Accepted because the owner's own `git add` in the repo runs the same
+    filters, and a fix changes what the snapshot holds (issue 42).
+    Accepted 2026-10-24. From: issue 20, the Design review of spec revision 1 (executability-lens, the deferral of the snapshot side; data-lens F3; adversarial-lens F3). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
+    Extended 2026-10-24. From: issue 20, the Test review (data-lens TM5), the owner's H1. How the word arrived: the owner, in the lead's chat, relayed by head-chef-field-test.
 24. **A local address that leads elsewhere.** An endpoint athanor counts as
     local, a `unix://` socket, the local pipe or a loopback port, can lead
     elsewhere: forwarded to another machine (an ssh tunnel, a socket proxy, a

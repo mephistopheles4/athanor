@@ -7,7 +7,11 @@
   `git stash create` from a copy of the index (tracked files, staged and
   unstaged), or `HEAD` on a clean tree, or with `--untracked` a tree that also
   holds the untracked, non-ignored files. It reaches the container as a tar
-  stream on stdin.
+  stream on stdin, made with no git content filter in the archive step.
+- **Archive step.** The `git archive` that turns the snapshot's or the build
+  context's tree into a tar stream. It runs in athanor's own git folder, with
+  no host git config and no content filter (ADR 0020). The git calls that make
+  those trees come before it and still use the host's git config.
 - **Slot.** One of the machine's N places for a running container. A run holds
   slot n by holding the OS lock `athanor-slot-<n>`: a named pipe on Windows, an
   abstract socket on Linux. The OS frees it when the process ends, even after a
