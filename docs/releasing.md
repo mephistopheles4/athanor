@@ -3,8 +3,8 @@
 The first version of `@mephistopheles4/athanor` is published by hand. Every
 later one is staged by the release workflow and made live by the owner
 (ADR 0019); see [Later releases, through the workflow](#later-releases-through-the-workflow).
-The owner's last step for each later version that stays live is a GitHub
-release, made by hand,
+The owner's last step for each later version not deprecated in step 17 is a
+GitHub release, made by hand,
 from which Zenodo archives the repo (ADR 0029).
 Only the owner does any step on this page.
 
@@ -391,16 +391,16 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   tarball, its digest, commit and run, goes into Sigstore's public
   transparency log when it is staged, and stays there even for a version you
   later reject.
+- **Who the record names.** Which npm user, and whether an email address, a
+  version approved from staging names is shown by the first workflow release
+  (step 11, and claim R8 of the spec on issue 6), and is
+  written here then.
 - **A GitHub release makes a permanent Zenodo record.** Zenodo archives the
   repo at the release's tag and mints a DOI, and the record can't be
   deleted, so the release comes last in step 17, once the version is live
   and checked. Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
   predate it and have no release; the first record comes with the next
   release.
-- **Who the record names.** Which npm user, and whether an email address, a
-  version approved from staging names is shown by the first workflow release
-  (step 11, and claim R8 of the spec on issue 6), and is
-  written here then.
 - **If a bad version goes live,** deprecate it with `npm deprecate` and
   publish a fixed one, or unpublish it where npm's unpublish policy allows.
   To stop releases altogether, delete `release.yml` and revoke the trusted
