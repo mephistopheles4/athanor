@@ -73,7 +73,7 @@ export interface RunResult {
   // container's own exit (ADR 0030).
   testExitCode?: number;
   // Set when the memory limit killed a process: the container's own exit,
-  // which is 137 only when the test itself was killed (ADR 0030).
+  // 137 when the test itself was killed or exited 137 (ADR 0030).
   containerExitCode?: number;
   // Set when outputs were copied. A folder is complete only when this is present.
   outputs?: { dir: string; files: number; bytes: number; skipped: number; missing: string[] };

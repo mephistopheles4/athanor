@@ -168,7 +168,7 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
   }
 }
 
-// The line printed for a run's result. Exported for tests, as parseArgs is.
+/** @internal The line printed for a run's result, exported for tests (ADR 0030). */
 export function resultLine(result: RunResult): string {
   // The test ran and exited, but its outputs could not be copied: the message says both.
   if (result.testExitCode !== undefined) return `${result.message?.replace(/\.$/, '')} (exit ${result.exitCode}).`;

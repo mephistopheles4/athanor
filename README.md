@@ -239,8 +239,8 @@ athanor's.
 Docker reports a memory kill for the whole container, not for one process,
 so any kill during the run makes the outcome `memory`. The JSON
 `containerExitCode` field, set only then, is the container's own exit: 137
-when the test itself was killed, and the test's exit when it exited on its
-own after another process, such as a worker, was killed. In that case the
+when the test itself was killed, or exited 137 on its own, and otherwise the
+test's exit after another process, such as a worker, was killed. In that case the
 line athanor prints at the end of the run says so, and the test's result may
 be incomplete.
 
