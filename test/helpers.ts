@@ -111,7 +111,7 @@ export function isolate(t: TestContext, env: Record<string, string> = {}): strin
 
 // A fake Docker with its own scenario folder. calls() returns the recorded
 // argument arrays (and tar listings), oldest first.
-export interface Call { args: string[]; at?: number; tar?: TarEntry[]; env?: { context?: string; builder?: string; tlsVerify?: string; hasPath: boolean } }
+export interface Call { args: string[]; at?: number; finished?: boolean; tar?: TarEntry[]; env?: { context?: string; builder?: string; tlsVerify?: string; hasPath: boolean } }
 export interface TarEntry { name: string; type: string; mode: string; content: string | undefined }
 
 export type Fake = ReturnType<typeof fake>;
@@ -173,6 +173,9 @@ export function gitState(repo: string) {
     objects: git(repo, ['count-objects', '-v']),
   };
 }
+
+// The test repo configuration with other commands (the object form, say) and extra keys.
+export const withCommands = (commands: unknown, extra: Record<string, unknown> = {}) => ({ ...baseConfig, ...extra, commands });
 
 export const baseConfig = {
   dockerfile: 'test/Dockerfile',

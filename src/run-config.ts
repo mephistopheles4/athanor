@@ -5,6 +5,7 @@ import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync,
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
+import { checkOutputs } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -13,6 +14,7 @@ export const DEFAULTS = Object.freeze({
   pruneDays: 30,
   maxMemory: '8g',
   maxTimeoutMinutes: 120,
+  maxOutputMegabytes: 1024,
 });
 
 // Where a value came from.
@@ -53,6 +55,7 @@ const KEYS = {
   maxTimeoutMinutes: { repo: false, machine: true, check: positiveNumber },
   allowPlainTcp: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
   allowRemoteDocker: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
+  maxOutputMegabytes: { repo: false, machine: true, check: positiveInteger },
 } satisfies Record<string, KeyRule>;
 
 interface KeyRule {
@@ -79,6 +82,7 @@ export interface MachineValues {
   maxTimeoutMinutes: number;
   allowPlainTcp: boolean;
   allowRemoteDocker: boolean;
+  maxOutputMegabytes: number;
 }
 
 // The machine configuration: its file, which may not exist, and its checked values.
@@ -87,11 +91,24 @@ export interface MachineConfig {
   values: Partial<MachineValues>;
 }
 
+// A command in object form (ADR 0023): its argv, whether it takes arguments,
+// its outputs, and limits of its own.
+interface CommandObject {
+  argv: string[];
+  args?: boolean;
+  outputs?: string[];
+  memory?: string;
+  cpus?: number;
+  timeoutMinutes?: number;
+}
+
+const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes'];
+
 interface RepoValues {
   dockerfile: string;
   context?: string;
   inputs?: string[];
-  commands: Record<string, string[]>;
+  commands: Record<string, string[] | CommandObject>;
   memory?: string;
   cpus?: number;
   timeoutMinutes?: number;
@@ -112,11 +129,32 @@ export interface RunConfig {
   build: { dockerfile: string; context: string; inputs: string[]; dockerfileInContext: string };
   // The dockerfile as the configuration spells it, for progress messages.
   dockerfileAsSet: string;
+  // The argument array that runs: the command's argv, then the caller's arguments.
   command: string[];
   limits: Limits;
   timeLimitSeconds: number;
   docker: { allowPlainTcp: boolean; allowRemoteDocker: boolean; machineFile: string };
+  // The paths the command declares for copy-out, relative to the work folder.
+  outputs: string[];
+  // The most bytes copy-out reads from the container, from the machine configuration.
+  maxOutputBytes: number;
+  // A command's own limit names its key: commands.<name>.<key>.
   from: Record<LimitKey | 'allowPlainTcp' | 'allowRemoteDocker', Source>;
+}
+
+// What the caller asked to run. `extraNames` are words given after the name
+// without --, which the CLI passes on so the message can say how to give them.
+export interface RunRequest {
+  name?: string;
+  command?: string[];
+  args?: string[];
+  extraNames?: string[];
+}
+
+// The lead of every message about more than one name given without --.
+function oneNameLead(name: string, extraNames: string[]): string {
+  const names = [name, ...extraNames];
+  return `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}.`;
 }
 
 export function memoryBytes(value: string): number {
@@ -263,11 +301,7 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
   if (!isObject(config.commands) || Object.keys(config.commands).length === 0) {
     throw new AthanorError(`In ${place}, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);
   }
-  for (const [name, argv] of Object.entries(config.commands)) {
-    if (!Array.isArray(argv) || argv.length === 0 || !argv.every((a) => typeof a === 'string')) {
-      throw new AthanorError(`In ${place}, commands.${name} must be an array of strings, such as ["npm", "test"]. A single string is not allowed, because athanor never uses a shell.`);
-    }
-  }
+  for (const [name, command] of Object.entries(config.commands)) checkCommand(name, command, place, lead);
   for (const k of REPO_KEYS) {
     const check = checkOf(k);
     if (check && config[k] !== undefined && !check.ok(config[k])) {
@@ -277,9 +311,43 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
   return config as unknown as RepoValues;
 }
 
+const isStrings = (v: unknown): boolean => Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string');
+
+// One entry of commands: an argument array, or an object (ADR 0023). Every
+// command gets the shape checks, whether or not it runs.
+function checkCommand(name: string, command: unknown, place: string, lead: string): void {
+  if (!isObject(command)) {
+    if (!isStrings(command)) {
+      throw new AthanorError(`In ${place}, commands.${name} must be an array of strings, such as ["npm", "test"], or an object with "argv". A single string is not allowed, because athanor never uses a shell.`);
+    }
+    return;
+  }
+  for (const k of Object.keys(command)) {
+    if (!COMMAND_KEYS.includes(k)) {
+      throw new AthanorError(`${lead} has an unknown key "commands.${name}.${k}". A command's keys are: ${COMMAND_KEYS.join(', ')}.`);
+    }
+  }
+  if (!isStrings(command.argv)) {
+    throw new AthanorError(`In ${place}, commands.${name}.argv must be an array of strings, such as ["npm", "test"]. A single string is not allowed, because athanor never uses a shell.`);
+  }
+  if (command.args !== undefined && typeof command.args !== 'boolean') {
+    throw new AthanorError(`In ${place}, commands.${name}.args must be true or false.`);
+  }
+  if (command.outputs !== undefined) {
+    const problem = checkOutputs(command.outputs);
+    if (problem) throw new AthanorError(`In ${place}, commands.${name}.outputs ${problem}.`);
+  }
+  for (const k of ['memory', 'cpus', 'timeoutMinutes'] as const) {
+    const check = checkOf(k);
+    if (check && command[k] !== undefined && !check.ok(command[k])) {
+      throw new AthanorError(`In ${place}, commands.${name}.${k} ${check.rule}.`);
+    }
+  }
+}
+
 // Everything a run needs. The machine configuration is read first, on its
 // own, because the run limit comes from it before the repo is found.
-export function resolveRunConfig(root: string, machine: MachineConfig, request: { name?: string; command?: string[] } = {}): RunConfig {
+export function resolveRunConfig(root: string, machine: MachineConfig, request: RunRequest = {}): RunConfig {
   const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
   const machineSource: Source = { kind: 'machine', file: machine.file };
   // Where a message tells the user to change a value: the file it came from,
@@ -296,10 +364,38 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   }
   const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
 
-  // Per-run limits: the repo, then the machine file, then the defaults, each
-  // held to the machine's ceilings. cpus has no default, and maxCpus has none
-  // either: when the machine sets it, it is also the cpus of a run that sets none.
+  const commandName = request.name ?? 'test';
+  // Own keys only, so a name such as "constructor" is not found on the prototype.
+  const entry = request.command === undefined && Object.hasOwn(repo.commands, commandName) ? repo.commands[commandName] : undefined;
+  if (request.command === undefined && entry === undefined) {
+    if (request.extraNames?.length) throw new AthanorError(`${oneNameLead(commandName, request.extraNames)} To run a command of your own, put it after -- with no name before it: athanor run -- <command>.`);
+    throw new AthanorError(`There is no command named "${commandName}" in ${where}. Its commands are: ${Object.keys(repo.commands).join(', ')}.`);
+  }
+  const own: CommandObject | undefined = entry !== undefined && !Array.isArray(entry) ? entry : undefined;
+  const argv = request.command ?? (Array.isArray(entry) ? entry : own!.argv);
+
+  const args = request.args ?? [];
+  if (args.length > 0 && request.command !== undefined) {
+    throw new AthanorError('Arguments go with a command name, not with a command given whole. Put the arguments after the name: athanor run <name> -- <arguments>.');
+  }
+  const optIn = `Set "args": true on commands.${commandName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
+  if (request.extraNames?.length) {
+    const lead = oneNameLead(commandName, request.extraNames);
+    throw new AthanorError(own?.args === true
+      ? `${lead} To pass arguments to "${commandName}", put them after --, such as athanor run ${commandName} -- ${request.extraNames.join(' ')}.`
+      : `${lead} ${optIn}`);
+  }
+  if (args.length > 0 && own?.args !== true) {
+    throw new AthanorError(`The command "${commandName}" does not take arguments. ${optIn}`);
+  }
+  const command = [...argv, ...args];
+
+  // Per-run limits: the command's own, then the repo's, then the machine file,
+  // then the defaults, each held to the machine's ceilings. cpus has no
+  // default, and maxCpus has none either: when the machine sets it, it is also
+  // the cpus of a run that sets none. The -- form takes the repo's values.
   const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
+    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${commandName}.${key}` } };
     if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
     if (machine.values[key] !== undefined) return { value: machine.values[key] as Limits[K], source: machineSource };
     if (key === 'cpus') {
@@ -317,19 +413,14 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   };
   const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
     if (above) {
-      throw new AthanorError(`${key} ${limits[key]} is above the machine ceiling ${ceilingKey} ${ceilings[ceilingKey]}. Lower it in ${placeOf(picked[key].source)}, or raise ${ceilingKey} in the machine configuration.`);
+      const source = picked[key].source;
+      const label = source.kind === 'repo' && source.key?.startsWith('commands.') ? source.key : key;
+      throw new AthanorError(`${label} ${limits[key]} is above the machine ceiling ${ceilingKey} ${ceilings[ceilingKey]}. Lower it in ${placeOf(picked[key].source)}, or raise ${ceilingKey} in the machine configuration.`);
     }
   };
   over('memory', 'maxMemory', memoryBytes(limits.memory) > memoryBytes(ceilings.maxMemory));
   over('cpus', 'maxCpus', ceilings.maxCpus !== undefined && limits.cpus !== undefined && limits.cpus > ceilings.maxCpus);
   over('timeoutMinutes', 'maxTimeoutMinutes', limits.timeoutMinutes > ceilings.maxTimeoutMinutes);
-
-  const commandName = request.name ?? 'test';
-  // Own keys only, so a name such as "constructor" is not found on the prototype.
-  const command = request.command ?? (Object.hasOwn(repo.commands, commandName) ? repo.commands[commandName] : undefined);
-  if (command === undefined) {
-    throw new AthanorError(`There is no command named "${commandName}" in ${where}. Its commands are: ${Object.keys(repo.commands).join(', ')}.`);
-  }
 
   return {
     build: { dockerfile, context, inputs, dockerfileInContext },
@@ -337,6 +428,8 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     command,
     limits,
     timeLimitSeconds: limits.timeoutMinutes * 60,
+    outputs: own?.outputs ?? [],
+    maxOutputBytes: (machine.values.maxOutputMegabytes ?? DEFAULTS.maxOutputMegabytes) * 1024 * 1024,
     docker: { allowPlainTcp: machine.values.allowPlainTcp === true, allowRemoteDocker: machine.values.allowRemoteDocker === true, machineFile: machine.file },
     from: {
       memory: picked.memory.source,

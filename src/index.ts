@@ -8,14 +8,16 @@ import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream } from './git.js';
 import type { Scratch, BuildContext } from './git.js';
-import { prepareDocker, recheckDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage } from './docker.js';
+import { prepareDocker, recheckDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { acquire, ask } from './slots.js';
 import type { Slot } from './slots.js';
 import { start, feed } from './proc.js';
 import { containerSettings } from './container-settings.js';
 import { runContainer } from './container-run.js';
-import type { Outcome, Sink } from './container-run.js';
+import type { Handed, Outcome, Sink } from './container-run.js';
+import { copyOut, checkOutputTarget, workFolder, CopyError, CopyInterrupted, MAX_ENTRIES, COPY_TIME_MS } from './copy-out.js';
+import type { OutputTarget } from './copy-out.js';
 
 export { AthanorError };
 export { BOOT } from './container-settings.js';
@@ -30,6 +32,12 @@ export interface RunOptions {
   // A command name from the repo configuration's commands, or `command` to give one.
   name?: string;
   command?: string[];
+  // Arguments for the named command, which must set "args": true. Not with `command`.
+  args?: string[];
+  // Words the caller gave after the name without --. The run ends with a message that says how to give them.
+  extraNames?: string[];
+  // A new folder to copy the command's declared outputs into, after a test that ran and exited.
+  output?: string;
   untracked?: boolean;
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
@@ -43,6 +51,10 @@ export interface RunOptions {
   timeLimitSeconds?: number;
   /** @internal For tests (ADR 0003): the grace the in-container timer adds, in seconds. */
   graceSeconds?: number;
+  /** @internal For tests (ADR 0003): the most entries a copy accepts. */
+  maxOutputEntries?: number;
+  /** @internal For tests (ADR 0003): the time bound of a copy, in milliseconds. */
+  copyTimeMs?: number;
 }
 
 export interface RunResult {
@@ -56,6 +68,10 @@ export interface RunResult {
   slot?: number;
   ranMs?: number;
   message?: string;
+  // Set when the test ran and exited but copying its outputs failed: the test's own exit.
+  testExitCode?: number;
+  // Set when outputs were copied. A folder is complete only when this is present.
+  outputs?: { dir: string; files: number; bytes: number; skipped: number; missing: string[] };
 }
 
 // What a run has learned so far, for a result that ends it early.
@@ -152,6 +168,9 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     cwd = process.cwd(),
     name,
     command: override,
+    args,
+    extraNames,
+    output,
     untracked = false,
     signal,
     onProgress = () => {},
@@ -167,8 +186,16 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const machine = readMachineConfig(home);
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
-  const config = resolveRunConfig(root, machine, { name, command: override });
+  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames });
   const { limits, command } = config;
+  // The --output checks, before any Docker call (ADR 0023).
+  let target: OutputTarget | undefined;
+  if (output !== undefined) {
+    if (config.outputs.length === 0) {
+      throw new AthanorError('The command to run has no outputs, so --output has nothing to copy. Declare "outputs" on a named command in the object form, or leave --output out.');
+    }
+    target = checkOutputTarget(output, cwd);
+  }
   const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;
 
@@ -223,14 +250,71 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     await clearSlotContainer(docker, container.name, pinned);
     if (signal?.aborted) return interruptedResult(partial);
 
-    const ran = await runContainer({
+    const handed = await runContainer({
       docker, env: pinned, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
     });
-    markUse(home, ctx.hash);
-    return { schema: 1, ...partial, ...ran };
+    const { ran } = handed;
+    // Copy out only when the test ran and exited (pass, fail, or the memory limit,
+    // which leaves the container stopped with what the test wrote), while the slot
+    // is held and before the container goes. Then every cp and the removal use
+    // the container's ID; any other path removes it by name.
+    const copies = target !== undefined && (ran.outcome === 'pass' || ran.outcome === 'fail' || ran.outcome === 'memory');
+    let tail: Partial<RunResult> = {};
+    try {
+      markUse(home, ctx.hash);
+      if (copies && target) {
+        tail = await copyStep({
+          docker, env: pinned, handed, outputs: config.outputs, target, maxBytes: config.maxOutputBytes,
+          maxEntries: options.maxOutputEntries ?? MAX_ENTRIES, timeMs: options.copyTimeMs ?? COPY_TIME_MS,
+          signal, onProgress,
+        });
+      }
+    } finally {
+      await removeContainer(docker, copies && handed.id !== undefined ? handed.id : container.name, pinned);
+    }
+    return { schema: 1, ...partial, ...ran, ...tail };
   } finally {
     if (slot) await slot.release();
     scratch.remove();
+  }
+}
+
+interface CopyStep {
+  docker: DockerCommand;
+  env: NodeJS.ProcessEnv;
+  handed: Handed;
+  outputs: string[];
+  target: OutputTarget;
+  maxBytes: number;
+  maxEntries: number;
+  timeMs: number;
+  signal?: AbortSignal;
+  onProgress: (line: string) => void;
+}
+
+// The copy, as the fields it adds to (or changes in) the run's result.
+async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
+  const testExit = c.handed.ran.exitCode;
+  try {
+    const work = workFolder(c.handed.workLines);
+    if (c.handed.id === undefined) throw new CopyError('athanor could not read the container\'s ID, so it cannot copy from it.');
+    const copied = await copyOut({
+      docker: c.docker, env: c.env, id: c.handed.id, work, outputs: c.outputs, target: c.target,
+      maxBytes: c.maxBytes, maxEntries: c.maxEntries, timeMs: c.timeMs,
+      signal: c.signal, onProgress: c.onProgress,
+    });
+    const notFound = copied.missing.length > 0 ? `, ${copied.missing.length} declared output${copied.missing.length === 1 ? '' : 's'} not found` : '';
+    c.onProgress(`copied ${copied.files} file${copied.files === 1 ? '' : 's'} into ${c.target.asTyped} (${copied.skipped} skipped${notFound}).`);
+    return { outputs: { dir: c.target.asTyped, ...copied } };
+  } catch (error) {
+    if (error instanceof CopyInterrupted) return { outcome: 'interrupted', exitCode: EXIT.interrupted };
+    if (error instanceof CopyError) {
+      return {
+        outcome: 'error', exitCode: EXIT.setup, testExitCode: testExit,
+        message: `The test exited ${testExit}${c.handed.ran.outcome === 'memory' ? ' after hitting the memory limit' : ''}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
+      };
+    }
+    throw error;
   }
 }
 

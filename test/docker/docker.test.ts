@@ -5,7 +5,7 @@ import { test, after } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run, status } from '#dist/index.js';
@@ -361,4 +361,31 @@ test('P1 the Docker client\'s proxy settings do not reach the container', async 
   assert.equal((proxied.stdout + proxied.stderr).includes('athanor-fake-host'), false, 'the fake noProxy value is nowhere in the output');
   const names = (out: string) => out.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('='))).sort();
   assert.deepEqual(names(proxied.stdout), names(baseline.stdout), 'the same variable names as with no proxy settings');
+});
+
+test('M16 outputs come out of a real container: files land, a link is skipped, a missing output is named', async (t) => {
+  isolate(t);
+  const long = `out/${'d'.repeat(40)}/${'e'.repeat(40)}/${'f'.repeat(40)}.txt`;
+  const script = [
+    `mkdir -p out/sub "$(dirname ${long})"`,
+    `echo '{"ok":true}' > out/report.json`,
+    'echo nested > out/sub/a.txt',
+    `echo long > ${long}`,
+    'ln -s /etc/passwd out/link',
+  ].join('; ');
+  const repo = makeRepo(t, {
+    athanor: { ...config, commands: { test: ['true'], report: { argv: ['sh', '-c', script], outputs: ['out', 'absent'] } } },
+    files: FIXTURE,
+  });
+  const dir = join(tempDir(t, 'athanor-out-'), 'report');
+  const prefix = uniquePrefix();
+  const { result, stderr } = await runReal(t, repo, { name: 'report', output: dir, prefix });
+  assert.equal(result.outcome, 'pass', JSON.stringify(result) + stderr);
+  assert.equal(readFileSync(join(dir, 'out', 'report.json'), 'utf8'), '{"ok":true}\n');
+  assert.equal(readFileSync(join(dir, 'out', 'sub', 'a.txt'), 'utf8'), 'nested\n');
+  assert.equal(readFileSync(join(dir, ...long.split('/')), 'utf8'), 'long\n');
+  assert.equal(existsSync(join(dir, 'out', 'link')), false, 'the link is skipped');
+  assert.deepEqual(result.outputs, { dir, files: 3, bytes: 12 + 7 + 5, skipped: 1, missing: ['absent'] });
+  const left = docker(['ps', '-a', '--filter', `name=^${prefix}-slot-`, '--format', '{{.Names}}']);
+  assert.equal(left.stdout.trim(), '', 'no athanor container is left');
 });

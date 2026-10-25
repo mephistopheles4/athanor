@@ -14,6 +14,10 @@ import type { Limits } from './run-config.js';
 // The line the boot script prints on stderr just before the test command.
 export const MARKER = 'athanor-boot-ok';
 
+// The line before it that names the work folder, for copy-out (ADR 0023). The
+// run strips it with the marker; a line like it after the marker is test output.
+export const WORK_PREFIX = 'athanor-work ';
+
 // The six capabilities a test keeps (ADR 0016): five that a root-run test can
 // plausibly need, and KILL, which the in-container time limit needs to end a
 // test that switched to another user.
@@ -36,6 +40,7 @@ export const BOOT = [
   '  git -c user.name=athanor -c user.email=athanor@localhost commit -qm athanor',
   'fi',
   '( sleep "$ATHANOR_GRACE_LIMIT"; kill -s KILL -1 ) &',
+  `echo "${WORK_PREFIX}$(pwd)" >&2`,
   `echo ${MARKER} >&2`,
   'exec "$@"',
 ].join('\n');

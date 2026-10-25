@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { TarEntry } from './helpers.ts';
 
 const [dir, ...args] = process.argv.slice(2) as [string, ...string[]];
@@ -69,6 +70,19 @@ function readTar(buffer: Buffer): TarEntry[] {
     entries.push({ name, type, mode: field(100, 8).trim(), content: type === '0' ? body.toString('base64') : undefined });
   }
   return entries;
+}
+
+// The ID a container has: 64 hex digits, from its name.
+const idOf = (name: string): string => createHash('sha256').update(name).digest('hex');
+// The container a name or an ID points at, or the name as given.
+function nameOf(ref: string | undefined): string | undefined {
+  if (ref !== undefined && /^[0-9a-f]{64}$/.test(ref)) {
+    for (const f of readdirSync(containersDir)) {
+      const c = readJson(join(containersDir, f));
+      if (idOf(c.name) === ref) return c.name;
+    }
+  }
+  return ref;
 }
 
 function option(name: string): string | undefined {
@@ -207,7 +221,7 @@ async function main() {
   }
   if (a === 'rm') {
     record();
-    const path = fileFor(containersDir, args.at(-1));
+    const path = fileFor(containersDir, nameOf(args.at(-1)));
     if (scenario.rmFails) { console.error('Error response from daemon: cannot remove container: permission denied'); return 1; }
     if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args.at(-1)}`); return 1; }
     rmSync(path, { force: true });
@@ -216,10 +230,36 @@ async function main() {
   }
   if (a === 'inspect') {
     record();
-    const path = fileFor(containersDir, args.at(-1));
+    const path = fileFor(containersDir, nameOf(args.at(-1)));
     if (scenario.inspectFails || !existsSync(path)) { console.error(`Error: No such object: ${args.at(-1)}`); return 1; }
     const state = readJson(path);
-    console.log(`${state.exitCode ?? 0} ${state.oom ? 'true' : 'false'}`);
+    console.log(`${state.exitCode ?? 0} ${state.oom ? 'true' : 'false'} ${idOf(state.name)}`);
+    return 0;
+  }
+  if (a === 'cp') {
+    // docker cp <id>:<path> -   Serves scenario.cp[<path under the work folder>]:
+    // { tar: base64 } served whole, { missing }, { fails: text }, or { hang }.
+    // After the tar it stays open for lingerMs, and logs a finished line only on
+    // a normal exit, so a test can tell that athanor killed it early.
+    record();
+    const spec = args[1] ?? '';
+    const colon = spec.indexOf(':');
+    const id = spec.slice(0, colon);
+    const path = spec.slice(colon + 1);
+    if (!existsSync(fileFor(containersDir, nameOf(id)))) { console.error(`Error response from daemon: No such container: ${id}`); return 1; }
+    const work = (scenario.run?.work ?? ['/root/work'])[0] as string;
+    const entry = scenario.cp?.[path.startsWith(work + '/') ? path.slice(work.length + 1) : path];
+    if (!entry || entry.missing) { console.error(`Error response from daemon: Could not find the file ${path} in container ${id}`); return 1; }
+    if (entry.fails) {
+      // With a tar, the bytes are sent first and the failure follows.
+      if (entry.tar) await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
+      console.error(entry.fails);
+      return 1;
+    }
+    if (entry.hang) { await sleep(60000); return 1; }
+    await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
+    if (entry.lingerMs) await sleep(entry.lingerMs);
+    appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, finished: true }) + '\n');
     return 0;
   }
   if (a === 'ps') {
@@ -260,10 +300,12 @@ async function main() {
       return 125;
     }
     writeFileSync(path, JSON.stringify({ name, labels, image, running: true }));
+    // The boot script's work line, just before the marker; plan.work lists the lines to print.
+    const workLines = (plan.work ?? ['/root/work']).map((w: string) => `athanor-work ${w}\n`).join('');
     if (plan.skipStdin) {
       // Exit without reading the snapshot, closing the pipe under git archive.
       record();
-      if (plan.marker) process.stderr.write('athanor-boot-ok\n');
+      if (plan.marker) process.stderr.write(workLines + 'athanor-boot-ok\n');
       finish(path, plan.exitCode, false);
       process.exit(plan.exitCode);
     }
@@ -272,7 +314,7 @@ async function main() {
     const input = await readStdin();
     record({ at, tar: readTar(input) });
     if (plan.tarFails) { console.error('tar: short read'); finish(path, 2, false); return 2; }
-    if (plan.marker) process.stderr.write('athanor-boot-ok\n');
+    if (plan.marker) process.stderr.write(workLines + 'athanor-boot-ok\n');
     if (plan.stdout) process.stdout.write(plan.stdout);
     if (plan.stderr) process.stderr.write(plan.stderr);
     if (plan.hangMs) {

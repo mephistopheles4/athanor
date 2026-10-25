@@ -11,7 +11,12 @@ interface CliOptions {
   json: boolean;
   name?: string;
   command?: string[];
+  // Arguments for the named command, from after --.
+  args?: string[];
+  // Words after the name given without --, passed on so the core can say how to give them.
+  extraNames?: string[];
   untracked?: boolean;
+  output?: string;
   dryRun?: boolean;
   days?: number;
 }
@@ -40,7 +45,7 @@ export function parseArgs(argv: string[]): Parsed {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
   const allowed: string[] = {
-    run: ['--json', '--untracked'],
+    run: ['--json', '--untracked', '--output'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
   }[command];
@@ -51,7 +56,9 @@ export function parseArgs(argv: string[]): Parsed {
     if (command === 'run' && arg === '--') {
       const after = rest.slice(i + 1);
       if (after.length === 0) throw new AthanorError('There is nothing after --. Give the command to run after it, or leave -- out.');
-      options.command = after;
+      // With no name before it, -- starts a whole command; after a name, the words are its arguments.
+      if (names.length === 0) options.command = after;
+      else options.args = after;
       break;
     }
     if (arg.startsWith('-')) {
@@ -61,6 +68,13 @@ export function parseArgs(argv: string[]): Parsed {
       if (arg === '--json') options.json = true;
       else if (arg === '--untracked') options.untracked = true;
       else if (arg === '--dry-run') options.dryRun = true;
+      else if (arg === '--output') {
+        const value = rest[++i];
+        if (value === undefined || value === '' || value.startsWith('-')) {
+          throw new AthanorError('--output needs a folder to copy into, which must not exist yet. Put a folder name right after it, for example one under your user profile.');
+        }
+        options.output = value;
+      }
       else if (arg === '--days') {
         const value = rest[++i];
         if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
@@ -73,10 +87,8 @@ export function parseArgs(argv: string[]): Parsed {
     if (command !== 'run') throw new AthanorError(`athanor ${command} takes no names, but got "${arg}".`);
     names.push(arg);
   }
-  if (names.length > 1) {
-    throw new AthanorError(`athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To run a command of your own, put it after --.`);
-  }
-  if (names.length === 1) options.name = names[0] as string;
+  if (names.length >= 1) options.name = names[0] as string;
+  if (names.length > 1) options.extraNames = names.slice(1);
   return { command, options };
 }
 
@@ -139,6 +151,9 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
       cwd: process.cwd(),
       name: options.name,
       command: options.command,
+      args: options.args,
+      extraNames: options.extraNames,
+      output: options.output,
       untracked: options.untracked === true,
       signal: controller.signal,
       onProgress,
@@ -154,6 +169,8 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
 }
 
 function resultLine(result: RunResult): string {
+  // The test ran and exited, but its outputs could not be copied: the message says both.
+  if (result.testExitCode !== undefined) return `${result.message?.replace(/\.$/, '')} (exit ${result.exitCode}).`;
   switch (result.outcome) {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;

@@ -1,6 +1,6 @@
 # 0007. Snapshots never write the repo
 
-Date: 2026-10-19 · Status: accepted · Source: spec revision 5 on issue 1 (S4, C4, C5, C21, C30)
+Date: 2026-10-19 · Status: accepted, extended by 0023 · Source: spec revision 5 on issue 1 (S4, C4, C5, C21, C30)
 
 `git stash create` rewrites the index it is given, so it runs against a copy
 of the real index in the state folder (`GIT_INDEX_FILE`). `--untracked` fills

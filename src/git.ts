@@ -161,6 +161,9 @@ export async function snapshot(root: string, scratch: Scratch, { untracked }: { 
     return { id: tree, untracked: true, untrackedLeftOut: 0 };
   }
   const env = scratch.env(true);
+  // `stash create` refuses an index copy holding an intent-to-add entry (git add -N);
+  // `add -u` turns each into a real entry at its working-tree content (issue 46, M8).
+  await git(['add', '-u', '--', '.'], { cwd: root, env, what: 'read files added with git add -N' });
   const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes' })).trim();
   const id = stash || (await git(['rev-parse', 'HEAD'], { cwd: root, what: 'read HEAD' })).trim();
   return { id, untracked: false, untrackedLeftOut: untrackedCount };

@@ -1,6 +1,6 @@
 # 0009. Machine configuration, with ceilings
 
-Date: 2026-10-19 · Status: accepted, superseded in part by 0017 · Source: spec revision 5 on issue 1 (S4, T5, C24, C31)
+Date: 2026-10-19 · Status: accepted, superseded in part by 0017, extended by 0023 · Source: spec revision 5 on issue 1 (S4, T5, C24, C31)
 
 An optional `config.json` in the state folder holds `maxRuns`, the default
 `memory`, `cpus` and `timeoutMinutes`, `pruneDays`, and the ceilings

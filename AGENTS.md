@@ -22,14 +22,18 @@ lasting decisions are in [docs/adr/](docs/adr/).
 - **The public interface is stable.** The JSON fields, the exit codes, the
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
-  and the package's major version. An addition bumps neither.
+  and the package's major version. An addition bumps neither. Exceptions
+  are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
+  form that ran something other than what it named may be fixed without a
+  bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`. The only
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
-  written `-e NAME=` and never `-e NAME`, which would copy the host's value in. A change here is security-sensitive work.
+  written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
+  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. A change here is security-sensitive work.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and
@@ -105,13 +109,17 @@ Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
 issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
-issue 6; `H1` to `H4`, from the PR that added the agent test hook). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
 tier's pass, and no test carries its name either. `A1` to `A7`, from the spec
 on issue 34, are CI steps, one-time checks recorded in the PR, or checks by
-reading; no test carries their names. R1 and R2 are fast-tier tests. R3, R4,
+reading; no test carries their names. M18 is checked by reading at review (ADR
+0023, the docs, the threat-model text as the owner approved it, and that
+`src/container-settings.ts` changes only by the work line). M19 is a manual
+check, one Stryker run on a repo the owner names. M20 is checked at Test by the
+security pair. R1 and R2 are fast-tier tests. R3, R4,
 R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
 one-time checks by the owner recorded on issue 6; no test carries their names.
 

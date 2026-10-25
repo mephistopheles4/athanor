@@ -24,7 +24,7 @@ interface DockerContext {
 // The first line of Docker's output, as athanor quotes it. Besides the shown
 // form, it drops the login the Docker CLI's ssh helper names in its own error
 // text: "-l <user>", and "<user>@<host>" (but not "<image>@sha256:...").
-const firstLine = (text: unknown): string => shown(
+export const firstLine = (text: unknown): string => shown(
   (String(text).trim().split('\n')[0]?.trim() ?? '')
     .replace(/(^|\s)-l\s+\S+/g, '$1-l')
     .replace(/(^|[\s=[(])[\w.-]+@(?!sha\d+:)(?=[\w[])/g, '$1'),
@@ -385,14 +385,16 @@ export async function removeContainer(docker: DockerCommand, name: string, env?:
   await call([...docker, 'rm', '-f', name], { env });
 }
 
-// { exitCode, oom } or null when the read fails.
-export async function readExit(docker: DockerCommand, name: string, env?: NodeJS.ProcessEnv): Promise<{ exitCode: number; oom: boolean } | null> {
-  const r = await call([...docker, 'inspect', '--format', '{{.State.ExitCode}} {{.State.OOMKilled}}', name], { env });
+// { exitCode, oom, id } or null when the read fails. The ID is what a copy
+// out of the stopped container is addressed by; it is left out when Docker
+// printed something else.
+export async function readExit(docker: DockerCommand, name: string, env?: NodeJS.ProcessEnv): Promise<{ exitCode: number; oom: boolean; id?: string } | null> {
+  const r = await call([...docker, 'inspect', '--format', '{{.State.ExitCode}} {{.State.OOMKilled}} {{.Id}}', name], { env });
   if (r.code !== 0) return null;
-  const [code, oom] = r.stdout.trim().split(/\s+/);
+  const [code, oom, id] = r.stdout.trim().split(/\s+/);
   const exitCode = Number(code);
   if (!Number.isInteger(exitCode)) return null;
-  return { exitCode, oom: oom === 'true' };
+  return { exitCode, oom: oom === 'true', ...(id !== undefined && /^[0-9a-f]{64}$/.test(id) ? { id } : {}) };
 }
 
 // Every container with an athanor slot label: [{ name, slot, image }].
