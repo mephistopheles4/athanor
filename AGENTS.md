@@ -1,8 +1,8 @@
 # AGENTS.md — athanor
 
-athanor runs a repo's tests on the current commit inside a fresh Docker
-container with no network, and keeps a machine-wide limit on how many runs go
-at once. It is a Node 24 package, `@mephistopheles4/athanor`, with a command named
+athanor runs a repo's tests on the tracked files in the working tree,
+uncommitted edits included, inside a fresh Docker container, and keeps a
+machine-wide limit on how many runs go at once. It is a Node 24 package, `@mephistopheles4/athanor`, with a command named
 `athanor`. Words used here are defined in [GLOSSARY.md](GLOSSARY.md); the
 lasting decisions are in [docs/adr/](docs/adr/).
 
@@ -26,7 +26,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
   form that ran something other than what it named may be fixed without a
   bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
-- **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
+- **Nothing reaches the test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`. The only
@@ -34,6 +34,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
   `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. A change here is security-sensitive work.
+  So is a change to what reaches the image build, its build arguments included.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and

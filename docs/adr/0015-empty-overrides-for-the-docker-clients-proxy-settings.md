@@ -28,7 +28,7 @@ The container is not started with `--rm`, so athanor can read its exit code,
 and whether the memory limit killed it, before it removes it.
 
 The empty overrides also blank a value an image's own `ENV` gives these names.
-The container has no network, so a proxy in it does nothing.
+The test container has no network, so a proxy in it does nothing.
 
 **The list is fixed.** It holds the names the Docker client fills from the five
 proxy settings it reads today. A setting that a later client adds reaches the

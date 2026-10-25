@@ -1,7 +1,7 @@
 {
   "name": "@mephistopheles4/athanor",
   "version": "0.1.1",
-  "description": "Run a repo's tests on the current commit in a fresh, offline Docker container, with a machine-wide run limit.",
+  "description": "Run a repo's tests on the tracked files in the working tree, uncommitted edits included, in a fresh Docker container, with a machine-wide run limit.",
   "license": "MIT",
   "author": "Ayman Diab",
   "repository": {
