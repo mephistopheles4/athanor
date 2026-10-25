@@ -423,3 +423,23 @@ test('N9 a test that hits its process limit ends as its own failure, not memory 
   assert.equal(result.outcome, 'fail', stdout + stderr);
   assert.equal(result.exitCode, 3, stdout + stderr);
 });
+
+test('V5 the memory limit: a killed child keeps the test\'s own exit, a killed test gives 137', async (t) => {
+  const rows = [
+    { name: 'a child is killed and the shell exits 0', argv: ['sh', '-c', 'head -c 300m /dev/zero | tail >/dev/null; exit 0'], container: 0 },
+    { name: 'the test process itself is killed', argv: ['sh', '-c', 'exec tail /dev/zero'], container: 137 },
+  ];
+  for (const row of rows) {
+    await t.test(row.name, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, {
+        athanor: { ...config, commands: { test: ['true'], hog: { argv: row.argv, memory: '64m', timeoutMinutes: 5 } } },
+        files: FIXTURE,
+      });
+      const { result, stdout, stderr } = await runReal(t, repo, { name: 'hog' });
+      assert.equal(result.outcome, 'memory', stdout + stderr);
+      assert.equal(result.exitCode, 137);
+      assert.equal(result.containerExitCode, row.container, JSON.stringify(result));
+    });
+  }
+});

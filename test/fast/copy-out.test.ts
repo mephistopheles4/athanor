@@ -373,6 +373,30 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
     assert.equal(existsSync(s.dir), false);
   });
 
+  await t.test("V3 memory: a failed copy after the test exited on its own keeps testExitCode 137 and gives the container's exit", async (t) => {
+    for (const row of [
+      { exitCode: 0, says: /^The test exited 0 after the memory limit killed a process in the container, but its outputs could not be copied: / },
+      { exitCode: 137, says: /^The test exited 137 after hitting the memory limit, but its outputs could not be copied: / },
+    ]) {
+      const s = scene(t, { cp: { out: served(buildTar([{ name: 'out/.git/config' }])) }, plan: { oom: true, exitCode: row.exitCode } });
+      const { result } = await copy(s);
+      assert.equal(result.outcome, 'error', JSON.stringify(result));
+      assert.equal(result.exitCode, 125);
+      assert.equal(result.testExitCode, 137);
+      assert.equal(result.containerExitCode, row.exitCode);
+      assert.match(result.message!, row.says);
+    }
+  });
+
+  await t.test('V4 memory: the files land when the test exited 0 after a process was killed', async (t) => {
+    const s = scene(t, { cp: { out: tar }, plan: { oom: true, exitCode: 0 } });
+    const { result } = await copy(s);
+    assert.equal(result.outcome, 'memory', JSON.stringify(result));
+    assert.equal(result.containerExitCode, 0);
+    assert.equal(result.outputs!.files, 1);
+    assert.equal(readFileSync(join(s.dir, 'out', 'a.txt'), 'utf8'), 'a');
+  });
+
   const rows: { name: string; plan: Record<string, unknown>; extra?: RunOptions; outcome: string }[] = [
     { name: 'timeout', plan: { hangMs: 5000 }, extra: { timeLimitSeconds: 1 }, outcome: 'timeout' },
     { name: 'error', plan: { tarFails: true }, outcome: 'error' },

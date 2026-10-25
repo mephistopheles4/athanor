@@ -177,7 +177,7 @@ pass secrets as arguments.
 
 `--output <dir>` copies the command's `outputs` out of the stopped container
 into `<dir>`, a folder athanor makes and that must not exist yet. It copies
-after a test that passed, failed or was ended by the memory limit (the outcome
+after a test that passed, failed or met the memory limit (the outcome
 stays `memory`, exit 137, and a report cut off by the kill may be partly
 written), and not after a timeout, an interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
 `%USERPROFILE%` on Windows, and `athanor-reports` must exist already; athanor
@@ -202,7 +202,9 @@ whole copy on a bad one, or on a folder laid out as a bare git repository
 the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url`
 and the like). A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
-ends the run with exit 125 and the test's own exit in `testExitCode`.
+ends the run with exit 125 and the test's own exit in `testExitCode`; after a
+memory run, `testExitCode` is 137 and `containerExitCode` holds the
+container's own exit.
 
 A run tests your tracked files as they are in the working tree, staged or
 not (a file added with `git add -N` counts), and tells you how many untracked
@@ -226,13 +228,20 @@ untracked ones, into the repo's `.git/lfs` folder, where they stay.
 | --- | --- |
 | the test's own | the test command ran and exited with it |
 | 124 | the time limit ended the run |
-| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment; or the test ran but its outputs could not be copied (the test's exit is `testExitCode`) |
+| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment; or the test ran but its outputs could not be copied (the test's exit is `testExitCode`, 137 after a memory run) |
 | 130 | an interrupt ended the run |
-| 137 | with outcome `memory`, the memory limit ended the run |
+| 137 | with outcome `memory`, the memory limit killed a process in the container: the test itself, or another process before the test exited |
 
 The JSON `outcome` field (`pass`, `fail`, `timeout`, `memory`,
 `interrupted`, `error`) tells a test's own 124, 125 or 130 apart from
 athanor's.
+
+Docker reports a memory kill for the whole container, not for one process,
+so any kill during the run makes the outcome `memory`. The JSON
+`containerExitCode` field, set only then, is the container's own exit: 137
+when the test itself was killed, and the test's exit when it exited on its
+own after another process, such as a worker, was killed. In that case the
+result line says so, and the test's result may be incomplete.
 
 ## Machine configuration
 

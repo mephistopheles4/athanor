@@ -38,6 +38,10 @@ export interface Ran {
   outcome: Outcome;
   exitCode: number;
   message?: string;
+  // Set when Docker reports that the memory limit killed a process: the
+  // container's own exit. Not 137 means the test exited on its own after
+  // another process was killed (ADR 0030).
+  containerExitCode?: number;
 }
 
 // What a container run hands back: the outcome, the work lines the boot script
@@ -118,6 +122,6 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   if (!state) {
     return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: 'athanor could not read how the container ended (docker inspect failed). Check that Docker is still running.' });
   }
-  if (state.oom) return handed({ ...base, outcome: 'memory', exitCode: EXIT.memory });
+  if (state.oom) return handed({ ...base, outcome: 'memory', exitCode: EXIT.memory, containerExitCode: state.exitCode });
   return handed({ ...base, outcome: state.exitCode === 0 ? 'pass' : 'fail', exitCode: state.exitCode });
 }

@@ -168,14 +168,19 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
   }
 }
 
-function resultLine(result: RunResult): string {
+// The line printed for a run's result. Exported for tests, as parseArgs is.
+export function resultLine(result: RunResult): string {
   // The test ran and exited, but its outputs could not be copied: the message says both.
   if (result.testExitCode !== undefined) return `${result.message?.replace(/\.$/, '')} (exit ${result.exitCode}).`;
   switch (result.outcome) {
     case 'pass': return 'the test command passed (exit 0).';
     case 'fail': return `the test command failed with exit ${result.exitCode}.`;
     case 'timeout': return `the time limit ended the run (exit ${result.exitCode}). Raise timeoutMinutes, or find what hangs.`;
-    case 'memory': return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
+    case 'memory':
+      if (result.containerExitCode !== undefined && result.containerExitCode !== EXIT.memory) {
+        return `the test exited ${result.containerExitCode}, but the memory limit killed a process in the container during the run (exit ${result.exitCode}). The test's result may be incomplete. Raise memory in the repo configuration, or use less.`;
+      }
+      return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
     case 'interrupted': return `the run was interrupted and cleaned up (exit ${result.exitCode}).`;
     default: return `athanor could not run the test (exit ${result.exitCode}): ${result.message}`;
   }
