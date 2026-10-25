@@ -368,6 +368,8 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
     const { result } = await copy(s);
     assert.equal(result.outcome, 'error', JSON.stringify(result));
     assert.equal(result.testExitCode, 137);
+    assert.equal(result.exitCode, 125, 'a failed copy is exit 125, whatever the test exit was');
+    assert.match(result.message!, /test exited 137 after hitting the memory limit/);
     assert.equal(existsSync(s.dir), false);
   });
 
@@ -433,7 +435,7 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
     const base = Date.now();
     assert.equal((await copy(baseline, { copyTimeMs: 3000 })).result.outcome, 'pass');
     const baseMs = Date.now() - base;
-    // The second output hangs. From the copy's start the bound ends it 500 ms after the first output; a fresh bound would end it 1500 ms after.
+    // The second output hangs. From the copy's start the bound ends it 1000 ms after the first output; a fresh bound would end it 3000 ms after.
     const s = scene(t, { outputs: ['one', 'two'], cp: { one: first, two: { hang: true } } });
     const started = Date.now();
     const { result } = await copy(s, { copyTimeMs: 3000 });

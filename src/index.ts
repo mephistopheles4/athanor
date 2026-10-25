@@ -311,7 +311,7 @@ async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
     if (error instanceof CopyError) {
       return {
         outcome: 'error', exitCode: EXIT.setup, testExitCode: testExit,
-        message: `The test exited ${testExit}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
+        message: `The test exited ${testExit}${c.handed.ran.outcome === 'memory' ? ' after hitting the memory limit' : ''}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
       };
     }
     throw error;
