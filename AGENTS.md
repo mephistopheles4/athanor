@@ -34,6 +34,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
   `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. A change here is security-sensitive work.
+  So is a change to what reaches the image build, its build arguments included.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and
