@@ -26,7 +26,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
   form that ran something other than what it named may be fixed without a
   bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
-- **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
+- **Nothing reaches the test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`. The only
