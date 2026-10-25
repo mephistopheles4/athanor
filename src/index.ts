@@ -15,7 +15,7 @@ import type { Slot } from './slots.js';
 import { start, feed } from './proc.js';
 import { containerSettings } from './container-settings.js';
 import { runContainer } from './container-run.js';
-import type { Handed, Outcome, Sink } from './container-run.js';
+import type { Handed, Outcome, Ran, Sink } from './container-run.js';
 import { copyOut, checkOutputTarget, workFolder, CopyError, CopyInterrupted, MAX_ENTRIES, COPY_TIME_MS } from './copy-out.js';
 import type { OutputTarget } from './copy-out.js';
 
@@ -68,8 +68,13 @@ export interface RunResult {
   slot?: number;
   ranMs?: number;
   message?: string;
-  // Set when the test ran and exited but copying its outputs failed: the test's own exit.
+  // Set when the test ran and exited but copying its outputs failed: the test's own
+  // exit, or athanor's 137 after a memory run, when containerExitCode holds the
+  // container's own exit (ADR 0030).
   testExitCode?: number;
+  // Set when the memory limit killed a process: the container's own exit,
+  // 137 when the test itself was killed or exited 137 (ADR 0030).
+  containerExitCode?: number;
   // Set when outputs were copied. A folder is complete only when this is present.
   outputs?: { dir: string; files: number; bytes: number; skipped: number; missing: string[] };
 }
@@ -311,11 +316,18 @@ async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
     if (error instanceof CopyError) {
       return {
         outcome: 'error', exitCode: EXIT.setup, testExitCode: testExit,
-        message: `The test exited ${testExit}${c.handed.ran.outcome === 'memory' ? ' after hitting the memory limit' : ''}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
+        message: `The test exited ${exitedHow(c.handed.ran)}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
       };
     }
     throw error;
   }
+}
+
+// How the test ended, for a copy-failure message: its exit, and what the memory limit did.
+function exitedHow(ran: Ran): string {
+  if (ran.outcome !== 'memory') return String(ran.exitCode);
+  if (ran.containerExitCode === undefined || ran.containerExitCode === EXIT.memory) return `${ran.exitCode} after hitting the memory limit`;
+  return `${ran.containerExitCode} after the memory limit killed a process in the container`;
 }
 
 async function warnOnOtherLimits(prefix: string, slot: number, limit: number, onProgress: (line: string) => void): Promise<void> {

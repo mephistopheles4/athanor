@@ -559,3 +559,35 @@ test('C32 with core.autocrlf=true, a file stored with LF arrives with LF in the 
   assert.equal(tarFile(lastBuildTar(docker), 'lf.sh'), 'one\ntwo\n');
   assert.ok(existsSync(join(repo, 'run.sh')));
 });
+
+test('V1 a memory run keeps the container\'s own exit in containerExitCode, and no other run has it', async (t) => {
+  const rows = [
+    { name: 'a process was killed, then the test exited 0', run: { exitCode: 0, oom: true }, container: 0 },
+    { name: 'a process was killed, then the test exited 3', run: { exitCode: 3, oom: true }, container: 3 },
+    { name: 'the test itself was killed', run: { exitCode: 137, oom: true }, container: 137 },
+  ];
+  for (const row of rows) {
+    await t.test(row.name, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, { athanor: baseConfig });
+      const result = await runWith(t, repo, fake(t, { run: row.run }));
+      assert.equal(result.outcome, 'memory', JSON.stringify(result));
+      assert.equal(result.exitCode, 137);
+      assert.equal(result.containerExitCode, row.container);
+    });
+  }
+  const others = [
+    { name: 'pass', run: { exitCode: 0 }, outcome: 'pass' },
+    { name: 'fail', run: { exitCode: 1 }, outcome: 'fail' },
+    { name: 'timeout', run: { hangMs: 20000 }, outcome: 'timeout', extra: { timeLimitSeconds: 1, graceSeconds: 2 } },
+  ];
+  for (const row of others) {
+    await t.test(row.name, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, { athanor: baseConfig });
+      const result = await runWith(t, repo, fake(t, { run: row.run }), row.extra);
+      assert.equal(result.outcome, row.outcome, JSON.stringify(result));
+      assert.equal('containerExitCode' in result, false);
+    });
+  }
+});

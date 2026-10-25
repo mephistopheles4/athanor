@@ -30,4 +30,5 @@ changed one gets a new record that names the one it replaces.
 | [0024](0024-a-hook-holds-agent-fast-runs-to-athanor.md) | A hook holds an agent's fast runs to athanor |
 | [0028](0028-a-command-can-raise-its-process-limit-up-to-a-machine-ceiling.md) | A command can raise its process limit, up to a machine ceiling (extends 0009 and 0023) |
 | [0029](0029-a-github-release-is-made-by-hand-after-the-version-is-live.md) | A GitHub release is made by hand, after the version is live (extends 0019, extended by 0031) |
+| [0030](0030-oomkilled-means-some-process-was-killed-not-the-test.md) | OOMKilled means some process was killed, not the test (extends 0003, 0016 and 0023) |
 | [0031](0031-every-tag-is-fixed-and-a-release-is-read-as-a-draft.md) | Every tag is fixed, and a release is read as a draft (extends 0029) |
