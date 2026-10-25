@@ -127,6 +127,11 @@ one-time checks by the owner recorded on issue 6; no test carries their names.
 `Z1` to `Z6`, from the spec on issue 57: Z1 to Z4 are checks by reading at
 review, Z5 is a manual check at the next release recorded on issue 57, and Z6
 is the diff's file list and CI; no test carries their names.
+`W1` to `W10`, from the spec on issues 53 and 63: W1 to W8 are checks by
+reading at review, W1 with one run of its command on a local pack and W4 with
+one run of its two commands under the owner's gh login, both recorded in the
+review; W9 is a manual check at the next release recorded on issue 63; and
+W10 is the diff's file list and CI. No test carries their names.
 
 ## Releases
 
