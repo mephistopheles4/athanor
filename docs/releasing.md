@@ -195,6 +195,22 @@ npm config get registry
        - which npm user the version's record names, and whether it shows an
          email address.
 
+### Before the next release, once
+
+Zenodo makes a permanent record of whatever a `v*` tag holds, so release
+tags are fixed once pushed. In the repo's Settings, Rules, Rulesets, add two
+tag rulesets, both active, both targeting tags matching `v*`:
+
+- one that restricts updates and deletions, with no bypass;
+- one that restricts creations, with only the repository admin role on its
+  bypass list, so only you can push a release tag.
+
+Then check that both are listed, as tag rulesets:
+
+```powershell
+gh api repos/mephistopheles4/athanor/rulesets --jq '.[] | select(.target == "tag") | .name'
+```
+
 ### Each release
 
 Every log-out on this page ends with `npm whoami` failing, as in step 16.
@@ -319,16 +335,27 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 
     ```powershell
     gh auth status
+    ```
+
+    It must show your account, with the token kept in the system keyring,
+    not in gh's config file. Then:
+
+    ```powershell
     gh release create v<version> -R mephistopheles4/athanor --verify-tag --title v<version> --generate-notes --notes-start-tag v<last>
     ```
 
     Within a few minutes, Zenodo's GitHub page, under your Zenodo account's
     settings, lists `v<version>` with a DOI. Check that its record names the
     author and ORCID iD from `CITATION.cff`; if they are wrong, edit the
-    record's metadata on Zenodo. If no record appears, open the Zenodo
-    webhook's recent deliveries in the repo's settings and redeliver the
-    release event. Never make a second release for the same version. If
-    `gh release create` itself fails, see "If a run fails".
+    record's metadata on Zenodo. Check too that the archived source is
+    `<commit>`: the record's file listing shows one top folder, which GitHub
+    names after the first seven characters of the commit. If it is another
+    commit, stop, don't cite the DOI, and record it in an issue. If no record
+    appears, repeat the `git ls-remote` check, then open the Zenodo
+    webhook's recent deliveries in the repo's settings and use Redeliver on
+    the release event. Never copy a delivery's address or payload into an
+    issue or a session. Never make a second release for the same version.
+    If `gh release create` itself fails, see "If a run fails".
 
 ### If a run fails
 
@@ -365,7 +392,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   (ADR 0018), so `npm pack` and `npm publish` do not run `prepack`. Run
   without step 3 of the first publish, `npm publish` ships a stale or missing
   `dist/`.
-- **No token stays on the machine.** Never write a token into the repo's
+- **No npm token stays on the machine.** Never write a token into the repo's
   `.npmrc`, and never keep one on the machine between publishes. Log in just
   before the publish and out straight after.
 - **The login sits in your npm configuration until you log out.** From
@@ -395,10 +422,14 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   version approved from staging names is shown by the first workflow release
   (step 11, and claim R8 of the spec on issue 6), and is
   written here then.
-- **A GitHub release makes a permanent Zenodo record.** Zenodo archives the
+- **A GitHub release makes a permanent, public Zenodo record,** naming the
+  authors and ORCID iDs in `CITATION.cff`. Zenodo archives the
   repo at the release's tag and mints a DOI, and the record can't be
   deleted, so the release comes last in step 17, once the version is live
-  and checked. Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
+  and checked. The archive holds every file at the tag, so a secret ever
+  committed and still there stays in a record no history rewrite can
+  reach: rotate it, and remove it from the tree, before you release.
+  Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
   predate it and have no release; the first record comes with the next
   release.
 - **If a bad version goes live,** deprecate it with `npm deprecate` and
