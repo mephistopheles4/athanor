@@ -13,7 +13,7 @@ checked and tagged. No job in `release.yml` makes a release.
   it on npm, outside the workflow, and the owner tags it by hand. A release
   made inside the workflow would come before that approval, and a Zenodo
   record can't be deleted, even for a version the owner then rejects.
-- **No write token in the release path.** A job that makes a release needs
+- **No write token in the workflow.** A job that makes a release needs
   `contents: write`, an environment the owner approves, and a new accepted
   risk: that token can move tags and push branches. The hand step needs none
   of these.

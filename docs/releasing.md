@@ -3,7 +3,8 @@
 The first version of `@mephistopheles4/athanor` is published by hand. Every
 later one is staged by the release workflow and made live by the owner
 (ADR 0019); see [Later releases, through the workflow](#later-releases-through-the-workflow).
-The owner's last step for each version is a GitHub release, made by hand,
+The owner's last step for each later version that stays live is a GitHub
+release, made by hand,
 from which Zenodo archives the repo (ADR 0029).
 Only the owner does any step on this page.
 
@@ -308,22 +309,26 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     Then publish the GitHub release, from which Zenodo archives the repo and
     mints a DOI. Skip this for a version you deprecated above: a Zenodo
     record can't be deleted. First check, by eye:
-    - `git ls-remote origin refs/tags/v<version>` prints the run's commit;
+    - `git ls-remote origin refs/tags/v<version>` prints `<commit>`, the
+      commit you tagged above;
     - `npm view @mephistopheles4/athanor@<version> dist.integrity` prints
       the integrity the **check** job's summary shows.
 
-    Then, with your own gh login, where `<last>` is the tag you diffed
-    against in step 13:
+    Then, with your own gh login, where `<last>` is the version whose tag,
+    `v<last>`, you diffed against in step 13:
 
     ```powershell
     gh auth status
     gh release create v<version> -R mephistopheles4/athanor --verify-tag --title v<version> --generate-notes --notes-start-tag v<last>
     ```
 
-    Check that Zenodo made a record for `v<version>`, naming the author and
-    ORCID iD from `CITATION.cff`. If none appears, open the Zenodo webhook's
-    recent deliveries in the repo's settings and redeliver the release
-    event. Never make a second release for the same version.
+    Within a few minutes, Zenodo's GitHub page, under your Zenodo account's
+    settings, lists `v<version>` with a DOI. Check that its record names the
+    author and ORCID iD from `CITATION.cff`; if they are wrong, edit the
+    record's metadata on Zenodo. If no record appears, open the Zenodo
+    webhook's recent deliveries in the repo's settings and redeliver the
+    release event. Never make a second release for the same version. If
+    `gh release create` itself fails, see "If a run fails".
 
 ### If a run fails
 
