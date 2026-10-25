@@ -15,6 +15,8 @@ export const DEFAULTS = Object.freeze({
   maxMemory: '8g',
   maxTimeoutMinutes: 120,
   maxOutputMegabytes: 1024,
+  processes: 1024,
+  maxProcesses: 1024,
 });
 
 // Where a value came from.
@@ -30,6 +32,12 @@ interface Check {
 
 const positiveInteger: Check = { ok: (v) => Number.isInteger(v) && (v as number) > 0, rule: 'must be a positive whole number' };
 const positiveNumber: Check = { ok: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0, rule: 'must be a number greater than 0' };
+// 4194304 is the Linux kernel's largest process limit, and Docker reads 0 and
+// -1 as no limit, so both are outside the range (ADR 0028).
+const processCount: Check = {
+  ok: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 4194304,
+  rule: 'must be a whole number from 1 to 4194304',
+};
 const memory = (example: string): Check => ({
   ok: (v) => typeof v === 'string' && /^[0-9]*[1-9][0-9]*[mg]$/.test(v),
   rule: `must be digits followed by m or g, such as ${example}`,
@@ -48,11 +56,13 @@ const KEYS = {
   memory: { repo: true, machine: true, check: memory('512m or 2g') },
   cpus: { repo: true, machine: true, check: positiveNumber },
   timeoutMinutes: { repo: true, machine: true, check: positiveNumber },
+  processes: { repo: true, machine: true, check: processCount },
   maxRuns: { repo: false, machine: true, check: positiveInteger },
   pruneDays: { repo: false, machine: true, check: positiveInteger },
   maxMemory: { repo: false, machine: true, check: memory('8g') },
   maxCpus: { repo: false, machine: true, check: positiveNumber },
   maxTimeoutMinutes: { repo: false, machine: true, check: positiveNumber },
+  maxProcesses: { repo: false, machine: true, check: processCount },
   allowPlainTcp: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
   allowRemoteDocker: { repo: false, machine: true, check: { ok: (v) => typeof v === 'boolean', rule: 'must be true or false' } },
   maxOutputMegabytes: { repo: false, machine: true, check: positiveInteger },
@@ -75,11 +85,13 @@ export interface MachineValues {
   memory: string;
   cpus: number;
   timeoutMinutes: number;
+  processes: number;
   maxRuns: number;
   pruneDays: number;
   maxMemory: string;
   maxCpus: number;
   maxTimeoutMinutes: number;
+  maxProcesses: number;
   allowPlainTcp: boolean;
   allowRemoteDocker: boolean;
   maxOutputMegabytes: number;
@@ -100,9 +112,10 @@ interface CommandObject {
   memory?: string;
   cpus?: number;
   timeoutMinutes?: number;
+  processes?: number;
 }
 
-const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes'];
+const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes'];
 
 interface RepoValues {
   dockerfile: string;
@@ -112,6 +125,7 @@ interface RepoValues {
   memory?: string;
   cpus?: number;
   timeoutMinutes?: number;
+  processes?: number;
 }
 
 // cpus is unset when neither file sets it and the machine sets no maxCpus: the
@@ -120,6 +134,7 @@ export interface Limits {
   memory: string;
   cpus?: number;
   timeoutMinutes: number;
+  processes: number;
 }
 
 type LimitKey = keyof Limits;
@@ -337,7 +352,7 @@ function checkCommand(name: string, command: unknown, place: string, lead: strin
     const problem = checkOutputs(command.outputs);
     if (problem) throw new AthanorError(`In ${place}, commands.${name}.outputs ${problem}.`);
   }
-  for (const k of ['memory', 'cpus', 'timeoutMinutes'] as const) {
+  for (const k of ['memory', 'cpus', 'timeoutMinutes', 'processes'] as const) {
     const check = checkOf(k);
     if (check && command[k] !== undefined && !check.ok(command[k])) {
       throw new AthanorError(`In ${place}, commands.${name}.${k} ${check.rule}.`);
@@ -393,7 +408,9 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // Per-run limits: the command's own, then the repo's, then the machine file,
   // then the defaults, each held to the machine's ceilings. cpus has no
   // default, and maxCpus has none either: when the machine sets it, it is also
-  // the cpus of a run that sets none. The -- form takes the repo's values.
+  // the cpus of a run that sets none. processes defaults to the smaller of
+  // 1024 and maxProcesses, so a raised ceiling never raises it (ADR 0028).
+  // The -- form takes the repo's values.
   const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
     if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${commandName}.${key}` } };
     if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
@@ -402,14 +419,21 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
       const cap = machine.values.maxCpus;
       return cap !== undefined ? { value: cap as Limits[K], source: machineSource } : { value: undefined as Limits[K], source: { kind: 'default' } };
     }
+    if (key === 'processes') {
+      const cap = machine.values.maxProcesses;
+      if (cap !== undefined && cap < DEFAULTS.processes) return { value: cap as Limits[K], source: machineSource };
+    }
     return { value: DEFAULTS[key as Exclude<LimitKey, 'cpus'>] as Limits[K], source: { kind: 'default' } };
   };
-  const picked = { memory: pick('memory'), cpus: pick('cpus'), timeoutMinutes: pick('timeoutMinutes') };
-  const limits: Limits = { memory: picked.memory.value, cpus: picked.cpus.value, timeoutMinutes: picked.timeoutMinutes.value };
+  const picked = { memory: pick('memory'), cpus: pick('cpus'), timeoutMinutes: pick('timeoutMinutes'), processes: pick('processes') };
+  const limits: Limits = {
+    memory: picked.memory.value, cpus: picked.cpus.value, timeoutMinutes: picked.timeoutMinutes.value, processes: picked.processes.value,
+  };
   const ceilings = {
     maxMemory: machine.values.maxMemory ?? DEFAULTS.maxMemory,
     maxCpus: machine.values.maxCpus,
     maxTimeoutMinutes: machine.values.maxTimeoutMinutes ?? DEFAULTS.maxTimeoutMinutes,
+    maxProcesses: machine.values.maxProcesses ?? DEFAULTS.maxProcesses,
   };
   const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
     if (above) {
@@ -421,6 +445,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   over('memory', 'maxMemory', memoryBytes(limits.memory) > memoryBytes(ceilings.maxMemory));
   over('cpus', 'maxCpus', ceilings.maxCpus !== undefined && limits.cpus !== undefined && limits.cpus > ceilings.maxCpus);
   over('timeoutMinutes', 'maxTimeoutMinutes', limits.timeoutMinutes > ceilings.maxTimeoutMinutes);
+  over('processes', 'maxProcesses', limits.processes > ceilings.maxProcesses);
 
   return {
     build: { dockerfile, context, inputs, dockerfileInContext },
@@ -435,6 +460,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
       memory: picked.memory.source,
       cpus: picked.cpus.source,
       timeoutMinutes: picked.timeoutMinutes.source,
+      processes: picked.processes.source,
       allowPlainTcp: machine.values.allowPlainTcp !== undefined ? machineSource : { kind: 'default' },
       allowRemoteDocker: machine.values.allowRemoteDocker !== undefined ? machineSource : { kind: 'default' },
     },

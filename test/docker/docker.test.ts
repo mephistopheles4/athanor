@@ -89,7 +89,6 @@ test('C2 a warm run makes no build and adds at most 5 seconds to the container\'
   isolate(t);
   const repo = fixtureRepo(t);
   await runReal(t, repo);
-  const started = Date.now();
   const warm = await runReal(t, repo);
   const wall = Date.now() - started;
   assert.equal(warm.result.image!.built, false);
@@ -388,4 +387,38 @@ test('M16 outputs come out of a real container: files land, a link is skipped, a
   assert.deepEqual(result.outputs, { dir, files: 3, bytes: 12 + 7 + 5, skipped: 1, missing: ['absent'] });
   const left = docker(['ps', '-a', '--filter', `name=^${prefix}-slot-`, '--format', '{{.Names}}']);
   assert.equal(left.stdout.trim(), '', 'no athanor container is left');
+});
+
+test('N6 a command\'s own process limit, under a raised ceiling, reaches the container', async (t) => {
+  const home = isolate(t);
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ maxProcesses: 2048 }));
+  const prefix = uniquePrefix();
+  const repo = makeRepo(t, {
+    athanor: { ...config, commands: { test: ['true'], mutation: { argv: ['sleep', '6'], processes: 2048 } } },
+    files: FIXTURE,
+  });
+  const pending = runReal(t, repo, { prefix, name: 'mutation' });
+  let inspected: any;
+  await until(() => {
+    const r = docker(['inspect', '--format', '{{json .HostConfig}}', `${prefix}-slot-1`]);
+    if (r.status === 0) inspected = JSON.parse(r.stdout);
+    return r.status === 0;
+  }, 120000, 'the container to start');
+  const { result } = await pending;
+  assert.equal(result.outcome, 'pass', JSON.stringify(result));
+  assert.equal(inspected.PidsLimit, 2048);
+});
+
+test('N9 a test that hits its process limit ends as its own failure, not memory or error', async (t) => {
+  isolate(t);
+  // The inner shell keeps each sleep alive, so the processes add up, and it
+  // ends at the first start that fails; the outer shell maps that to exit 3.
+  const inner = 'i=0; while [ $i -lt 200 ]; do sleep 60 & i=$((i+1)); done; wait';
+  const repo = makeRepo(t, {
+    athanor: { ...config, commands: { test: ['true'], forks: { argv: ['sh', '-c', `sh -c '${inner}' || exit 3`], processes: 64, timeoutMinutes: 5 } } },
+    files: FIXTURE,
+  });
+  const { result, stdout, stderr } = await runReal(t, repo, { name: 'forks' });
+  assert.equal(result.outcome, 'fail', stdout + stderr);
+  assert.equal(result.exitCode, 3, stdout + stderr);
 });
