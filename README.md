@@ -261,8 +261,9 @@ Every run sets the ten proxy variables (`HTTP_PROXY`, `http_proxy`,
 password in your Docker client configuration does not reach the test code. That
 also blanks a value the image's own `ENV` gives them; the test container has
 no network, so a proxy in it does nothing. The image build still gets the proxy
-settings as build arguments, so a Dockerfile can read them. See
-[the threat model](docs/threat-model.md), accepted risk 1.
+settings as build arguments, so a Dockerfile can read them, and a value the
+build writes into the image can reach the test run (accepted risk 1 in
+[the threat model](docs/threat-model.md)).
 
 ## Secrets
 
