@@ -1,6 +1,6 @@
 # 0030. OOMKilled means some process was killed, not the test
 
-Date: 2026-10-25 · Status: accepted · Extends: 0003, 0016, 0023 · Source: the spec on issue 60 (revision 4, V1 to V8), signed off through the lead session under the owner's standing instruction
+Date: 2026-10-25 · Status: accepted · Extends: 0003, 0016, 0023 · Source: the spec on issue 60 (revision 5, V1 to V8, with q1 to q4), and q5 from its Test review, all signed off through the lead session under the owner's standing instruction
 
 athanor reads how a container ended from Docker's `.State.ExitCode` and
 `.State.OOMKilled`, and any `OOMKilled` made the outcome `memory`, exit 137.
