@@ -3,9 +3,9 @@
 The first version of `@mephistopheles4/athanor` is published by hand. Every
 later one is staged by the release workflow and made live by the owner
 (ADR 0019); see [Later releases, through the workflow](#later-releases-through-the-workflow).
-The owner's last step for each later version not deprecated in step 17 is a
-GitHub release, made by hand,
-from which Zenodo archives the repo (ADR 0029).
+The owner's last step for each later version not unpublished or deprecated in
+step 17 is a GitHub release, made by hand as a draft and published once read,
+from which Zenodo archives the repo (ADR 0029, ADR 0031).
 Only the owner does any step on this page.
 
 ## The first publish, by hand
@@ -189,27 +189,46 @@ npm config get registry
        `npm audit signatures`, which must report a verified attestation.
     3. Record on issue 6:
        - the results of 1 and 2;
-       - what `npm stage view <id> --json` showed in step 15: whether it
-         showed the manifest's dependency fields, `scripts` and `bin`;
+       - what `npm stage view <id> --json` showed in step 15;
        - that the trusted publisher shows as validated in `npm trust list`;
        - which npm user the version's record names, and whether it shows an
          email address.
 
 ### Before the next release, once
 
-Zenodo makes a permanent record of whatever a `v*` tag holds, so release
-tags are fixed once pushed. In the repo's Settings, Rules, Rulesets, add two
-tag rulesets, both active, both targeting tags matching `v*`:
+Zenodo makes a permanent record of whatever a tag holds when a release is
+published on it, so every tag is fixed once pushed (ADR 0031). In the repo's
+Settings, Rules, Rulesets, keep two tag rulesets, both active, both on every
+tag (`~ALL`), with no exclusions:
 
-- one that restricts updates and deletions, with no bypass;
-- one that restricts creations, with only the repository admin role on its
-  bypass list, so only you can push a release tag.
+- "Tags never move" restricts updates and deletions, with no bypass;
+- "Only admins create tags" restricts creations, with only the repository
+  admin role on its bypass list, so only you can push a tag.
 
-Then check that both are listed, as tag rulesets:
+They hold against anyone without admin rights. An admin can lift them, so in
+Settings, General, Releases, also turn on immutable releases: a published
+release's tag then stays on its commit while the release exists.
+
+The commands on this page need gh 2.103.0 or later and PowerShell 7.3 or
+later (`gh --version`, `$PSVersionTable.PSVersion`). Run these checks with
+your own gh login, which is the repo's admin; without admin rights, fields
+can come back empty:
 
 ```powershell
-gh api repos/mephistopheles4/athanor/rulesets --jq '.[] | select(.target == "tag") | .name'
+gh api repos/mephistopheles4/athanor/rulesets --jq '.[] | select(.target == "tag") | .id' | ForEach-Object { gh api "repos/mephistopheles4/athanor/rulesets/$_" --jq '{name, enforcement, include: .conditions.ref_name.include, exclude: .conditions.ref_name.exclude, rules: [.rules[].type], bypass: .bypass_actors}' }
+gh api repos/mephistopheles4/athanor/immutable-releases --jq .enabled
 ```
+
+The first prints exactly two rulesets, each with enforcement `active`,
+include `["~ALL"]` and exclude `[]`:
+
+- "Tags never move": rules `update` and `deletion`, and bypass `[]`;
+- "Only admins create tags": rule `creation` alone, and bypass one entry,
+  `RepositoryRole` with id 5 and mode `always`.
+
+The second prints `true`. Anything else, a `null` field included, is a stop:
+fix it in Settings and check again before any release. Step 17 runs both
+checks again.
 
 ### Each release
 
@@ -270,19 +289,29 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     - The list must show exactly one staged entry, for this version.
     - `npm stage view` must show the integrity the **check** job's summary
       shows.
-    - It must also show the manifest, with no `dependencies`,
-      `optionalDependencies`, `peerDependencies` or `bundleDependencies`, and
-      the same `scripts` and `bin` as the local `package.json`. If it shows
-      no manifest, stop before approving: reject the entry, log out, and
-      record it on issue 6 for the owner's decision.
     - The two entry lists must be the same, so the staged tarball holds
       exactly the entries the pack check passed in step 14. Every extracted
       file must be the same.
-    - Only npm, `tar` and `git` run here: nothing from the repo or from the
-      extracted folders.
+    - npm 11.19.1's `npm stage view` shows no manifest. Once the comparisons
+      above pass, read the staged tarball's own `package.json`, then the
+      checkout's, with the same command:
 
-    Run this only after the integrity, manifest and `tar` checks above have
-    passed. It unpacks the staged tarball as npm would install it, with
+      ```powershell
+      Get-Content -Raw <staged-files>/package/package.json | ConvertFrom-Json | Select-Object dependencies, optionalDependencies, peerDependencies, bundleDependencies, bundledDependencies, scripts, bin | ConvertTo-Json
+      Get-Content -Raw <checkout>/package.json | ConvertFrom-Json | Select-Object dependencies, optionalDependencies, peerDependencies, bundleDependencies, bundledDependencies, scripts, bin | ConvertTo-Json
+      ```
+
+      The five dependency fields must all be `null`, and `scripts` and `bin`
+      must be the same in both. If they aren't, stop before approving:
+      reject the entry, log out, and record it on issue 6 for the owner's
+      decision. The registry's own manifest, which a publish sends apart
+      from the tarball, is first seen in step 17, after the version is live
+      (accepted risk 22).
+    - Only npm, `tar`, `git` and PowerShell run here: nothing from the repo
+      or from the extracted folders.
+
+    Run this only after the integrity, `tar` and `package.json` checks above
+    have passed. It unpacks the staged tarball as npm would install it, with
     install scripts, git dependencies and URL dependencies all off, and it
     must match the local pack file for file. This covers a tarball that
     `tar` and npm would read differently.
@@ -314,8 +343,17 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 17. Check that the version's npm page shows provenance naming this repo, the
     commit and the run. Check that `npm view @mephistopheles4/athanor@<version> --json`
     shows no dependency of any kind, and the same `scripts` and `bin` as the
-    local `package.json`; if it doesn't, deprecate the version at once. Then,
-    back in the checkout, tag the commit by hand:
+    local `package.json`. If it doesn't, unpublish the version while npm's
+    unpublish policy allows it, else deprecate it at once; a deprecated
+    version still installs. For either, log in again from a new, empty folder
+    outside any checkout, checked as in step 15, run
+    `npm unpublish @mephistopheles4/athanor@<version>` or, if npm refuses,
+    `npm deprecate @mephistopheles4/athanor@<version> "<reason>"`, and log out
+    as in step 16. An unpublished version number can't be published again, so
+    the next release bumps it (step 12). A version you unpublished or
+    deprecated gets no tag and no release.
+
+    Then, back in the checkout, tag the commit by hand:
 
     ```powershell
     git tag v<version> <commit>
@@ -323,8 +361,12 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     ```
 
     Then publish the GitHub release, from which Zenodo archives the repo and
-    mints a DOI. Skip this for a version you deprecated above: a Zenodo
-    record can't be deleted. First check, by eye:
+    mints a DOI. Skip this for a version you unpublished or deprecated above:
+    a Zenodo record can't be deleted. "Tags never move" keeps a release tag on
+    its commit against anyone without admin rights; an admin can lift it, and
+    the immutable release then holds the tag while the release exists. The
+    folder check on the Zenodo record below is a cross-check, and it stays a
+    stop. First check, by eye:
     - `git ls-remote origin refs/tags/v<version>` prints `<commit>`, the
       commit you tagged above;
     - `npm view @mephistopheles4/athanor@<version> dist.integrity` prints
@@ -337,25 +379,74 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     gh auth status
     ```
 
-    It must show your account, with the token kept in the system keyring,
-    not in gh's config file. Then:
+    It must show your account, with the token in the system keyring. Any
+    other source is a stop:
+    - **gh's config file:** run `gh auth logout`, and revoke the token where
+      it was made: a browser login under your account's Settings,
+      Applications, Authorized OAuth Apps, GitHub CLI; a pasted token under
+      Developer settings, Personal access tokens. Then run `gh auth login`
+      again, without `--insecure-storage`, and check `gh auth status` again.
+    - **`GH_TOKEN` or `GITHUB_TOKEN`:** remove the variable wherever it is
+      set, revoke that token as above, and check again.
+
+    Check that no release, draft or published, is on the tag. This prints
+    nothing when none is:
 
     ```powershell
-    gh release create v<version> -R mephistopheles4/athanor --verify-tag --title v<version> --generate-notes --notes-start-tag v<last>
+    gh api repos/mephistopheles4/athanor/releases --paginate --jq '.[] | select(.tag_name == "v<version>") | {id, draft, author: .author.login}'
     ```
 
-    Within a few minutes, Zenodo's GitHub page, under your Zenodo account's
-    settings, lists `v<version>` with a DOI. Check that its record names the
-    author and ORCID iD from `CITATION.cff`; if they are wrong, edit the
-    record's metadata on Zenodo. Check too that the archived source is
-    `<commit>`: the record's file listing shows one top folder, which GitHub
-    names after the first seven characters of the commit. If it is another
-    commit, stop, don't cite the DOI, and record it in an issue. If no record
-    appears, repeat the `git ls-remote` check, then open the Zenodo
-    webhook's recent deliveries in the repo's settings and use Redeliver on
-    the release event. Never copy a delivery's address or payload into an
-    issue or a session. Never make a second release for the same version.
-    If `gh release create` itself fails, see "If a run fails".
+    If it prints anything, see "If a run fails". Otherwise make the release
+    as a draft, which makes no Zenodo record:
+
+    ```powershell
+    gh release create v<version> -R mephistopheles4/athanor --draft --verify-tag --title v<version> --generate-notes --notes-start-tag v<last>
+    ```
+
+    If it refuses, change nothing and see "If a run fails". Run the release
+    list again: it must print exactly one release, `draft` true, with your
+    account as author. Note its `id`, and read it by that id:
+
+    ```powershell
+    gh api repos/mephistopheles4/athanor/releases/<id> --jq '{tag_name, draft, author: .author.login, body}'
+    ```
+
+    - `tag_name` must be `v<version>`, `draft` true, and `author` your
+      account.
+    - The notes must hold nothing you wouldn't put on a permanent public
+      record. To change them, edit this draft with
+      `gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -F body=@<notes-file>`,
+      the notes file outside any checkout, and read it again. Notes you
+      edited in your own draft are yours.
+    - To drop the draft, delete it with
+      `gh api -X DELETE repos/mephistopheles4/athanor/releases/<id>`. A
+      deleted draft made no record, and can be made again.
+
+    Just before publishing, repeat the `git ls-remote` check, which must
+    still print `<commit>`; the release list, which must still print the one
+    draft, with the same `id`; and the two checks of "Before the next release,
+    once". Anything else is a stop. Then publish the draft by its id:
+
+    ```powershell
+    gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -F draft=false --jq '{tag_name, draft, author: .author.login}'
+    ```
+
+    It must print `v<version>`, `false` and your account. Within a few
+    minutes, Zenodo's GitHub page, under your Zenodo account's settings,
+    lists `v<version>` with a DOI. Check that its record names the author and
+    ORCID iD from `CITATION.cff`; if they are wrong, edit the record's
+    metadata on Zenodo. Check too that the archived source is `<commit>`: the
+    record's file listing shows one top folder, which GitHub names after the
+    first seven characters of the commit. If it is another commit, stop,
+    don't cite the DOI, and record it in a private security advisory on the
+    repo (`SECURITY.md`). If no record appears, repeat the `git ls-remote`
+    check, then open the Zenodo webhook's recent deliveries in the repo's
+    settings and use Redeliver on the release event whose action is
+    `published`. If no record appears after that, stop: record it on issue
+    63 for your decision, and make no other release. Never copy a delivery's
+    address or payload into an issue or a session. Never publish a second
+    release for the same version. If the publish itself fails, see "If a run
+    fails".
 
 ### If a run fails
 
@@ -372,13 +463,35 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   `npm whoami` fails, as in step 16, and start a new run from step 12.
 - Any other staged entry is an incident: reject it, log out, and revoke the
   trusted publisher.
-- **A failed `gh release create` in step 17** is rerun by hand. If it says
-  the release already exists, `gh release view v<version> -R mephistopheles4/athanor`
-  shows it; don't make it again.
+- **A release already on the tag, or a failed `gh release create` or
+  publish in step 17.** Run step 17's release list, and act on what it
+  prints:
+  - **Nothing,** after a refused `gh release create` (a network error, say,
+    or no tag found): fix what the error names, repeat the `git ls-remote`
+    check, and go on from step 17's release list. This is not an incident.
+  - **One draft, your own,** left by a run of yours that stopped: go on from
+    step 17's read by id. A failed publish is rerun by that id.
+  - **One published release, your own:** check its notes against the
+    generated ones, which
+    `gh api repos/mephistopheles4/athanor/releases/generate-notes -f tag_name=v<version> -f previous_tag_name=v<last> --jq .body`
+    prints; notes you edited in your own draft are yours. If it all holds,
+    don't make it again, and carry on with step 17's Zenodo checks.
+  - **Anything else** is an incident: two releases on the tag, another
+    author, or notes you didn't write or generate. Stop releasing. Open a
+    private security advisory on the repo (`SECURITY.md`), and copy into it
+    each release's id, author, tag and notes, as the list and the read by id
+    show them. Only then delete a draft that isn't yours; a published release
+    that isn't yours stays, as evidence. Don't cite any DOI. Find and remove
+    that write access, and make no release until accepted risk 38 has been
+    revisited (ADR 0031).
 
 ### Upkeep
 
 - Check `npm trust list @mephistopheles4/athanor` from time to time.
+- From time to time, review the authorized OAuth apps, authorized GitHub
+  Apps, installed GitHub Apps and personal access tokens that have access to
+  the repo, and revoke any that is no longer used. Each acts as your account
+  (accepted risk 38).
 - After any rename or transfer of the repo or the account, revoke the trusted
   publisher and add it again. Before deleting the repo, revoke it.
 - A bot pull request that moves an action SHA in `release.yml`, and a change
@@ -418,10 +531,11 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   tarball, its digest, commit and run, goes into Sigstore's public
   transparency log when it is staged, and stays there even for a version you
   later reject.
-- **Who the record names.** Which npm user, and whether an email address, a
-  version approved from staging names is shown by the first workflow release
-  (step 11, and claim R8 of the spec on issue 6), and is
-  written here then.
+- **Who the record names.** A version approved from staging names "GitHub
+  Actions" as its npm user, with GitHub's no-reply address, not yours (claim
+  R8 of the spec on issue 6, recorded at 0.1.1). The version's maintainer
+  list still names your npm account and its email, as "A publish makes your
+  npm account's name and email public" says.
 - **A GitHub release makes a permanent, public Zenodo record,** naming the
   authors and ORCID iDs in `CITATION.cff`. Zenodo archives the
   repo at the release's tag and mints a DOI, and the record can't be
@@ -431,7 +545,8 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   reach: rotate it, and remove it from the tree, before you release.
   Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
   predate it and have no release; the first record comes with the next
-  release.
+  release. Their tags stay, because steps 13 and 17 diff from the last
+  release tag.
 - **If a bad version goes live,** deprecate it with `npm deprecate` and
   publish a fixed one, or unpublish it where npm's unpublish policy allows.
   To stop releases altogether, delete `release.yml` and revoke the trusted

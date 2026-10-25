@@ -189,7 +189,10 @@ above; the software they run is not.
   release path has its own: npm's trusted-publisher binding to this repo,
   workflow and environment, the `npm` environment's required reviewer, and
   the owner's npm two-factor approval (the supply-chain bullet above;
-  ADR 0019).
+  ADR 0019). The GitHub release has two tag rulesets on every tag, which
+  keep each tag on its commit and let only an admin create one, immutable
+  releases, and the owner's read of each release as a draft before it is
+  published (ADR 0031; accepted risk 38).
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
@@ -213,7 +216,10 @@ above; the software they run is not.
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token (accepted risk 22), and the owner's npm login
   around an approval (accepted risk 26); see the supply-chain bullet above
-  and ADR 0019. The owner's
+  and ADR 0019. The GitHub release uses a third, long-lived one: the owner's
+  gh login, kept in the system keyring, which can publish releases, create
+  tags, and change the tag rulesets and immutable releases (accepted risk
+  18). The owner's
   npm session token sits in the user npm configuration from login to logout,
   unencrypted at file level. It relies on the machine's disk encryption, which
   the owner confirmed is on (2026-10-24), and on npm's two-factor check on
@@ -245,7 +251,8 @@ above; the software they run is not.
   host are kept out of the archive step (ADR 0020); the git calls that record
   the work still use them (accepted risk 23).
   The release path's untrusted inputs are the artifact `publish` takes from
-  `check`, the staged tarball and manifest the owner downloads, and the
+  `check`, the staged tarball the owner downloads, the registry's manifest,
+  which is checked once the version is live, and the
   registry's answer to the version check. They are covered by the owner's
   look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
   ADR 0019.
@@ -264,7 +271,7 @@ from"; a maintainer-only risk stays here alone.
 | Who | Accepted risks |
 | --- | --- |
 | User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36 |
-| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34, 38 |
 
 Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
 the lead session's chat, relayed by head-chef-field-test.
@@ -314,7 +321,7 @@ the lead session's chat, relayed by head-chef-field-test.
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
    The `maxProcesses` clause added 2026-10-25. From: the Design review of the spec on issue 54, revision 1 (adversarial-lens, accepted risk 4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
    The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-   The clause's "while the engine's process table is full" reworded 2026-10-25, restating the owner's q11 words. From: the closing read of issue 54 on 393dc0d (adversarial-lens A4). How the word arrived: the lead's pick (q13) under the owner's standing instruction, relayed by head-chef-field-test.
+   The clause's "while the engine's process table is full" reworded 2026-10-25, restating the owner's q11 words. From: the closing read of issue 54 on 393dc0d (adversarial-lens A4). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 5. **A root test keeps six Linux capabilities, and the run limit has no upper
    bound.** The test runs as the image's user, root unless the Dockerfile names
    another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
@@ -436,6 +443,11 @@ the lead session's chat, relayed by head-chef-field-test.
     independent check of the compiler's output exists. The wait, the
     registry's signatures and the owner's merge narrow the window.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+    The same code can use the owner's gh login, which stays in the system
+    keyring between releases. With it, the code can publish a GitHub release
+    (a permanent Zenodo record), create tags, edit or delete the tag
+    rulesets, and turn immutable releases off.
+    Widened 2026-10-25. From: the Design review of the spec on issue 63 (adversarial-lens F6 and F2, data-lens D2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 19. **Code in the CI job can read the job's token.** A dev package, an action
     or the test code running in CI can read the job's token until the job ends.
     That includes code on a bot's pull request before merge. Accepted because
@@ -484,6 +496,14 @@ the lead session's chat, relayed by head-chef-field-test.
     look and approval, and a stray signature names this workflow's run in
     the public log.
     Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+    npm 11.19.1's `npm stage view` shows no manifest, so the registry's
+    manifest, which a publish sends apart from the tarball, is first seen in
+    step 17's `npm view`, after the version is live. Whoever installs before
+    that check gets that manifest's dependencies. A bad one is unpublished
+    while npm's policy allows, else deprecated, and a deprecated version
+    still installs. This risk stays maintainer-only: a user has nothing to
+    act on, and the response is the maintainer's.
+    Widened 2026-10-25. From: issue 53; the Design review of the spec on issue 63 (adversarial-lens F2, data-lens D5). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 23. **The git calls that record the work use the host's git config.** The
     snapshot's and the build context's git calls (`stash create`, `add`,
     `hash-object`) run with the host's git config and environment. A clean
@@ -635,3 +655,18 @@ the lead session's chat, relayed by head-chef-field-test.
     repo is code the owner trusts to build.
     Accepted 2026-10-25. From: the spec on issue 54, S6, redrafted after its Design reviews (adversarial-lens, revisions 1 and 3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
     The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+38. **A release can be published on any tag that exists.** Whoever can write
+    to the repo can publish a GitHub release on a tag already pushed,
+    `v0.1.0` and `v0.1.1` among them. Zenodo then archives that tag's tree for
+    good and mints a DOI. The tag rulesets keep each tag on its commit and let
+    only an admin create one, but no repository setting limits who publishes
+    a release. Anyone acting as the owner's account can do this too: whoever
+    takes the account over, code using the owner's gh login (accepted risk
+    18), or an app or token the owner has authorized with repo access.
+    Accepted because no other collaborator or deploy key can write to the
+    repo, and every app or token with repo access is one the owner uses and
+    reviews regularly. Those grants act as the owner's account, and the
+    account's own protections hold everyone who would act as it. The owner
+    makes each release by hand, as a draft read before it is published
+    (ADR 0031).
+    Accepted 2026-10-25. From: issue 63, candidate 1 (the Test review of issues 57 and 59, the security pair); the reason reworded at the Design review of the spec on issue 63 (adversarial-lens F7, F1). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
