@@ -103,7 +103,7 @@ test('M11 a bad --output exits 125 before any Docker call and creates nothing', 
     { name: 'a missing parent', says: /does not exist/, make: (s) => ({ output: join(s.parent, 'nope', 'x') }) },
     { name: 'a new folder named .git', says: /\.git/, make: (s) => ({ output: join(s.parent, '.git') }) },
     { name: 'a new folder named .GIT', says: /\.git/i, make: (s) => ({ output: join(s.parent, '.GIT') }) },
-    ...(process.platform === 'win32' ? [] : [{ name: 'a parent others can change', says: /changed by other accounts/, make: (s: Scene) => { chmodSync(s.parent, 0o777); return {}; } }]),
+    ...(process.platform === 'win32' ? [] : [{ name: 'a parent others can change', says: /group or other write bit.*chmod go-w/s, make: (s: Scene) => { chmodSync(s.parent, 0o777); return {}; } }]),
     { name: 'a parent inside .git', says: /inside a \.git folder/, make: (s) => { mkdirSync(join(s.parent, '.GIT')); return { output: join(s.parent, '.GIT', 'x') }; } },
   ];
   for (const row of rows) {

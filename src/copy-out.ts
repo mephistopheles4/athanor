@@ -125,7 +125,7 @@ export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
   if (process.platform !== 'win32') {
     const mode = lstatSync(realParent).mode;
     if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {
-      throw new AthanorError(`The folder that should hold --output ${dir} can be changed by other accounts. Pick a parent that only you can write, or one with the sticky bit set.`);
+      throw new AthanorError(`The folder that should hold --output ${dir} can be changed by other accounts: its group or other write bit is set and it has no sticky bit. Run chmod go-w on it, pick a parent that only you can write, or set the sticky bit with chmod +t. (A private user group with umask 0002 sets the group bit too; athanor cannot tell a private group from a shared one.)`);
     }
   }
   if (realParent.split(/[\\/]/).some((part) => part.toLowerCase() === '.git')) {

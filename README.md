@@ -165,7 +165,10 @@ interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
 makes only the last folder:
 
 - Pick a parent under your user profile and outside any folder a sync client
-  mirrors. On Windows the folder inherits its parent's access rules.
+  mirrors. On Windows the folder inherits its parent's access rules. On Linux
+  and macOS, athanor refuses a parent whose group or other write bit is set
+  unless it has the sticky bit, since it cannot tell a private group (a umask of
+  0002 makes one) from a shared one: run `chmod go-w` on the parent.
 - A folder inside the repo shows up as untracked files, so add it to
   `.gitignore`.
 - A folder is complete only when the run's result reports `outputs`: a run
