@@ -254,10 +254,11 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
       docker, env: pinned, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
     });
     const { ran } = handed;
-    // Copy out only when the test ran and exited (pass or fail), while the slot
+    // Copy out only when the test ran and exited (pass, fail, or the memory limit,
+    // which leaves the container stopped with what the test wrote), while the slot
     // is held and before the container goes. Then every cp and the removal use
     // the container's ID; any other path removes it by name.
-    const copies = target !== undefined && (ran.outcome === 'pass' || ran.outcome === 'fail');
+    const copies = target !== undefined && (ran.outcome === 'pass' || ran.outcome === 'fail' || ran.outcome === 'memory');
     let tail: Partial<RunResult> = {};
     try {
       markUse(home, ctx.hash);

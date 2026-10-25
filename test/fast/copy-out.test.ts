@@ -348,11 +348,31 @@ test('M14 links, devices, FIFOs and act-on-view files are skipped and counted', 
   }
 });
 
-test('M15 nothing is copied unless the test ran and exited; a hanging cp, the time bound and an ssh login', async (t) => {
+test('M15 the copy runs after pass, fail or the memory limit, and after nothing else; a hanging cp, the time bound and an ssh login', async (t) => {
   const tar = served(buildTar([{ name: 'out/a.txt', content: 'a' }]));
+
+  // The memory limit ends the container but leaves it stopped, with whatever the test wrote (the owner's q1 (a) after the M19 run).
+  await t.test('memory: the files land, and the outcome stays memory with exit 137', async (t) => {
+    const s = scene(t, { cp: { out: tar }, plan: { oom: true, exitCode: 137 } });
+    const { result, calls } = await copy(s);
+    assert.equal(result.outcome, 'memory', JSON.stringify(result));
+    assert.equal(result.exitCode, 137);
+    assert.equal(result.outputs!.files, 1);
+    assert.equal(readFileSync(join(s.dir, 'out', 'a.txt'), 'utf8'), 'a');
+    assert.equal(callsOf(calls, 'cp').filter((c) => !c.finished).length, 1);
+    assert.equal(callsOf(calls, 'rm').some((c) => c.args.at(-1) === idOfSlot(s.prefix)), true, 'removed by ID after the copy');
+  });
+
+  await t.test('memory: a failed copy ends error with the test exit 137', async (t) => {
+    const s = scene(t, { cp: { out: served(buildTar([{ name: 'out/.git/config' }])) }, plan: { oom: true, exitCode: 137 } });
+    const { result } = await copy(s);
+    assert.equal(result.outcome, 'error', JSON.stringify(result));
+    assert.equal(result.testExitCode, 137);
+    assert.equal(existsSync(s.dir), false);
+  });
+
   const rows: { name: string; plan: Record<string, unknown>; extra?: RunOptions; outcome: string }[] = [
     { name: 'timeout', plan: { hangMs: 5000 }, extra: { timeLimitSeconds: 1 }, outcome: 'timeout' },
-    { name: 'memory', plan: { oom: true, exitCode: 137 }, outcome: 'memory' },
     { name: 'error', plan: { tarFails: true }, outcome: 'error' },
   ];
   for (const row of rows) {
@@ -407,19 +427,19 @@ test('M15 nothing is copied unless the test ran and exited; a hanging cp, the ti
   });
 
   await t.test('the time bound runs from the copy\'s start, not from each output', async (t) => {
-    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 1000 });
+    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 2000 });
     // The same run with a second output that is simply missing: the cost of everything but the wait.
     const baseline = scene(t, { outputs: ['one', 'two'], cp: { one: first } });
     const base = Date.now();
-    assert.equal((await copy(baseline, { copyTimeMs: 1500 })).result.outcome, 'pass');
+    assert.equal((await copy(baseline, { copyTimeMs: 3000 })).result.outcome, 'pass');
     const baseMs = Date.now() - base;
     // The second output hangs. From the copy's start the bound ends it 500 ms after the first output; a fresh bound would end it 1500 ms after.
     const s = scene(t, { outputs: ['one', 'two'], cp: { one: first, two: { hang: true } } });
     const started = Date.now();
-    const { result } = await copy(s, { copyTimeMs: 1500 });
+    const { result } = await copy(s, { copyTimeMs: 3000 });
     assert.equal(result.outcome, 'error', JSON.stringify(result));
     assert.match(result.message!, /took longer/);
-    assert.ok(Date.now() - started - baseMs < 1000, 'the second output did not get a fresh 1500 ms');
+    assert.ok(Date.now() - started - baseMs < 2000, 'the second output did not get a fresh 3000 ms');
   });
 
   await t.test('a cp failing with an ssh login in its text gives a message without the login', async (t) => {

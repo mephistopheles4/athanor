@@ -159,8 +159,9 @@ pass secrets as arguments.
 
 `--output <dir>` copies the command's `outputs` out of the stopped container
 into `<dir>`, a folder athanor makes and that must not exist yet. It copies
-after a test that passed or failed, and not after a timeout, a memory stop, an
-interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
+after a test that passed, failed or was ended by the memory limit (the outcome
+stays `memory`, exit 137, and a report cut off by the kill may be partly
+written), and not after a timeout, an interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
 `%USERPROFILE%` on Windows, and `athanor-reports` must exist already; athanor
 makes only the last folder:
 

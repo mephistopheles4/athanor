@@ -67,7 +67,7 @@
   in the container, for copy-out.
 - **Copy-out.** With `--output <dir>`, copying a command's outputs from the
   stopped container into a new folder on the host, by the container's ID, after
-  a test that passed or failed. athanor reads the tar itself, checks every name
+  a test that passed, failed or hit the memory limit. athanor reads the tar itself, checks every name
   and caps size, entries and time (ADR 0023).
 - **Boot marker.** The line `athanor-boot-ok` the boot script prints on stderr
   just before the test command. Without it the test never started, and the

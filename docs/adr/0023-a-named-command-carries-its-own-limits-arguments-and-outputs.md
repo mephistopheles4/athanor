@@ -37,7 +37,8 @@ files, as the build context's `add -u` already did (accepted risk 23).
 
 **Outputs come back through a copy.** A command's `outputs` are paths relative
 to the work folder in the container. With `athanor run <name> --output <dir>`,
-and only when the test ran and exited (`pass` or `fail`), each is copied with
+and only when the test ran and exited (`pass`, `fail`, or `memory` when the
+memory limit ended the stopped container, which stays there to copy from), each is copied with
 `docker cp <id>:<work>/<output> -`, while the slot is held and before the
 container is removed. The container is addressed by its ID, read by the same
 `docker inspect` that reads its exit, and every `cp` runs with the run's pinned
