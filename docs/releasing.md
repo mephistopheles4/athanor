@@ -3,6 +3,8 @@
 The first version of `@mephistopheles4/athanor` is published by hand. Every
 later one is staged by the release workflow and made live by the owner
 (ADR 0019); see [Later releases, through the workflow](#later-releases-through-the-workflow).
+The owner's last step for each version is a GitHub release, made by hand,
+from which Zenodo archives the repo (ADR 0029).
 Only the owner does any step on this page.
 
 ## The first publish, by hand
@@ -303,6 +305,26 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     git push origin v<version>
     ```
 
+    Then publish the GitHub release, from which Zenodo archives the repo and
+    mints a DOI. Skip this for a version you deprecated above: a Zenodo
+    record can't be deleted. First check, by eye:
+    - `git ls-remote origin refs/tags/v<version>` prints the run's commit;
+    - `npm view @mephistopheles4/athanor@<version> dist.integrity` prints
+      the integrity the **check** job's summary shows.
+
+    Then, with your own gh login, where `<last>` is the tag you diffed
+    against in step 13:
+
+    ```powershell
+    gh auth status
+    gh release create v<version> -R mephistopheles4/athanor --verify-tag --title v<version> --generate-notes --notes-start-tag v<last>
+    ```
+
+    Check that Zenodo made a record for `v<version>`, naming the author and
+    ORCID iD from `CITATION.cff`. If none appears, open the Zenodo webhook's
+    recent deliveries in the repo's settings and redeliver the release
+    event. Never make a second release for the same version.
+
 ### If a run fails
 
 - **Don't re-run a failed `publish` job.** Start a new run of `release`
@@ -318,6 +340,9 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   `npm whoami` fails, as in step 16, and start a new run from step 12.
 - Any other staged entry is an incident: reject it, log out, and revoke the
   trusted publisher.
+- **A failed `gh release create` in step 17** is rerun by hand. If it says
+  the release already exists, `gh release view v<version> -R mephistopheles4/athanor`
+  shows it; don't make it again.
 
 ### Upkeep
 
@@ -361,6 +386,12 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   tarball, its digest, commit and run, goes into Sigstore's public
   transparency log when it is staged, and stays there even for a version you
   later reject.
+- **A GitHub release makes a permanent Zenodo record.** Zenodo archives the
+  repo at the release's tag and mints a DOI, and the record can't be
+  deleted, so the release comes last in step 17, once the version is live
+  and checked. Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
+  predate it and have no release; the first record comes with the next
+  release.
 - **Who the record names.** Which npm user, and whether an email address, a
   version approved from staging names is shown by the first workflow release
   (step 11, and claim R8 of the spec on issue 6), and is

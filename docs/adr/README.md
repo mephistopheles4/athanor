@@ -28,3 +28,4 @@ changed one gets a new record that names the one it replaces.
 | [0021](0021-docker-off-this-machine-refused-by-default.md) | A Docker engine or builder off this machine is refused by default |
 | [0023](0023-a-named-command-carries-its-own-limits-arguments-and-outputs.md) | A named command carries its own limits, arguments and outputs (extends 0003, 0007 and 0009) |
 | [0024](0024-a-hook-holds-agent-fast-runs-to-athanor.md) | A hook holds an agent's fast runs to athanor |
+| [0029](0029-a-github-release-is-made-by-hand-after-the-version-is-live.md) | A GitHub release is made by hand, after the version is live (extends 0019) |
