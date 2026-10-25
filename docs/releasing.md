@@ -427,13 +427,22 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
       `gh api -X DELETE repos/mephistopheles4/athanor/releases/<id>`. A
       deleted draft made no record, and can be made again.
 
+    Once the notes are right, save them to a file outside any checkout, and
+    read that file: it is what the publish puts on record.
+
+    ```powershell
+    gh api repos/mephistopheles4/athanor/releases/<id> --jq .body > <read-notes>
+    ```
+
     Just before publishing, repeat the `git ls-remote` check, which must
     still print `<commit>`; the release list, which must still print the one
     draft, with the same `id`; and the two checks of "Before the next release,
-    once". Anything else is a stop. Then publish the draft by its id:
+    once". Anything else is a stop. Then publish the draft by its id, with
+    the tag and the notes you read set in the same call, so that an edit made
+    after your read can't reach the record:
 
     ```powershell
-    gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -F draft=false --jq '{tag_name, draft, author: .author.login}'
+    gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -f tag_name=v<version> -F body=@<read-notes> -F draft=false --jq '{tag_name, draft, author: .author.login}'
     ```
 
     It must print `v<version>`, `false` and your account. Within a few
@@ -486,7 +495,8 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     private security advisory on the repo (`SECURITY.md`), and copy into it
     each release's id, author, tag and notes, as the list and the read by id
     show them. Only then delete a draft that isn't yours; a published release
-    that isn't yours stays, as evidence. Don't cite any DOI. Find and remove
+    that isn't yours stays, as evidence. If any of those notes hold a
+    secret, rotate it. Don't cite any DOI. Find and remove
     that write access, and make no release until accepted risk 38 has been
     revisited (ADR 0031).
 

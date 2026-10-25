@@ -215,11 +215,12 @@ above; the software they run is not.
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token (accepted risk 22), and the owner's npm login
-  around an approval (accepted risk 26); see the supply-chain bullet above
-  and ADR 0019. The GitHub release uses a third, long-lived one: the owner's
-  gh login, kept in the system keyring, which can publish releases, create
-  tags, and change the tag rulesets and immutable releases (accepted risk
-  18). The owner's
+  around an approval, and around a step 17 unpublish or deprecate (accepted
+  risk 26); see the supply-chain bullet above and ADR 0019. The GitHub
+  release uses a third, long-lived one: the owner's gh login, kept in the
+  system keyring, which can publish releases, create tags, change the tag
+  rulesets and immutable releases, push branches, edit workflows and read
+  the repo's private security advisories (accepted risk 18). The owner's
   npm session token sits in the user npm configuration from login to logout,
   unencrypted at file level. It relies on the machine's disk encryption, which
   the owner confirmed is on (2026-10-24), and on npm's two-factor check on
@@ -446,8 +447,11 @@ the lead session's chat, relayed by head-chef-field-test.
     The same code can use the owner's gh login, which stays in the system
     keyring between releases. With it, the code can publish a GitHub release
     (a permanent Zenodo record), create tags, edit or delete the tag
-    rulesets, and turn immutable releases off.
+    rulesets, and turn immutable releases off. Its `repo` and `workflow`
+    scopes also let the code push branches, edit workflows and read the
+    repo's private security advisories.
     Widened 2026-10-25. From: the Design review of the spec on issue 63 (adversarial-lens F6 and F2, data-lens D2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
+    The scopes sentence added 2026-10-25. From: the Test review of issue 63, round 1 (data-lens D2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 19. **Code in the CI job can read the job's token.** A dev package, an action
     or the test code running in CI can read the job's token until the job ends.
     That includes code on a bot's pull request before merge. Accepted because
@@ -493,7 +497,8 @@ the lead session's chat, relayed by head-chef-field-test.
     least 7 days old; stage-only publishing; the owner's look, which expects
     exactly one staged entry whose integrity matches the check job's; and the
     owner's 2FA approval. Accepted because nothing goes live without that
-    look and approval, and a stray signature names this workflow's run in
+    look and approval, apart from the registry's manifest, which step 17
+    checks once live, and a stray signature names this workflow's run in
     the public log.
     Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
     npm 11.19.1's `npm stage view` shows no manifest, so the registry's
@@ -504,6 +509,7 @@ the lead session's chat, relayed by head-chef-field-test.
     still installs. This risk stays maintainer-only: a user has nothing to
     act on, and the response is the maintainer's.
     Widened 2026-10-25. From: issue 53; the Design review of the spec on issue 63 (adversarial-lens F2, data-lens D5). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
+    The reason's "apart from the registry's manifest" clause added 2026-10-25. From: the Test review of issue 63, round 1 (adversarial-lens F2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 23. **The git calls that record the work use the host's git config.** The
     snapshot's and the build context's git calls (`stash create`, `add`,
     `hash-object`) run with the host's git config and environment. A clean
@@ -541,13 +547,15 @@ the lead session's chat, relayed by head-chef-field-test.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
     Widened 2026-10-25 to every message that names the file. From: the Design review of the spec on issue 54 (data-lens, machine-file messages carry the account name). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 26. **A program running as the owner can read the npm session token.** From
-    `npm login` to `npm logout`, around a release's approval, the session
+    `npm login` to `npm logout`, around a release's approval, and around a
+    step 17 unpublish or deprecate, the session
     token sits in the owner's user npm configuration, unencrypted at file
     level. Any program running as the owner can read it then, including one
     left behind by the local build just before. Accepted because npm requires
     two-factor on every write, and the window lasts only from login to
     logout.
     Accepted 2026-10-24. From: issue 6, the follow-up Test review of `9fcdfcd` (data-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+    The step 17 unpublish or deprecate window added 2026-10-25. From: the Test review of issue 63, round 1 (data-lens D1). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
 28. **A copied file's content is the test code's choice.** athanor checks
     names and types, never content.
     - A report written by test code lands on the host as written. Opening it,
