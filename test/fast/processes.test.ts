@@ -95,9 +95,9 @@ test('N3 a process limit above maxProcesses exits 125 naming the key, the ceilin
   });
 });
 
-test('N4 processes and maxProcesses must be whole numbers from 1 to 4194304, in every place', async (t) => {
-  const bad: unknown[] = [0, -1, 1.5, 4194305, 1e21, '1024', true, null];
-  const rule = 'must be a whole number from 1 to 4194304';
+test('N4 processes and maxProcesses must be whole numbers from 16 to 4194304, in every place', async (t) => {
+  const bad: unknown[] = [0, -1, 15, 1.5, 4194305, 1e21, '1024', true, null];
+  const rule = 'must be a whole number from 16 to 4194304';
   const places = [
     { name: 'the repo', key: 'processes', set: (_home: string, v: unknown) => withCommands({ test: ['true'] }, { processes: v }), says: /^In the "athanor" key in package\.json, processes must be/ },
     { name: 'a command', key: 'commands.mutation.processes', set: (_home: string, v: unknown) => withCommands({ test: ['true'], mutation: { argv: ['x'], processes: v } }), says: /^In the "athanor" key in package\.json, commands\.mutation\.processes must be/ },
@@ -117,12 +117,12 @@ test('N4 processes and maxProcesses must be whole numbers from 1 to 4194304, in 
     }
   }
 
-  await t.test('1 passes the check', async (t) => {
+  await t.test('16 passes the check', async (t) => {
     isolate(t);
-    const repo = makeRepo(t, { athanor: withCommands({ test: ['true'] }, { processes: 1 }) });
+    const repo = makeRepo(t, { athanor: withCommands({ test: ['true'] }, { processes: 16 }) });
     const { result, calls } = await runIn(t, repo);
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
-    assert.equal(pidsLimit(calls), '1');
+    assert.equal(pidsLimit(calls), '16');
   });
 
   await t.test('4194304 passes the check', async (t) => {

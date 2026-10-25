@@ -96,7 +96,7 @@ outside it.
   is 30. `cpus` has no default: with no `cpus` in either file (and no `maxCpus`),
   the container gets no CPU limit and may use every CPU the engine has.
 - `processes` is the most processes, threads included, the container may
-  hold: a whole number from 1 to 4194304. It defaults to the machine
+  hold: a whole number from 16 to 4194304. It defaults to the machine
   configuration's, else the smaller of 1024 and `maxProcesses`, and is held to
   `maxProcesses`. athanor 0.1.1 and older do not know it, and refuse a
   configuration that sets it with an unknown-key error.
@@ -340,7 +340,9 @@ threat model holds the full entries.
   from starting processes, and can keep athanor from stopping a run at its
   time limit. A container left running then may not be removable until you
   restart the engine (on Linux, recover the host), and until it is removed it
-  keeps the run's snapshot, uncommitted files included. Keep `maxProcesses`
+  keeps the run's snapshot, uncommitted files included. A restart stops it but
+  does not remove it: the next run on its slot removes it, or you remove it
+  yourself (`athanor status` lists it). Keep `maxProcesses`
   times your largest run limit well below your
   engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
   it). Accepted risks 4 and 36.
