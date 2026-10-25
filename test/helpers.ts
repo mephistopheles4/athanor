@@ -174,6 +174,9 @@ export function gitState(repo: string) {
   };
 }
 
+// The test repo configuration with other commands (the object form, say) and extra keys.
+export const withCommands = (commands: unknown, extra: Record<string, unknown> = {}) => ({ ...baseConfig, ...extra, commands });
+
 export const baseConfig = {
   dockerfile: 'test/Dockerfile',
   commands: { test: ['node', 'test/run.mjs'] },

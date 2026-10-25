@@ -28,7 +28,7 @@ export class CopyInterrupted extends Error {}
 // ---- Names -----------------------------------------------------------------
 
 const DEVICE_NAMES = new Set([
-  'CON', 'PRN', 'AUX', 'NUL',
+  'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$',
   ...Array.from({ length: 10 }, (_, i) => `COM${i}`), ...Array.from({ length: 10 }, (_, i) => `LPT${i}`),
   'COM¹', 'COM²', 'COM³', 'LPT¹', 'LPT²', 'LPT³',
 ]);
@@ -41,7 +41,7 @@ export function badSegment(segment: string): string | null {
   // Both folds, so a letter that folds to i (the dotless i) does not get past.
   if (segment.toLowerCase() === '.git' || segment.toUpperCase() === '.GIT') return 'it names a .git folder or file';
   if (segment.includes('\\')) return 'it holds a backslash';
-  if (/[\u0000-\u001f\u007f-\u009f]/.test(segment)) return 'it holds a control character';
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(segment)) return 'it holds a control character or a line separator';
   if (/\p{Cf}/u.test(segment)) return 'it holds an invisible formatting character';
   if (/[<>:"|?*]/.test(segment)) return 'it holds a character Windows does not allow in a name';
   if (/[. ]$/.test(segment)) return 'it ends in a dot or a space';
@@ -53,7 +53,7 @@ export function badSegment(segment: string): string | null {
 // A name as the messages show it: control and format characters escaped,
 // nothing stripped.
 export function showName(name: string): string {
-  return name.replace(/[\u0000-\u001f\u007f-\u009f]|\p{Cf}/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16)}}`);
+  return name.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16)}}`);
 }
 
 // The `outputs` list of a command: each entry a relative path whose segments
@@ -120,6 +120,14 @@ export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
   } catch {
     throw new AthanorError(`The folder that should hold --output ${dir} does not exist. Make it first, then run again.`);
   }
+  // A parent that other accounts can write, with no sticky bit, lets them swap folders in it
+  // (accepted risk 30). Windows has no mode bits to read, so this check is for the other systems.
+  if (process.platform !== 'win32') {
+    const mode = lstatSync(realParent).mode;
+    if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {
+      throw new AthanorError(`The folder that should hold --output ${dir} can be changed by other accounts. Pick a parent that only you can write, or one with the sticky bit set.`);
+    }
+  }
   if (realParent.split(/[\\/]/).some((part) => part.toLowerCase() === '.git')) {
     throw new AthanorError(`--output ${dir} is inside a .git folder. Give a folder somewhere else.`);
   }
@@ -133,7 +141,7 @@ export function workFolder(lines: string[]): string {
     throw new CopyError(`the container named its work folder ${lines.length} times instead of once, so athanor does not know where to copy from.`);
   }
   const work = lines[0]!;
-  if (!work.startsWith('/') || /[\u0000-\u001f\u007f-\u009f]|\p{Cf}/u.test(work)) {
+  if (!work.startsWith('/') || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/u.test(work)) {
     throw new CopyError('the container named a work folder that is not an absolute path, so athanor does not know where to copy from.');
   }
   return work;
@@ -189,11 +197,12 @@ export async function copyOut(req: CopyRequest): Promise<Copied> {
 class Job {
   private used = 0;
   private made: Made[] = [];
-  // Every folder and file written, by exact name, and by lower-case name for the case check.
+  // Every folder and file written, by exact name.
   private kinds = new Map<string, 'file' | 'dir'>();
+  // The same names by lower-case name, for the case check.
+  private folded = new Map<string, string>();
   // What each folder holds, by lower-case name, to refuse a bare git repository layout.
   private children = new Map<string, Set<string>>();
-  private folded = new Map<string, string>();
   private counts: Copied = { files: 0, bytes: 0, skipped: 0, missing: [] };
   private req: CopyRequest;
   private root: string;
@@ -201,6 +210,10 @@ class Job {
   constructor(req: CopyRequest) {
     this.req = req;
     this.root = join(req.target.realParent, req.target.name);
+  }
+
+  sizeMessage(): string {
+    return `the outputs are bigger than the size limit of ${Math.round(this.req.maxBytes / (1024 * 1024))} MB. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`;
   }
 
   // One entry of the budget: every header in the stream, and every folder athanor makes.
@@ -258,6 +271,7 @@ class Job {
       if (ended.code !== 0) {
         if (MISSING.test(text) && reader.entries === 0) {
           this.counts.missing.push(output);
+          rawBytes += reader.bytes;
           req.onProgress(`the output "${showName(output)}" is not in the container, so nothing was copied for it. Check the path in "outputs".`);
           continue;
         }
@@ -304,15 +318,16 @@ class Job {
     }
   }
 
-  // git treats a folder holding HEAD with objects or refs as a bare repository, wherever the
+  // git treats a folder holding HEAD with objects, refs or a commondir file (which points at
+  // them elsewhere) as a bare repository, wherever the
   // folder sits and in whatever order the files come (accepted risk 28).
   private beside(parts: string[]): void {
     const parent = parts.slice(0, -1).join('/');
     const names = this.children.get(parent) ?? new Set<string>();
     this.children.set(parent, names);
     names.add(parts.at(-1)!.toLowerCase());
-    if (names.has('head') && (names.has('objects') || names.has('refs'))) {
-      throw new CopyError(`the folder "${showName(parent || '.')}" would hold HEAD with objects or refs, the layout of a bare git repository, which git run there could treat as one.`);
+    if (names.has('head') && (names.has('objects') || names.has('refs') || names.has('commondir'))) {
+      throw new CopyError(`the folder "${showName(parent || '.')}" would hold HEAD with objects, refs or commondir, the layout of a bare git repository, which git run there could treat as one.`);
     }
   }
 
@@ -421,7 +436,7 @@ class Reader {
 
   push(chunk: Buffer): void {
     this.bytes += chunk.length;
-    if (this.bytes > this.maxBytes) throw new CopyError(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
+    if (this.bytes > this.maxBytes) throw new CopyError(this.job.sizeMessage());
     this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
     for (;;) {
       if (this.state === 'done') { this.buffer = Buffer.alloc(0); return; }
@@ -490,7 +505,7 @@ class Reader {
     const type = String.fromCharCode(block[156] ?? 0);
     let size = this.number(block.subarray(124, 136), 'size');
     const remainingCap = this.maxBytes - this.bytes;
-    if (size > remainingCap) this.fail(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
+    if (size > remainingCap) this.fail(this.job.sizeMessage());
     if (type === 'x' || type === 'g' || type === 'L' || type === 'K') {
       if (size > MAX_META_BYTES) this.fail('a header record in the stream is too large.');
       this.meta = { kind: type, chunks: [] };
@@ -501,7 +516,7 @@ class Reader {
     const own = this.text(block.subarray(0, 100));
     const name = this.next.path ?? (prefix ? `${prefix}/${own}` : own);
     if (this.next.size !== undefined) {
-      if (this.next.size > remainingCap) this.fail(`the outputs are bigger than the size limit. Raise maxOutputMegabytes in the machine configuration, or declare narrower "outputs".`);
+      if (this.next.size > remainingCap) this.fail(this.job.sizeMessage());
       size = this.next.size;
     }
     this.next = {};

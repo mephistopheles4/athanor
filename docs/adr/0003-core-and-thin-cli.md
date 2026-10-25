@@ -1,6 +1,6 @@
 # 0003. A core module with a thin CLI
 
-Date: 2026-10-19 · Status: accepted · Source: spec revision 5 on issue 1 (S4, S5)
+Date: 2026-10-19 · Status: accepted, extended by 0023 · Source: spec revision 5 on issue 1 (S4, S5)
 
 `src/index.ts` exports `run`, `status` and `prune`. The core never prints,
 exits or registers signal handlers: it takes options, reports progress through

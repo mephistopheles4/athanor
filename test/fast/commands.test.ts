@@ -10,7 +10,7 @@ import { run } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
 import { parseArgs } from '#dist/cli.js';
 import type { Call } from '../helpers.ts';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.ts';
+import { makeRepo, isolate, fake, uniquePrefix, callsOf, withCommands } from '../helpers.ts';
 
 async function runIn(t: TestContext, repo: string, extra: RunOptions = {}) {
   const docker = fake(t);
@@ -25,7 +25,6 @@ function assertSetupError(result: RunResult, calls: Call[], pattern: RegExp) {
   assert.equal(calls.length, 0, 'no Docker call at all');
 }
 
-const withCommands = (commands: unknown, extra: Record<string, unknown> = {}) => ({ ...baseConfig, ...extra, commands });
 const flag = (args: string[], name: string): string => args[args.indexOf(name) + 1] as string;
 
 test('M1 a command in object form runs its argv, and the array form is unchanged', async (t) => {

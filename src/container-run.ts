@@ -45,7 +45,7 @@ export interface Ran {
 // core removes it, by ID when it copies from it (ADR 0023).
 export interface Handed {
   ran: Ran;
-  work: string[];
+  workLines: string[];
   id?: string;
 }
 
@@ -53,11 +53,11 @@ export interface Handed {
 // stderr. It notes that the marker came and keeps the work lines' text.
 function markerFilter(write: (chunk: Buffer | string) => void) {
   let seen = false;
-  const work: string[] = [];
+  const workLines: string[] = [];
   let pending = '';
   return {
     get seen() { return seen; },
-    work,
+    workLines,
     push(chunk: Buffer): void {
       if (seen) { write(chunk); return; }
       pending += chunk.toString('utf8');
@@ -67,7 +67,7 @@ function markerFilter(write: (chunk: Buffer | string) => void) {
         pending = pending.slice(i + 1);
         const text = line.replace(/\r?\n$/, '');
         if (text === MARKER) seen = true;
-        else if (text.startsWith(WORK_PREFIX)) work.push(text.slice(WORK_PREFIX.length));
+        else if (text.startsWith(WORK_PREFIX)) workLines.push(text.slice(WORK_PREFIX.length));
         else write(line);
       }
       if (seen && pending) { write(pending); pending = ''; }
@@ -103,7 +103,7 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   const state = interrupted || timedOut ? null : await readExit(o.docker, name, o.env);
 
   const base = { ranMs };
-  const handed = (ran: Ran): Handed => ({ ran, work: filter.work, ...(state?.id !== undefined ? { id: state.id } : {}) });
+  const handed = (ran: Ran): Handed => ({ ran, workLines: filter.workLines, ...(state?.id !== undefined ? { id: state.id } : {}) });
   if (interrupted) return handed({ ...base, outcome: 'interrupted', exitCode: EXIT.interrupted });
   if (timedOut) return handed({ ...base, outcome: 'timeout', exitCode: EXIT.timeout });
   if (a.code !== 0) {

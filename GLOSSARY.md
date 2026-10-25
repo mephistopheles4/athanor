@@ -2,7 +2,8 @@
 
 - **Run.** One `athanor run`: settle the image, take a snapshot, wait for a
   slot, pipe the snapshot into a fresh container, run the test command there,
-  and exit with its exit code.
+  and exit with its exit code (125 when the test ran but its outputs could not
+  be copied).
 - **Snapshot.** The work a run tests, as git sees it: a commit made by
   `git stash create` from a copy of the index (tracked files, staged and
   unstaged, and files added with `git add -N` at their working-tree content),

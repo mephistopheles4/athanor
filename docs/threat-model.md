@@ -198,7 +198,9 @@ above; the software they run is not.
   owner's registry credentials (accepted risk 7). A file added with `git add -N`
   goes where tracked files go. Copied outputs can hold whatever the tests
   wrote, such as a mutation report's copy of the source, and stay in the
-  caller's folder; athanor never cleans them up. The Docker client's proxy
+  caller's folder, as plain files (accepted risk 31); athanor never cleans them
+  up. A named command's arguments show in the host's process list and the
+  engine's record of the container (accepted risk 32). The Docker client's proxy
   settings can hold a password: the run blocks it (ADR 0016), and the build
   receives it (accepted risk 1). Plain tcp transport is refused
   by default (ADR 0013; accepted risk 10 for the opt-out). Test output can hold
@@ -258,8 +260,8 @@ from"; a maintainer-only risk stays here alone.
 
 | Who | Accepted risks |
 | --- | --- |
-| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30 |
-| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29 |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34 |
 
 Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
 the lead session's chat, relayed by head-chef-field-test.
@@ -532,10 +534,11 @@ the lead session's chat, relayed by head-chef-field-test.
       password, when the folder is shown, previewed or thumbnailed. athanor
       skips the file names it knows and counts them in `skipped`; a spelling
       or a type it does not know is written like any other file.
-    - Ordinary files can be laid out as a bare git repository (`HEAD`,
-      `objects`, `refs`, `config`), which git run inside the folder can treat
-      as a repository. athanor refuses that layout; one it does not recognise
-      is written, so the README advises `safe.bareRepository=explicit`.
+    - Ordinary files can be laid out as a bare git repository, which git run
+      inside the folder can treat as a repository. athanor refuses a folder
+      holding `HEAD` with `objects`, `refs` or `commondir`; a layout it does
+      not recognise is written, so the README advises
+      `safe.bareRepository=explicit`.
 
     Accepted because the repo is code the owner trusts to build, and a host run
     of the same tool writes the same files.
@@ -571,3 +574,32 @@ the lead session's chat, relayed by head-chef-field-test.
     rules. A Windows access step would add a child process for a case the owner
     can avoid by choosing the parent.
     Accepted 2026-10-24. From: the spec on issue 46, S6 (revision 4) and the Design reviews of its revisions (adversarial-lens, data-lens). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test. The number was assigned by the lead.
+31. **The `--output` folder holds plain files.** Copied outputs sit as ordinary
+    files in the folder the user names, with nothing encrypting them. They can
+    hold a copy of the source or anything the test read, and rely on the
+    host's disk encryption and the folder's access rules (accepted risk 30).
+    Accepted because the repo's own working tree sits unencrypted on the same
+    disk, and a report that its viewers could not open would defeat the copy.
+    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens, the `--output` folder at rest). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+32. **Command arguments are visible beyond the owner.** The words after
+    `<name> --` become part of the `docker run` command. They show in the host's
+    process list, in the engine's record of the container (`docker inspect`)
+    until it is removed, and to a remote engine's operator (accepted risk 7).
+    The `--` form with no name already did. Accepted because the caller chooses
+    the arguments, and the README says not to pass secrets as arguments.
+    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens, command arguments). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+33. **A file-system error can surface as a stack trace.** An unexpected error
+    while copying, such as a full disk, can end athanor with an uncaught error
+    that shows local paths, an account name among them, to the user and to the
+    session's model provider. What the copy made is still removed and the slot
+    is still released. Accepted because it needs a rare failure, the paths are
+    the owner's own (as in accepted risk 25), and wrapping each file call would
+    be code for a path that is not a security finding.
+    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens D5, adversarial-lens E4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+34. **Git's error text is printed as git wrote it.** A message that quotes git's
+    first error line does not escape it, so a name in the repo, such as a file
+    or branch name, can carry terminal escape codes into the caller's terminal
+    or session. Accepted because the repo is code the owner trusts to build,
+    every git message already did this, and the same text prints from git
+    itself on the host.
+    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens D4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.

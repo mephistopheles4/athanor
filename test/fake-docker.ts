@@ -250,7 +250,12 @@ async function main() {
     const work = (scenario.run?.work ?? ['/root/work'])[0] as string;
     const entry = scenario.cp?.[path.startsWith(work + '/') ? path.slice(work.length + 1) : path];
     if (!entry || entry.missing) { console.error(`Error response from daemon: Could not find the file ${path} in container ${id}`); return 1; }
-    if (entry.fails) { console.error(entry.fails); return 1; }
+    if (entry.fails) {
+      // With a tar, the bytes are sent first and the failure follows.
+      if (entry.tar) await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
+      console.error(entry.fails);
+      return 1;
+    }
     if (entry.hang) { await sleep(60000); return 1; }
     await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
     if (entry.lingerMs) await sleep(entry.lingerMs);

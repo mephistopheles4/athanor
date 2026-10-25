@@ -22,8 +22,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
 - **The public interface is stable.** The JSON fields, the exit codes, the
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
-  and the package's major version. An addition bumps neither. One exception:
-  a form that ran something other than what it named may be fixed without a
+  and the package's major version. An addition bumps neither. Exceptions
+  are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
+  form that ran something other than what it named may be fixed without a
   bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability

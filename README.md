@@ -153,8 +153,9 @@ everything else goes to stderr.
 
 After a command name, everything after `--` is an argument for that command,
 passed as literal words, `--json` included; with no name, `--` starts a whole
-command, as `athanor run -- <cmd…>`. Stryker scopes a run with `--mutate`; its positional
-argument is a config file. Don't pass secrets as arguments.
+command, as `athanor run -- <cmd…>`. For Stryker, scope a run with
+`-- --mutate src/a.ts`: a bare path would be read as its config file. Don't
+pass secrets as arguments.
 
 `--output <dir>` copies the command's `outputs` out of the stopped container
 into `<dir>`, a folder athanor makes and that must not exist yet. It copies
@@ -168,12 +169,14 @@ makes only the last folder:
 - A folder inside the repo shows up as untracked files, so add it to
   `.gitignore`.
 - A folder is complete only when the run's result reports `outputs`: a run
-  killed hard in the middle of a copy can leave a partial folder. Check
-  `outputs.missing` for declared paths the container did not have.
+  killed hard in the middle of a copy can leave a partial folder. With
+  `--json`, the result's `outputs` field reports the copy: `dir`, `files`,
+  `bytes`, `skipped` (links, devices and the files Windows acts on) and
+  `missing` (declared paths the container did not have).
 
 athanor copies regular files and folders, checks every name, and refuses the
 whole copy on a bad one, or on a folder laid out as a bare git repository
-(`HEAD` with `objects` or `refs`); links and devices are skipped, and so are
+(`HEAD` with `objects`, `refs` or `commondir`); links and devices are skipped, and so are
 the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url`
 and the like). A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
@@ -274,8 +277,9 @@ threat model holds the full entries.
 - **A repo you don't trust.** The image build runs the repo's Dockerfile with
   the network and gets your Docker client's proxy settings, passwords
   included. The tests run as root unless the Dockerfile names another user,
-  and keep six Linux capabilities. Use athanor only on repos you trust to
-  build. Accepted risks 1 and 5.
+  and keep six Linux capabilities. Everything tracked under `context`, a
+  file added with `git add -N` included, reaches that build. Use athanor only
+  on repos you trust to build. Accepted risks 1 and 5.
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
   builder's operator receives your work, decides the result and chooses the
@@ -303,7 +307,8 @@ threat model holds the full entries.
   the slot is next used. Set `maxCpus` for a bound. Accepted
   risks 4 and 17.
 - **Your git configuration.** The git calls that record uncommitted work run
-  your clean filters, and Git LFS can copy uncommitted files into `.git/lfs`
+  your clean filters (files added with `git add -N` included), and Git LFS
+  can copy uncommitted files into `.git/lfs`
   (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
   work before a run, or know that the filter sees it. Accepted risk 23.
 - **What a copied file holds.** With `--output`, a report the test code wrote
@@ -316,10 +321,18 @@ threat model holds the full entries.
   `safe.bareRepository=explicit` in your git configuration so git does not
   treat a copied folder as a repository. Open
   outputs from a repo you trust to build. Accepted risk 28.
+- **Plain files in the `--output` folder.** Copied outputs are ordinary files,
+  with nothing encrypting them. They rely on your disk encryption and the
+  folder's access rules; keep the folder where only you can read it. Accepted
+  risk 31.
+- **Command arguments.** The words after `<name> --` are visible in your
+  machine's process list, in `docker inspect` on the engine, and to a remote
+  engine's operator. Don't pass secrets as command arguments. Accepted risk 32.
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
-  parent under your user profile. Accepted risk 30.
+  parent under your user profile. On Linux, athanor refuses a parent that other
+  accounts can write unless it has the sticky bit. Accepted risk 30.
 - **Your account name in messages.** A refusal about `allowRemoteDocker` or
   `allowPlainTcp` names the machine configuration file by its full path,
   which holds your home folder's name. It reaches whatever reads athanor's

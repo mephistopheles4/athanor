@@ -1,22 +1,21 @@
 // Copy-out (issue 46, spec M10 to M15 and M17): outputs declared by a command
 // come out of the stopped container into a new --output folder, and every name
 // and byte the container chose is checked. The fake Docker serves a tar per
-// output; the tars are built in this file. One top-level test per claim.
+// output; the tars are built in this file. Each test is named by the claim it backs.
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '#dist/index.js';
 import type { RunOptions } from '#dist/index.js';
 import { parseArgs } from '#dist/cli.js';
 import type { Call } from '../helpers.ts';
-import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, collector, gitState, tempDir } from '../helpers.ts';
+import { makeRepo, isolate, fake, uniquePrefix, callsOf, collector, gitState, tempDir, withCommands } from '../helpers.ts';
 import { buildTar } from '../tar.ts';
 import type { TarSpec } from '../tar.ts';
 
-const withCommands = (commands: unknown, extra: Record<string, unknown> = {}) => ({ ...baseConfig, ...extra, commands });
 const mutation = (outputs: unknown) => ({ test: ['true'], mutation: { argv: ['npx', 'stryker', 'run'], outputs } });
 const served = (tar: Buffer, extra: Record<string, unknown> = {}) => ({ tar: tar.toString('base64'), ...extra });
 const idOfSlot = (prefix: string): string => createHash('sha256').update(`${prefix}-slot-1`).digest('hex');
@@ -104,6 +103,7 @@ test('M11 a bad --output exits 125 before any Docker call and creates nothing', 
     { name: 'a missing parent', says: /does not exist/, make: (s) => ({ output: join(s.parent, 'nope', 'x') }) },
     { name: 'a new folder named .git', says: /\.git/, make: (s) => ({ output: join(s.parent, '.git') }) },
     { name: 'a new folder named .GIT', says: /\.git/i, make: (s) => ({ output: join(s.parent, '.GIT') }) },
+    ...(process.platform === 'win32' ? [] : [{ name: 'a parent others can change', says: /changed by other accounts/, make: (s: Scene) => { chmodSync(s.parent, 0o777); return {}; } }]),
     { name: 'a parent inside .git', says: /inside a \.git folder/, make: (s) => { mkdirSync(join(s.parent, '.GIT')); return { output: join(s.parent, '.GIT', 'x') }; } },
   ];
   for (const row of rows) {
@@ -237,6 +237,11 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     // git treats a folder holding HEAD with objects or refs as a bare repository, in whatever order the files come.
     { name: 'a bare repository layout, HEAD first', tar: buildTar([{ name: 'out/HEAD', content: 'ref: refs/heads/main\n' }, { name: 'out/objects/x' }]), says: /bare git repository/ },
     { name: 'a bare repository layout, HEAD last', tar: buildTar([{ name: 'out/refs/x' }, { name: 'out/HEAD' }]), says: /bare git repository/ },
+    // git also finds a repository's objects and refs through a commondir file, in another folder.
+    { name: 'a bare repository layout through a commondir file', tar: buildTar([{ name: 'out/a/HEAD' }, { name: 'out/a/commondir' }, { name: 'out/b/objects/x' }]), says: /bare git repository/ },
+    { name: 'CONIN$', tar: one('out/CONIN$'), says: /out\/CONIN\$/ },
+    { name: 'CONOUT$ with an extension', tar: one('out/conout$.txt'), says: /conout\$\.txt/ },
+    { name: 'a line separator', tar: one('out/a\u2028b'), says: /out\/a\\u\{2028\}b/ },
     { name: 'a bare repository layout in a nested folder', tar: buildTar([{ name: 'out/sub/objects/', type: '5' }, { name: 'out/sub/HEAD' }]), says: /bare git repository/ },
     { name: 'a dotless i', tar: one('out/.gıt/config'), says: /\.gıt/ },
     { name: 'CON.txt', tar: one('out/CON.txt'), says: /CON\.txt/ },
@@ -300,6 +305,14 @@ test('M13 the caps hold across several outputs, and the test\'s own exit is repo
     assert.equal(result.testExitCode, 3);
     assert.match(result.message!, /test exited 3/);
     assert.equal(existsSync(s.dir), false);
+  });
+  await t.test('a missing output still counts what it sent against the size cap', async (t) => {
+    // An end block and padding, then the missing-path text: nothing in it, but 700 KB read.
+    const empty = { tar: Buffer.alloc(700 * 1024).toString('base64'), fails: 'Error response from daemon: Could not find the file /x in container y' };
+    const s = scene(t, { outputs: ['one', 'two', 'three'], cp: { one: empty, two: empty, three: served(buildTar([{ name: 'three/a' }])) }, machine: { maxOutputMegabytes: 1 } });
+    const { result } = await copy(s);
+    assert.equal(result.outcome, 'error', JSON.stringify(result));
+    assert.match(result.message!, /size limit/);
   });
   await t.test('entries', async (t) => {
     const small = (name: string) => served(buildTar([{ name: `${name}/a` }, { name: `${name}/b` }]));

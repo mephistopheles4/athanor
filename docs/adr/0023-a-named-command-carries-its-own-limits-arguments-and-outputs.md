@@ -55,8 +55,8 @@ repairs:
   skipped and counted. So are the files Windows acts on when it shows a folder
   (`desktop.ini`, `.lnk`, `.url`, `.scf`, `.library-ms`, `.searchConnector-ms`,
   `.theme`, `.themepack`), on every engine (the owner's q2 at Test). A folder
-  that would hold `HEAD` with `objects` or `refs`, the layout of a bare git
-  repository, is refused (q3). Any other header type, a bad record or a truncated
+  that would hold `HEAD` with `objects`, `refs` or `commondir`, the layout of a
+  bare git repository, is refused (q3). Any other header type, a bad record or a truncated
   stream is an error.
 - Names are read as text and never resolved. Each segment must pass rules that
   hold on every platform: no empty, `.` or `..` part, no `.git` in either case

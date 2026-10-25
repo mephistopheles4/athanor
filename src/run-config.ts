@@ -92,7 +92,7 @@ export interface MachineConfig {
 }
 
 // A command in object form (ADR 0023): its argv, whether it takes arguments,
-// and limits of its own.
+// its outputs, and limits of its own.
 interface CommandObject {
   argv: string[];
   args?: boolean;
@@ -151,10 +151,10 @@ export interface RunRequest {
   extraNames?: string[];
 }
 
-// The message for two names, when the first is not a command of the repo.
-function oneNameMessage(request: RunRequest): string {
-  const names = [request.name ?? 'test', ...(request.extraNames ?? [])];
-  return `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To run a command of your own, put it after --.`;
+// The lead of every message about more than one name given without --.
+function oneNameLead(name: string, extraNames: string[]): string {
+  const names = [name, ...extraNames];
+  return `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}.`;
 }
 
 export function memoryBytes(value: string): number {
@@ -368,7 +368,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // Own keys only, so a name such as "constructor" is not found on the prototype.
   const entry = request.command === undefined && Object.hasOwn(repo.commands, commandName) ? repo.commands[commandName] : undefined;
   if (request.command === undefined && entry === undefined) {
-    if (request.extraNames?.length) throw new AthanorError(oneNameMessage(request));
+    if (request.extraNames?.length) throw new AthanorError(`${oneNameLead(commandName, request.extraNames)} To run a command of your own, put it after -- with no name before it: athanor run -- <command>.`);
     throw new AthanorError(`There is no command named "${commandName}" in ${where}. Its commands are: ${Object.keys(repo.commands).join(', ')}.`);
   }
   const own: CommandObject | undefined = entry !== undefined && !Array.isArray(entry) ? entry : undefined;
@@ -380,10 +380,10 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   }
   const optIn = `Set "args": true on commands.${commandName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
   if (request.extraNames?.length) {
-    const names = [commandName, ...request.extraNames];
+    const lead = oneNameLead(commandName, request.extraNames);
     throw new AthanorError(own?.args === true
-      ? `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. To pass arguments to "${commandName}", put them after --, such as athanor run ${commandName} -- ${request.extraNames.join(' ')}.`
-      : `athanor run takes one command name, but got ${names.length}: ${names.join(', ')}. ${optIn}`);
+      ? `${lead} To pass arguments to "${commandName}", put them after --, such as athanor run ${commandName} -- ${request.extraNames.join(' ')}.`
+      : `${lead} ${optIn}`);
   }
   if (args.length > 0 && own?.args !== true) {
     throw new AthanorError(`The command "${commandName}" does not take arguments. ${optIn}`);

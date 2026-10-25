@@ -295,7 +295,7 @@ interface CopyStep {
 async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
   const testExit = c.handed.ran.exitCode;
   try {
-    const work = workFolder(c.handed.work);
+    const work = workFolder(c.handed.workLines);
     if (c.handed.id === undefined) throw new CopyError('athanor could not read the container\'s ID, so it cannot copy from it.');
     const copied = await copyOut({
       docker: c.docker, env: c.env, id: c.handed.id, work, outputs: c.outputs, target: c.target,
@@ -310,7 +310,7 @@ async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
     if (error instanceof CopyError) {
       return {
         outcome: 'error', exitCode: EXIT.setup, testExitCode: testExit,
-        message: `The test exited ${testExit}, but its outputs could not be copied: ${error.message} Fix that and run again, or run without --output.`,
+        message: `The test exited ${testExit}, but its outputs could not be copied: ${error.message} Fix the cause and run again, or run without --output.`,
       };
     }
     throw error;
