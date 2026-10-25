@@ -374,6 +374,14 @@ test('C28 only the hashed set reaches the build', async (t) => {
   const buildArgs = callsOf(docker.calls(), 'build')[0].args;
   assert.deepEqual(buildArgs.slice(-3), ['-f', 'Dockerfile', '-']);
 
+  // With --untracked the untracked file reaches the container, and the build still gets only the hashed set.
+  for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));
+  const withUntracked = await runWith(t, repo, docker, { untracked: true });
+  assert.equal(withUntracked.outcome, 'pass', JSON.stringify(withUntracked));
+  assert.equal(tarFile(lastRunTar(docker), 'test/untracked.txt'), 'untracked\n');
+  assert.equal(callsOf(docker.calls(), 'build').length, 2);
+  assert.deepEqual(tarNames(lastBuildTar(docker)), ['.gitignore', 'Dockerfile', 'kept.txt', 'package-lock.json']);
+
   git(repo, ['config', 'tar.umask', '0077']);
   docker.setScenario({});
   for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));
@@ -407,13 +415,16 @@ test('C28 only the hashed set reaches the build', async (t) => {
       ['ignored', { '.gitignore': 'secret.env\n' }, { 'secret.env': 'KEY=1\n' }],
       ['untracked', {}, { 'secret.env': 'KEY=1\n' }],
     ] as [string, Record<string, string>, Record<string, string>][]) {
-      const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret.env'] }, files });
-      writeFiles(repo, extra);
-      const d = fake(t);
-      const result = await runWith(t, repo, d);
-      assert.equal(result.exitCode, 125, `${name}: ${JSON.stringify(result)}`);
-      assert.match(result.message!, /inputs file "secret\.env" is not tracked by git.*Add it to git, or remove it from inputs/);
-      assert.equal(callsOf(d.calls(), 'build').length, 0);
+      // With --untracked too, an inputs file git doesn't track is refused before any build.
+      for (const untracked of [false, true]) {
+        const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret.env'] }, files });
+        writeFiles(repo, extra);
+        const d = fake(t);
+        const result = await runWith(t, repo, d, { untracked });
+        assert.equal(result.exitCode, 125, `${name}, untracked ${untracked}: ${JSON.stringify(result)}`);
+        assert.match(result.message!, /inputs file "secret\.env" is not tracked by git.*Add it to git, or remove it from inputs/);
+        assert.equal(callsOf(d.calls(), 'build').length, 0);
+      }
     }
   });
 

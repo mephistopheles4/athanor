@@ -127,6 +127,9 @@ recorded on issue 60, and V8 is the gates; no test carries their names. V5's
 hand runs and its Docker Desktop half are manual checks on the owner's machine. R1 and R2 are fast-tier tests. R3, R4,
 R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
 one-time checks by the owner recorded on issue 6; no test carries their names.
+`Z1` to `Z6`, from the spec on issue 57: Z1 to Z4 are checks by reading at
+review, Z5 is a manual check at the next release recorded on issue 57, and Z6
+is the diff's file list and CI; no test carries their names.
 
 ## Releases
 
