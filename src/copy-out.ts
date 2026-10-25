@@ -183,10 +183,7 @@ export async function copyOut(req: CopyRequest): Promise<Copied> {
     if (error instanceof CopyError && left.length > 0) {
       throw new CopyError(`${error.message} athanor could not remove: ${left.join(', ')}. Remove ${req.target.asTyped} yourself.`);
     }
-    if (error instanceof CopyError || error instanceof CopyInterrupted) throw error;
-    // A file-system failure (a full disk, say): the code only, never a path.
-    const code = (error as NodeJS.ErrnoException).code;
-    throw new CopyError(`a file could not be written (${code ?? 'file system error'}).${left.length > 0 ? ` athanor could not remove: ${left.join(', ')}. Remove ${req.target.asTyped} yourself.` : ''}`);
+    throw error;
   }
 }
 

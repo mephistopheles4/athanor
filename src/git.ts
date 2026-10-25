@@ -69,8 +69,7 @@ async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env;
   return r.stdout;
 }
 
-// The first line of git's output, with control characters escaped.
-const firstLine = (text: unknown): string => (String(text).trim().split('\n')[0]?.trim() ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+const firstLine = (text: unknown): string => String(text).trim().split('\n')[0]?.trim() ?? '';
 
 // The top of the work tree, after checking there is a commit and no conflict.
 export async function repoRoot(cwd: string): Promise<string> {
@@ -165,7 +164,7 @@ export async function snapshot(root: string, scratch: Scratch, { untracked }: { 
   // `stash create` refuses an index copy holding an intent-to-add entry (git add -N);
   // `add -u` turns each into a real entry at its working-tree content (issue 46, M8).
   await git(['add', '-u', '--', '.'], { cwd: root, env, what: 'read files added with git add -N' });
-  const stash =(await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes' })).trim();
+  const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes' })).trim();
   const id = stash || (await git(['rev-parse', 'HEAD'], { cwd: root, what: 'read HEAD' })).trim();
   return { id, untracked: false, untrackedLeftOut: untrackedCount };
 }
