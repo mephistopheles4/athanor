@@ -203,8 +203,8 @@ the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url`
 and the like). A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
 ends the run with exit 125 and the test's own exit in `testExitCode`; after a
-memory run, `testExitCode` is 137 and `containerExitCode` holds the
-container's own exit.
+memory run, `testExitCode` is athanor's 137, not the test's, and
+`containerExitCode` holds the container's own exit.
 
 A run tests your tracked files as they are in the working tree, staged or
 not (a file added with `git add -N` counts), and tells you how many untracked
@@ -228,7 +228,7 @@ untracked ones, into the repo's `.git/lfs` folder, where they stay.
 | --- | --- |
 | the test's own | the test command ran and exited with it |
 | 124 | the time limit ended the run |
-| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment; or the test ran but its outputs could not be copied (the test's exit is `testExitCode`, 137 after a memory run) |
+| 125 | athanor could not run the test: configuration, build, Docker, snapshot or environment; or the test ran but its outputs could not be copied (`testExitCode`: the test's exit, or athanor's 137 after a memory run) |
 | 130 | an interrupt ended the run |
 | 137 | with outcome `memory`, the memory limit killed a process in the container: the test itself, or another process before the test exited |
 
@@ -241,7 +241,8 @@ so any kill during the run makes the outcome `memory`. The JSON
 `containerExitCode` field, set only then, is the container's own exit: 137
 when the test itself was killed, and the test's exit when it exited on its
 own after another process, such as a worker, was killed. In that case the
-result line says so, and the test's result may be incomplete.
+line athanor prints at the end of the run says so, and the test's result may
+be incomplete.
 
 ## Machine configuration
 

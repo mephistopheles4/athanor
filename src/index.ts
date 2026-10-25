@@ -68,7 +68,9 @@ export interface RunResult {
   slot?: number;
   ranMs?: number;
   message?: string;
-  // Set when the test ran and exited but copying its outputs failed: the test's own exit.
+  // Set when the test ran and exited but copying its outputs failed: the test's own
+  // exit, or athanor's 137 after a memory run, when containerExitCode holds the
+  // container's own exit (ADR 0030).
   testExitCode?: number;
   // Set when the memory limit killed a process: the container's own exit,
   // which is 137 only when the test itself was killed (ADR 0030).

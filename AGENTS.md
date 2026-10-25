@@ -123,8 +123,10 @@ reading; no test carries their names. M18 is checked by reading at review (ADR
 check, one Stryker run on a repo the owner names. M20 is checked at Test by the
 security pair. N7 is checked by reading at review, N8 by the security pair at Test,
 and N10 is a manual check recorded on issue 54. V6 is checked by reading at review, V7 is a manual check
-recorded on issue 60, and V8 is the gates; no test carries their names. V5's
-hand runs and its Docker Desktop half are manual checks on the owner's machine. R1 and R2 are fast-tier tests. R3, R4,
+recorded on issue 60, and V8 is the fast, types, check and docker
+tiers passing on the final head; no test carries their names. V5's hand runs,
+and its docker tier on Docker Desktop (the K5 check), are manual checks on the
+owner's machine. R1 and R2 are fast-tier tests. R3, R4,
 R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
 one-time checks by the owner recorded on issue 6; no test carries their names.
 `Z1` to `Z6`, from the spec on issue 57: Z1 to Z4 are checks by reading at

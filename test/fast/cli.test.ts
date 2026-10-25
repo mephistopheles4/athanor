@@ -24,6 +24,7 @@ test('V2 the result line says when the test exited on its own after the memory l
     resultLine({ schema: 1, outcome: 'memory', exitCode: 137, containerExitCode: 0 }),
     "the test exited 0, but the memory limit killed a process in the container during the run (exit 137). The test's result may be incomplete. Raise memory in the repo configuration, or use less.",
   );
+  assert.match(resultLine({ schema: 1, outcome: 'memory', exitCode: 137, containerExitCode: 3 }), /^the test exited 3, but the memory limit killed a process/);
   assert.equal(
     resultLine({ schema: 1, outcome: 'memory', exitCode: 137, containerExitCode: 137 }),
     'the memory limit ended the run (exit 137). Raise memory in the repo configuration, or use less.',

@@ -376,6 +376,7 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
   await t.test("V3 memory: a failed copy after the test exited on its own keeps testExitCode 137 and gives the container's exit", async (t) => {
     for (const row of [
       { exitCode: 0, says: /^The test exited 0 after the memory limit killed a process in the container, but its outputs could not be copied: / },
+      { exitCode: 3, says: /^The test exited 3 after the memory limit killed a process in the container, but its outputs could not be copied: / },
       { exitCode: 137, says: /^The test exited 137 after hitting the memory limit, but its outputs could not be copied: / },
     ]) {
       const s = scene(t, { cp: { out: served(buildTar([{ name: 'out/.git/config' }])) }, plan: { oom: true, exitCode: row.exitCode } });
