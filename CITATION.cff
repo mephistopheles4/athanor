@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata from this file."
 type: software
 title: athanor
-abstract: "Run a repo's tests on your current work in a fresh Linux container with no network, with at most N runs at once on the machine."
+abstract: "Run a repo's tests on your current work in a fresh Linux container, with at most N runs at once on the machine."
 authors:
   - given-names: Ayman
     family-names: Diab
