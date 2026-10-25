@@ -87,7 +87,7 @@ above; the software they run is not.
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
   decides (accepted risk 7).
-- **Fixed limits on each run:** memory and memory-swap, a process limit of 1024, `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted risk 17). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4); only `maxCpus` has no default (C31, U3).
+- **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted risk 17). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
@@ -232,7 +232,7 @@ above; the software they run is not.
 - **Input validation.** Repo configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
-  (C17, C18, C24, C31). A named command's arguments are accepted only when it
+  (C17, C18, C24, C31, N4). A named command's arguments are accepted only when it
   sets `args`, and are passed as literal arguments (M5, M6). The `outputs`
   entries, `--output`, and every entry name and header in a copied tar are
   checked too (M10, M11, M13). The engine endpoint and every builder node are
@@ -261,7 +261,7 @@ from"; a maintainer-only risk stays here alone.
 
 | Who | Accepted risks |
 | --- | --- |
-| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32 |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36 |
 | Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34 |
 
 Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
@@ -308,8 +308,11 @@ the lead session's chat, relayed by head-chef-field-test.
 4. **A hostile test can outlive a hard-killed caller.** A test that kills the
    in-container timer, together with a hard-killed caller, leaves one
    container running until its slot is next used. Accepted because the next
-   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17).
+   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17). With a raised `maxProcesses`, it can also hold up to that many processes (accepted risk 36); while the engine's process table is full, its removal can fail too, and recovery may need an engine restart (on a Linux host, the host's own recovery). Until it is removed, the container keeps the run's snapshot, uncommitted files included.
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+   The `maxProcesses` clause added 2026-10-25. From: the Design review of the spec on issue 54, revision 1 (adversarial-lens, accepted risk 4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+   The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+   The clause's "while the engine's process table is full" reworded 2026-10-25, restating the owner's q11 words. From: the closing read of issue 54 on 393dc0d (adversarial-lens A4). How the word arrived: the lead's pick (q13) under the owner's standing instruction, relayed by head-chef-field-test.
 5. **A root test keeps six Linux capabilities, and the run limit has no upper
    bound.** The test runs as the image's user, root unless the Dockerfile names
    another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
@@ -420,7 +423,7 @@ the lead session's chat, relayed by head-chef-field-test.
     needs mount privilege, which is root, and finding it would mean parsing the
     mount table on Linux only.
     Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file mounted over the configuration name). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-17. **A run with no CPU limit, or with a limit the repo chose, can use every CPU the engine has.** When the machine configuration sets no `maxCpus`, the repo's test code can keep every core of the engine busy, which on Docker Desktop is every core the VM has, slowing the host and the owner's other runs. The run's time limit ends it, except in accepted risk 4's case, where it lasts until the slot is next used. Memory, swap and processes stay bounded. Accepted because the owner chose speed by default, the repo is code the owner trusts to build, and a machine that wants a bound sets `maxCpus`.
+17. **A run with no CPU limit, or with a limit the repo chose, can use every CPU the engine has.** When the machine configuration sets no `maxCpus`, the repo's test code can keep every core of the engine busy, which on Docker Desktop is every core the VM has, slowing the host and the owner's other runs. The run's time limit ends it, except in accepted risk 4's case, where it lasts until the slot is next used. Memory, swap and processes stay bounded (processes by `maxProcesses`, accepted risk 36). Accepted because the owner chose speed by default, the repo is code the owner trusts to build, and a machine that wants a bound sets `maxCpus`.
     Accepted 2026-10-22. From: the spec on issue 36, revisions 1–4 (S6; the decisions in S7, items 3 and 6), and the Design review of revision 2 (adversarial-lens F1–F5, data-lens F1–F2). How the word arrived: the owner, in chat with the session that wrote the spec.
 18. **A merged hijacked compiler runs with the owner's rights.** The TypeScript
     compiler is the one dev package that runs. A hijacked release that stays
@@ -505,14 +508,16 @@ the lead session's chat, relayed by head-chef-field-test.
     where a local address leads without trusting the machine it runs on, and
     Docker offers no check of the engine's identity to build on.
     Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-25. **A message names the machine file's full path.** The refusal messages
-    for `allowRemoteDocker` and `allowPlainTcp` name the machine configuration
-    file by its full path, which holds the OS account's home folder name.
-    That path reaches stderr, the JSON `message` and the calling session's
-    model provider. Accepted because it is the owner's own account name, going
+25. **A message names the machine file's full path.** Every message that
+    names the machine configuration file names it by its full path, which holds
+    the account's home-folder name: its JSON and shape errors, its unknown
+    keys, its value checks, its ceilings, and the `allowRemoteDocker` and
+    `allowPlainTcp` refusals. That message goes to whatever reads athanor's
+    output, such as an agent session and its model provider. Accepted because it is the owner's own account name, going
     to the owner's own session, and naming the file to fix is what makes the
     message actionable.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    Widened 2026-10-25 to every message that names the file. From: the Design review of the spec on issue 54 (data-lens, machine-file messages carry the account name). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 26. **A program running as the owner can read the npm session token.** From
     `npm login` to `npm logout`, around a release's approval, the session
     token sits in the owner's user npm configuration, unencrypted at file
@@ -604,3 +609,27 @@ the lead session's chat, relayed by head-chef-field-test.
     every git message already did this, and the same text prints from git
     itself on the host.
     Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens D4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+36. **A machine that raises `maxProcesses` lets a repo's test code hold that
+    many processes in each run.** With the ceiling raised, a runaway loop that
+    starts processes is stopped later. Every run's processes come from the
+    engine's one process table. Several runs at once, each near a high ceiling,
+    can fill that table, and the engine and its other containers then cannot
+    start processes until the runs end. On Docker Desktop that may reach other
+    programs sharing its VM; on a Linux host with its own engine the table is
+    the host's own, so filling it stops every program there, athanor's own
+    Docker calls included. Memory does not prevent this: a process costs little
+    memory. While the table is full, athanor's stop at the time limit may fail
+    to start, so a test that has ended the in-container timer can outlast the
+    limit; in accepted risk 4's case, the container lasts until the slot is
+    next used, and while the table is full its removal can fail too, so
+    recovery may need an engine restart (on a Linux host, the host's own
+    recovery). Until it is removed, a leftover container keeps the run's
+    snapshot, uncommitted files included. A ceiling near the top (4194304) is in effect no limit. The
+    ceiling comes from the machine file, so whoever sets `ATHANOR_HOME`
+    chooses it. Accepted because the default stays 1024, raising it is the
+    machine owner's act, the README advises keeping `maxProcesses` times the
+    largest run limit any caller uses, plus the engine's other containers, well
+    below the engine's process limit and says how to read that limit, and the
+    repo is code the owner trusts to build.
+    Accepted 2026-10-25. From: the spec on issue 54, S6, redrafted after its Design reviews (adversarial-lens, revisions 1 and 3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.

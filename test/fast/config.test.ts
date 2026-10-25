@@ -231,8 +231,8 @@ test('T8 a configuration message names the file the bad value came from, in its 
 });
 
 test('T9 a key only the machine may set is refused in the repo configuration, and a repo key in the machine file', async (t) => {
-  const repoKeys = 'dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes';
-  const machineKeys = 'memory, cpus, timeoutMinutes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, allowPlainTcp, allowRemoteDocker, maxOutputMegabytes';
+  const repoKeys = 'dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes, processes';
+  const machineKeys = 'memory, cpus, timeoutMinutes, processes, maxRuns, pruneDays, maxMemory, maxCpus, maxTimeoutMinutes, maxProcesses, allowPlainTcp, allowRemoteDocker, maxOutputMegabytes';
   const machineOnly = { maxRuns: 3, pruneDays: 7, maxMemory: '4g', maxCpus: 2, maxTimeoutMinutes: 60, allowPlainTcp: true };
   for (const [key, value] of Object.entries(machineOnly)) {
     await t.test(`${key} in the repo`, async (t) => {
@@ -401,7 +401,7 @@ test('J7 each machine-only key in athanor.json exits 125 as an unknown key namin
       const repo = makeRepo(t, { packageJson: false, files: { 'athanor.json': asJson({ ...baseConfig, [key]: value }) } });
       const { result, calls } = await runIn(t, repo);
       assertSetupError(result, calls, /unknown key/);
-      assert.equal(result.message, `athanor.json has an unknown key "${key}". Its keys are: dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes.`);
+      assert.equal(result.message, `athanor.json has an unknown key "${key}". Its keys are: dockerfile, context, inputs, commands, memory, cpus, timeoutMinutes, processes.`);
     });
   }
 });

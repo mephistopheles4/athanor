@@ -110,7 +110,7 @@ Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
 issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
-issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46; `N1` to `N10`, from the spec on issue 54). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
@@ -120,7 +120,8 @@ reading; no test carries their names. M18 is checked by reading at review (ADR
 0023, the docs, the threat-model text as the owner approved it, and that
 `src/container-settings.ts` changes only by the work line). M19 is a manual
 check, one Stryker run on a repo the owner names. M20 is checked at Test by the
-security pair. R1 and R2 are fast-tier tests. R3, R4,
+security pair. N7 is checked by reading at review, N8 by the security pair at Test,
+and N10 is a manual check recorded on issue 54. R1 and R2 are fast-tier tests. R3, R4,
 R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
 one-time checks by the owner recorded on issue 6; no test carries their names.
 
