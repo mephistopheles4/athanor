@@ -102,6 +102,8 @@ test('M11 a bad --output exits 125 before any Docker call and creates nothing', 
     { name: 'an existing file', says: /already exists/, make: (s) => { writeFileSync(s.dir, 'x'); return {}; } },
     { name: 'an existing folder', says: /already exists/, make: (s) => { mkdirSync(s.dir); return {}; } },
     { name: 'a missing parent', says: /does not exist/, make: (s) => ({ output: join(s.parent, 'nope', 'x') }) },
+    { name: 'a new folder named .git', says: /\.git/, make: (s) => ({ output: join(s.parent, '.git') }) },
+    { name: 'a new folder named .GIT', says: /\.git/i, make: (s) => ({ output: join(s.parent, '.GIT') }) },
     { name: 'a parent inside .git', says: /inside a \.git folder/, make: (s) => { mkdirSync(join(s.parent, '.GIT')); return { output: join(s.parent, '.GIT', 'x') }; } },
   ];
   for (const row of rows) {
@@ -257,6 +259,9 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     { name: 'a file over the size limit', tar: one('out/big', { content: Buffer.alloc(MEGABYTE + MEGABYTE / 2, 1) }), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'files that together pass the size limit', tar: buildTar([1, 2, 3].map((n) => ({ name: `out/f${n}`, content: Buffer.alloc(400 * 1024, n) }))), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'more entries than the limit, written files', tar: buildTar(Array.from({ length: 5 }, (_, n) => ({ name: `out/f${n}` }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
+    // The folders athanor makes for one deep name count against the same cap.
+    { name: 'one file entry whose path makes more folders than the entry limit', tar: one(`out/${'d/'.repeat(10)}f`), says: /more entries/, extra: { maxOutputEntries: 5 } },
+    { name: 'a path longer than a path can be', tar: one('out/x', { pax: { path: `out/${'d/'.repeat(2100)}f` } }), says: /too long/ },
     { name: 'more entries than the limit, links alone', tar: buildTar(Array.from({ length: 5 }, (_, n) => ({ name: `out/l${n}`, type: '2' }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
     { name: 'more entries than the limit, metadata alone', tar: buildTar(Array.from({ length: 5 }, () => ({ name: 'pax', type: 'g' }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
   ];

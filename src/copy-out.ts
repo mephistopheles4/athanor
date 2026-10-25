@@ -17,6 +17,8 @@ export const COPY_TIME_MS = 10 * 60 * 1000;
 // The most a PAX or GNU header's own data may hold.
 const MAX_META_BYTES = 1024 * 1024;
 const BLOCK = 512;
+// The longest entry name accepted, which is longer than any path the host can make.
+const MAX_NAME = 4096;
 
 // A copy that failed: the reason, in plain words, for the core to wrap.
 export class CopyError extends Error {}
@@ -96,6 +98,10 @@ export interface OutputTarget {
 // Docker call, and creates nothing.
 export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
   const full = resolve(cwd, dir);
+  const leaf = basename(full);
+  if (leaf.toLowerCase() === '.git' || leaf.toUpperCase() === '.GIT') {
+    throw new AthanorError(`--output ${dir} is named .git. Give a folder with another name.`);
+  }
   try {
     lstatSync(full);
     throw new AthanorError(`--output ${dir} already exists. Give a folder that does not exist yet; athanor never copies into an existing one.`);
@@ -177,12 +183,15 @@ export async function copyOut(req: CopyRequest): Promise<Copied> {
     if (error instanceof CopyError && left.length > 0) {
       throw new CopyError(`${error.message} athanor could not remove: ${left.join(', ')}. Remove ${req.target.asTyped} yourself.`);
     }
-    throw error;
+    if (error instanceof CopyError || error instanceof CopyInterrupted) throw error;
+    // A file-system failure (a full disk, say): the code only, never a path.
+    const code = (error as NodeJS.ErrnoException).code;
+    throw new CopyError(`a file could not be written (${code ?? 'file system error'}).${left.length > 0 ? ` athanor could not remove: ${left.join(', ')}. Remove ${req.target.asTyped} yourself.` : ''}`);
   }
 }
 
 class Job {
-  readonly maxEntries: number;
+  private used = 0;
   private made: Made[] = [];
   // Every folder and file written, by exact name, and by lower-case name for the case check.
   private kinds = new Map<string, 'file' | 'dir'>();
@@ -193,8 +202,14 @@ class Job {
 
   constructor(req: CopyRequest) {
     this.req = req;
-    this.maxEntries = req.maxEntries;
     this.root = join(req.target.realParent, req.target.name);
+  }
+
+  // One entry of the budget: every header in the stream, and every folder athanor makes.
+  spend(): void {
+    if (++this.used > this.req.maxEntries) {
+      throw new CopyError(`the outputs hold more entries than the limit of ${this.req.maxEntries}, counting the folders athanor makes. Declare narrower "outputs".`);
+    }
   }
 
   async run(): Promise<Copied> {
@@ -210,9 +225,8 @@ class Job {
     this.made.push({ path: this.root, kind: 'dir' });
     if (!lstatSync(this.root).isDirectory()) throw new CopyError(`${req.target.asTyped} is not a folder after it was created.`);
     let rawBytes = 0;
-    let entries = 0;
     for (const output of req.outputs) {
-      const reader = new Reader(this, output, req.maxBytes - rawBytes, req.maxEntries - entries);
+      const reader = new Reader(this, output, req.maxBytes - rawBytes);
       const stderr: Buffer[] = [];
       let failure: unknown;
       let timedOut = false;
@@ -253,7 +267,6 @@ class Job {
       }
       reader.finish();
       rawBytes += reader.bytes;
-      entries += reader.entries;
     }
     return this.counts;
   }
@@ -280,6 +293,7 @@ class Job {
       const kind = this.kinds.get(exact);
       if (kind === 'dir') continue;
       if (kind === 'file') throw new CopyError(`"${showName(exact)}" is a file and also a folder.`);
+      this.spend();
       const path = join(this.root, ...parts);
       try {
         mkdirSync(path);
@@ -293,6 +307,7 @@ class Job {
 
   // The path of an entry inside the output folder, as segments, or a CopyError.
   place(raw: string, output: string, isFolder: boolean): string[] {
+    if (raw.length > MAX_NAME) throw new CopyError(`an entry name is too long (over ${MAX_NAME} characters).`);
     let name = raw;
     if (name.endsWith('/')) {
       if (!isFolder) throw new CopyError(`the entry "${showName(raw)}" is a file but its name ends in /.`);
@@ -385,13 +400,11 @@ class Reader {
   private job: Job;
   private output: string;
   private maxBytes: number;
-  private maxEntries: number;
 
-  constructor(job: Job, output: string, maxBytes: number, maxEntries: number) {
+  constructor(job: Job, output: string, maxBytes: number) {
     this.job = job;
     this.output = output;
     this.maxBytes = maxBytes;
-    this.maxEntries = maxEntries;
   }
 
   push(chunk: Buffer): void {
@@ -455,7 +468,8 @@ class Reader {
 
   private header(block: Buffer): void {
     if (block.every((b) => b === 0)) { this.state = 'done'; return; }
-    if (++this.entries > this.maxEntries) this.fail(`the outputs hold more entries than the limit of ${this.job.maxEntries}. Declare narrower "outputs".`);
+    this.entries++;
+    this.job.spend();
     // The checksum: all bytes, with the checksum field read as spaces.
     let sum = 0;
     for (let i = 0; i < BLOCK; i++) sum += i >= 148 && i < 156 ? 32 : block[i]!;

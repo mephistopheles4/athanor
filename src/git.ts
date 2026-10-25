@@ -69,7 +69,8 @@ async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env;
   return r.stdout;
 }
 
-const firstLine = (text: unknown): string => String(text).trim().split('\n')[0]?.trim() ?? '';
+// The first line of git's output, with control characters escaped.
+const firstLine = (text: unknown): string => (String(text).trim().split('\n')[0]?.trim() ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
 // The top of the work tree, after checking there is a commit and no conflict.
 export async function repoRoot(cwd: string): Promise<string> {
