@@ -374,6 +374,14 @@ test('C28 only the hashed set reaches the build', async (t) => {
   const buildArgs = callsOf(docker.calls(), 'build')[0].args;
   assert.deepEqual(buildArgs.slice(-3), ['-f', 'Dockerfile', '-']);
 
+  // With --untracked the untracked file reaches the container, and the build still gets only the hashed set.
+  for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));
+  const withUntracked = await runWith(t, repo, docker, { untracked: true });
+  assert.equal(withUntracked.outcome, 'pass', JSON.stringify(withUntracked));
+  assert.equal(tarFile(lastRunTar(docker), 'test/untracked.txt'), 'untracked\n');
+  assert.equal(callsOf(docker.calls(), 'build').length, 2);
+  assert.deepEqual(tarNames(lastBuildTar(docker)), ['.gitignore', 'Dockerfile', 'kept.txt', 'package-lock.json']);
+
   git(repo, ['config', 'tar.umask', '0077']);
   docker.setScenario({});
   for (const f of readdirSync(join(docker.dir, 'images'))) unlinkSync(join(docker.dir, 'images', f));
