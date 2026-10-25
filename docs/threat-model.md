@@ -308,9 +308,10 @@ the lead session's chat, relayed by head-chef-field-test.
 4. **A hostile test can outlive a hard-killed caller.** A test that kills the
    in-container timer, together with a hard-killed caller, leaves one
    container running until its slot is next used. Accepted because the next
-   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17). With a raised `maxProcesses`, it can also hold up to that many processes (accepted risk 36).
+   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17). With a raised `maxProcesses`, it can also hold up to that many processes (accepted risk 36); while it holds the engine's process table full, its removal can fail too, and recovery may need an engine restart (on a Linux host, the host's own recovery). Until it is removed, the container keeps the run's snapshot, uncommitted files included.
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
    The `maxProcesses` clause added 2026-10-25. From: the Design review of the spec on issue 54, revision 1 (adversarial-lens, accepted risk 4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+   The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 5. **A root test keeps six Linux capabilities, and the run limit has no upper
    bound.** The test runs as the image's user, root unless the Dockerfile names
    another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
@@ -619,7 +620,10 @@ the lead session's chat, relayed by head-chef-field-test.
     memory. While the table is full, athanor's stop at the time limit may fail
     to start, so a test that has ended the in-container timer can outlast the
     limit; in accepted risk 4's case, the container lasts until the slot is
-    next used. A ceiling near the top (4194304) is in effect no limit. The
+    next used, and while the table is full its removal can fail too, so
+    recovery may need an engine restart (on a Linux host, the host's own
+    recovery). Until it is removed, a leftover container keeps the run's
+    snapshot, uncommitted files included. A ceiling near the top (4194304) is in effect no limit. The
     ceiling comes from the machine file, so whoever sets `ATHANOR_HOME`
     chooses it. Accepted because the default stays 1024, raising it is the
     machine owner's act, the README advises keeping `maxProcesses` times the
@@ -627,3 +631,4 @@ the lead session's chat, relayed by head-chef-field-test.
     below the engine's process limit and says how to read that limit, and the
     repo is code the owner trusts to build.
     Accepted 2026-10-25. From: the spec on issue 54, S6, redrafted after its Design reviews (adversarial-lens, revisions 1 and 3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.

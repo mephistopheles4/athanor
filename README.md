@@ -331,13 +331,17 @@ threat model holds the full entries.
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
-  the slot is next used. Set `maxCpus` for a bound. Accepted
+  the slot is next used, and it keeps the run's snapshot, uncommitted files
+  included, until it is removed. Set `maxCpus` for a bound. Accepted
   risks 4 and 17.
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,
   the whole host's on Linux. Filling it stops the engine and other programs
   from starting processes, and can keep athanor from stopping a run at its
-  time limit. Keep `maxProcesses` times your largest run limit well below your
+  time limit. A container left running then may not be removable until you
+  restart the engine (on Linux, recover the host), and until it is removed it
+  keeps the run's snapshot, uncommitted files included. Keep `maxProcesses`
+  times your largest run limit well below your
   engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
   it). Accepted risks 4 and 36.
 - **Your git configuration.** The git calls that record uncommitted work run
