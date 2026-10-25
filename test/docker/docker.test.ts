@@ -89,6 +89,7 @@ test('C2 a warm run makes no build and adds at most 5 seconds to the container\'
   isolate(t);
   const repo = fixtureRepo(t);
   await runReal(t, repo);
+  const started = Date.now();
   const warm = await runReal(t, repo);
   const wall = Date.now() - started;
   assert.equal(warm.result.image!.built, false);
