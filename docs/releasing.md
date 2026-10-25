@@ -234,7 +234,8 @@ checks again.
 
 Every log-out on this page ends with `npm whoami` failing, as in step 16.
 
-12. If the version is already on npm, bump it in a pull request, merge it, and
+12. If the version is already on npm, or was unpublished, bump it in a pull
+    request, merge it, and
     wait for CI on `main`. Then start `release` on `main`.
 13. When `check` has passed, check that you started this run, on the commit
     you merged, and read the diff since the last release tag:
@@ -301,10 +302,12 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
       Get-Content -Raw <checkout>/package.json | ConvertFrom-Json | Select-Object dependencies, optionalDependencies, peerDependencies, bundleDependencies, bundledDependencies, scripts, bin | ConvertTo-Json
       ```
 
-      The five dependency fields must all be `null`, and `scripts` and `bin`
-      must be the same in both. If they aren't, stop before approving:
-      reject the entry, log out, and record it on issue 6 for the owner's
-      decision. The registry's own manifest, which a publish sends apart
+      The five dependency fields must all be `null`. If any isn't, stop
+      before approving: reject the entry, log out, and record it on issue 6
+      for the owner's decision. `scripts` and `bin` print the same in both,
+      because the file comparison above already passed: read them as what
+      ships, not as a check of their own. A change to them in the repo shows
+      in step 13's diff. The registry's own manifest, which a publish sends apart
       from the tarball, is first seen in step 17, after the version is live
       (accepted risk 22).
     - Only npm, `tar`, `git` and PowerShell run here: nothing from the repo
@@ -342,7 +345,9 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     `npm whoami` must fail.
 17. Check that the version's npm page shows provenance naming this repo, the
     commit and the run. Check that `npm view @mephistopheles4/athanor@<version> --json`
-    shows no dependency of any kind, and the same `scripts` and `bin` as the
+    shows no `dependencies`, `optionalDependencies`, `peerDependencies` or
+    `bundleDependencies` (`devDependencies` are not installed for users and
+    may show), and the same `scripts` and `bin` as the
     local `package.json`. If it doesn't, unpublish the version while npm's
     unpublish policy allows it, else deprecate it at once; a deprecated
     version still installs. For either, log in again from a new, empty folder
