@@ -415,7 +415,7 @@ test('C28 only the hashed set reaches the build', async (t) => {
       ['ignored', { '.gitignore': 'secret.env\n' }, { 'secret.env': 'KEY=1\n' }],
       ['untracked', {}, { 'secret.env': 'KEY=1\n' }],
     ] as [string, Record<string, string>, Record<string, string>][]) {
-      // With --untracked too: an untracked file reaches the container, never the build.
+      // With --untracked too, an inputs file git doesn't track is refused before any build.
       for (const untracked of [false, true]) {
         const repo = makeRepo(t, { athanor: { ...baseConfig, context: 'test', inputs: ['secret.env'] }, files });
         writeFiles(repo, extra);
