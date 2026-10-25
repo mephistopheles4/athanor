@@ -1,8 +1,8 @@
 # AGENTS.md — athanor
 
-athanor runs a repo's tests on the current commit inside a fresh Docker
-container with no network, and keeps a machine-wide limit on how many runs go
-at once. It is a Node 24 package, `@mephistopheles4/athanor`, with a command named
+athanor runs a repo's tests on the working tree, uncommitted edits included,
+inside a fresh Docker container, and keeps a machine-wide limit on how many
+runs go at once. It is a Node 24 package, `@mephistopheles4/athanor`, with a command named
 `athanor`. Words used here are defined in [GLOSSARY.md](GLOSSARY.md); the
 lasting decisions are in [docs/adr/](docs/adr/).
 

@@ -4,7 +4,7 @@ Date: 2026-10-21 · Status: accepted, superseded in part by 0017 · Supersedes: 
 
 The test code runs as root in the container, so a container-escape bug in
 Docker or the kernel would find Docker's 14 default capabilities already
-granted. Most of them do nothing a test needs: there is no network, and no
+granted. Most of them do nothing a test needs: the test run has no network, and no
 test plausibly makes device nodes, writes audit records, sets file
 capabilities or uses chroot.
 
@@ -36,7 +36,7 @@ The container is not started with `--rm`, so athanor can read its exit code,
 and whether the memory limit killed it, before it removes it.
 
 The empty overrides also blank a value an image's own `ENV` gives these names.
-The container has no network, so a proxy in it does nothing.
+The test container has no network, so a proxy in it does nothing.
 
 **Why these six.** `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID` and `SETGID`
 are what a root-run test can plausibly need: changing owners, writing another

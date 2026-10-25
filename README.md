@@ -2,16 +2,16 @@
 
 # athanor
 
-Run a repo's tests on your current work in a fresh Linux container with no
-network, with at most N runs at once on the machine.
+Run a repo's tests on your current work in a fresh Linux container, with at
+most N runs at once on the machine.
 
 athanor is for many coding-agent sessions on one machine. Each session stays
 on the host; only the test run goes into the container. Two suites can't
 break each other through the file system or ports, and the machine stays
 usable.
 
-athanor is for repos you trust to build: the image build runs the repo's own
-Dockerfile with network access.
+athanor is for repos you trust to build. The test run has no network, but the
+image build runs the repo's own Dockerfile with network access.
 
 ## Install
 
@@ -125,8 +125,8 @@ own equivalent such as a wrapper script that adds it. Docker's default seccomp
 profile, which athanor leaves in place, stops the browser starting its own
 sandbox, so without the flag it fails with "No usable sandbox!" (or, run as
 root, "Running as root without --no-sandbox is not supported"); Puppeteer
-reports either as a failed launch. The container, with no network and no host
-folders, is the isolation in its place.
+reports either as a failed launch. The test container, with no network and no
+host folders, is the isolation in its place.
 
 A test keeps six Linux capabilities (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
 `SETUID` and `SETGID`) and loses the other eight of Docker's defaults. A test
@@ -259,8 +259,8 @@ Every run sets the ten proxy variables (`HTTP_PROXY`, `http_proxy`,
 `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`,
 `ALL_PROXY` and `all_proxy`) to empty in the test container, so a proxy
 password in your Docker client configuration does not reach the test code. That
-also blanks a value the image's own `ENV` gives them; the container has no
-network, so a proxy in it does nothing. The image build still gets the proxy
+also blanks a value the image's own `ENV` gives them; the test container has
+no network, so a proxy in it does nothing. The image build still gets the proxy
 settings as build arguments, so a Dockerfile can read them. See
 [the threat model](docs/threat-model.md), accepted risk 1.
 

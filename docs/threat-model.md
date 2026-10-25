@@ -75,8 +75,9 @@ above; the software they run is not.
   with `shell: false` (ADR 0002). The source check fails the build on any
   shell use. A test command with `;`, `&&`, `$(...)`, quotes or spaces reaches
   the container as the same literal arguments (C16).
-- **Nothing from the host reaches the container** but the snapshot on stdin
-  and `ATHANOR_GRACE_LIMIT`: no network, no host folder, no host environment
+- **Nothing from the host reaches the test container** but the snapshot on
+  stdin and `ATHANOR_GRACE_LIMIT`: no network for the test run (the image
+  build has it, accepted risk 1), no host folder, no host environment
   value, no Docker socket, no privileged mode, and only six Linux capabilities: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`, every other one
   dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
