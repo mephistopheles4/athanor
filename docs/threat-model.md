@@ -312,6 +312,7 @@ the lead session's chat, relayed by head-chef-field-test.
    Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
    The `maxProcesses` clause added 2026-10-25. From: the Design review of the spec on issue 54, revision 1 (adversarial-lens, accepted risk 4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
    The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+   The clause's "while the engine's process table is full" reworded 2026-10-25, restating the owner's q11 words. From: the closing read of issue 54 on 393dc0d (adversarial-lens A4). How the word arrived: the lead's pick (q13) under the owner's standing instruction, relayed by head-chef-field-test.
 5. **A root test keeps six Linux capabilities, and the run limit has no upper
    bound.** The test runs as the image's user, root unless the Dockerfile names
    another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,

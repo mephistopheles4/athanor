@@ -32,9 +32,9 @@ interface Check {
 
 const positiveInteger: Check = { ok: (v) => Number.isInteger(v) && (v as number) > 0, rule: 'must be a positive whole number' };
 const positiveNumber: Check = { ok: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0, rule: 'must be a number greater than 0' };
-// 4194304 is the Linux kernel's largest process limit. Below 16, athanor's own
-// boot in the container cannot start its processes, the timer among them
-// (ADR 0028); Docker reads 0 and -1 as no limit.
+// 4194304 is the Linux kernel's largest process limit. Below about 5, athanor's
+// own boot in the container cannot start its processes, the timer among them;
+// 16 leaves headroom (ADR 0028). Docker reads 0 and -1 as no limit.
 const processCount: Check = {
   ok: (v) => Number.isInteger(v) && (v as number) >= 16 && (v as number) <= 4194304,
   rule: 'must be a whole number from 16 to 4194304',

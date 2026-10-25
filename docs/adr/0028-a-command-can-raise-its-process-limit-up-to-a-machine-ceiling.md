@@ -11,10 +11,11 @@ bounded by the machine, as memory is.
 - **`processes`** is a new key in the repo configuration, a command's object
   form and the machine configuration. **`maxProcesses`** is its machine-only
   ceiling. Both must be whole numbers from 16 to 4194304, the Linux kernel's
-  largest process limit. Below 16, athanor's own boot in the container cannot
-  start its processes: at 4 the in-container timer silently fails to start,
-  and at 1 to 3 no test runs (found at the Test review; the owner's q14 raised
-  the floor from 1). Anything outside the range, `0` and `-1` among it,
+  largest process limit. Below about 5, athanor's own boot in the container
+  cannot start its processes: at 4 the in-container timer silently fails to
+  start, and at 1 to 3 no test runs. 16 leaves headroom. This was found at the
+  Test review, and q14 raised the floor from 1, the lead's pick under the
+  owner's standing instruction. Anything outside the range, `0` and `-1` among it,
   which Docker reads as unlimited, is refused with exit 125 before any Docker
   call.
 - The pick order is ADR 0023's: the command's own value, the repo's top
