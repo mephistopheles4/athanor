@@ -290,9 +290,10 @@ build writes into the image can reach the test run (accepted risk 1 in
 ## Secrets
 
 Keep secrets out of the files a run sends: everything tracked in the repo (a
-file added with `git add -N` included) goes into the container, and everything
+file added with `git add -N` included) goes into the container, and with
+`--untracked` so does every untracked file git doesn't ignore. Everything
 tracked under `context` plus each `inputs` file goes into the image build,
-which has network access. With a remote engine, an operator can also choose the
+which has network access; untracked files never do. With a remote engine, an operator can also choose the
 files a copy to `--output` brings back.
 
 ## What athanor doesn't protect you from

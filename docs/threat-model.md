@@ -193,7 +193,9 @@ above; the software they run is not.
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
-  (accepted risk 1). With a remote engine or builder, those copies go to that
+  (accepted risk 1). With `--untracked`, the untracked files git doesn't
+  ignore go into the container too, so a secret in one the ignore list misses
+  goes with them; they never reach the build. With a remote engine or builder, those copies go to that
   machine when the machine configuration allows it (accepted risk 7), and a
   remote builder can ask this machine for the
   owner's registry credentials (accepted risk 7). A file added with `git add -N`

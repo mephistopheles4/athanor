@@ -124,6 +124,9 @@ security pair. N7 is checked by reading at review, N8 by the security pair at Te
 and N10 is a manual check recorded on issue 54. R1 and R2 are fast-tier tests. R3, R4,
 R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
 one-time checks by the owner recorded on issue 6; no test carries their names.
+`Z1` to `Z6`, from the spec on issue 57: Z1 to Z4 are checks by reading at
+review, Z5 is a manual check at the next release recorded on issue 57, and Z6
+is the diff's file list and CI; no test carries their names.
 
 ## Releases
 
