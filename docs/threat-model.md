@@ -508,10 +508,10 @@ the lead session's chat, relayed by head-chef-field-test.
     Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
 25. **A message names the machine file's full path.** Every message that
     names the machine configuration file names it by its full path, which holds
-    the OS account's home folder name: its JSON and shape errors, its unknown
+    the account's home-folder name: its JSON and shape errors, its unknown
     keys, its value checks, its ceilings, and the `allowRemoteDocker` and
-    `allowPlainTcp` refusals. That path reaches stderr, the JSON `message`
-    and the calling session's model provider. Accepted because it is the owner's own account name, going
+    `allowPlainTcp` refusals. That message goes to whatever reads athanor's
+    output, such as an agent session and its model provider. Accepted because it is the owner's own account name, going
     to the owner's own session, and naming the file to fix is what makes the
     message actionable.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
