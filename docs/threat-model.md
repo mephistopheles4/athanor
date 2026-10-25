@@ -543,7 +543,7 @@ the lead session's chat, relayed by head-chef-field-test.
     Accepted because the repo is code the owner trusts to build, and a host run
     of the same tool writes the same files.
     Accepted 2026-10-24. From: the spec on issue 46, S6 (revision 4) and the Design reviews of its revisions (adversarial-lens, data-lens). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    Revised 2026-10-24. The act-on-view bullet now says athanor skips those files always, and the bare-repository bullet is new. From: the Test review of issue 46 (data-lens F2, adversarial-lens F2); the owner's q2 (a) and q3 (c). How the word arrived: the owner's picks in the lead session's chat, relayed by head-chef-field-test. The wording of these two bullets is the build session's, for the owner to confirm.
+    Revised 2026-10-24. The act-on-view bullet now says athanor skips those files always, and the bare-repository bullet is new. From: the Test review of issue 46 (data-lens F2, adversarial-lens F2); the owner's q2 (a) and q3 (c). How the word arrived: the owner's picks in the lead session's chat, relayed by head-chef-field-test. The owner confirmed the wording of these two bullets on 2026-10-24, relayed by head-chef-field-test.
 29. **The agent test hook is a nudge, not a control.** The hook in
     `.claude/settings.json` (ADR 0024) refuses an agent session's host run of
     the fast tier while athanor is installed, but it fails open on any error,
