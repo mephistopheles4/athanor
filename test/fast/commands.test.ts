@@ -47,7 +47,7 @@ test('M2 a bad command object exits 125 naming commands.<name>.<key> and the pla
     { name: 'memory 2x', command: { argv: ['x'], memory: '2x' }, key: 'memory' },
     { name: 'cpus 0', command: { argv: ['x'], cpus: 0 }, key: 'cpus' },
     { name: 'timeoutMinutes -1', command: { argv: ['x'], timeoutMinutes: -1 }, key: 'timeoutMinutes' },
-    { name: 'an unknown key', command: { argv: ['x'], shell: true }, key: 'shell', lists: /keys are: argv, args, outputs, memory, cpus, timeoutMinutes/ },
+    { name: 'an unknown key', command: { argv: ['x'], shell: true }, key: 'shell', lists: /keys are: argv, args, outputs, memory, cpus, timeoutMinutes, processes\./ },
   ];
   for (const place of ['athanor.json', 'package.json']) {
     for (const row of rows) {

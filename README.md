@@ -95,6 +95,11 @@ outside it.
   configuration. If that does not set them, `memory` is 2g and `timeoutMinutes`
   is 30. `cpus` has no default: with no `cpus` in either file (and no `maxCpus`),
   the container gets no CPU limit and may use every CPU the engine has.
+- `processes` is the most processes, threads included, the container may
+  hold: a whole number from 16 to 4194304. It defaults to the machine
+  configuration's, else the smaller of 1024 and `maxProcesses`, and is held to
+  `maxProcesses`. athanor 0.1.1 and older do not know it, and refuse a
+  configuration that sets it with an unknown-key error.
 
 A command can be an object, to give it limits, arguments or outputs of its own:
 
@@ -105,7 +110,7 @@ A command can be an object, to give it limits, arguments or outputs of its own:
     "argv": ["npx", "stryker", "run"],
     "args": true,
     "outputs": ["reports/mutation"],
-    "timeoutMinutes": 90, "cpus": 4, "memory": "4g"
+    "timeoutMinutes": 90, "cpus": 4, "memory": "4g", "processes": 2048
   }
 }
 ```
@@ -113,9 +118,22 @@ A command can be an object, to give it limits, arguments or outputs of its own:
 `argv` is required. `args` (default `false`) lets `athanor run mutation -- …`
 add arguments. `outputs` lists paths to copy out (see Use), relative to the
 work folder: `$HOME/work` in the container, where the snapshot is unpacked, so
-a repo-relative path. `memory`, `cpus` and `timeoutMinutes` take the command's own
-value first, then the repo's top level, then the machine configuration, then
-the default. The machine's `max*` ceilings hold for a command's own value.
+a repo-relative path. `memory`, `cpus`, `timeoutMinutes` and `processes` take the
+command's own value first, then the repo's top level, then the machine
+configuration, then the default. The machine's `max*` ceilings hold for a
+command's own value.
+
+A mutation run's memory and processes grow with its runners: in one measured
+Stryker run, about 1.3 GiB of memory and about 65 processes per runner at peak.
+Give that command its own `memory` and `processes`, and raise `maxMemory` and
+`maxProcesses` on the machine to fit. Keep `maxProcesses` times the largest run
+limit any caller uses (`maxRuns`, or `ATHANOR_MAX_RUNS` where set), plus what
+the engine's other containers use, well below the engine's process limit. That
+limit is the kernel's process and thread limit as a container on that engine
+sees it: `cat /proc/sys/kernel/pid_max /proc/sys/kernel/threads-max` in any
+container prints both. A run that hits its process limit shows "Resource
+temporarily unavailable", a failed thread or process start, or a native crash
+early in the run; raise `processes` for that command.
 
 The image must have `sh` and `tar`, and its user must be able to write
 `$HOME/work`. An `ENTRYPOINT`, if any, must run the arguments it is given.
@@ -223,7 +241,8 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 ```json
 { "maxRuns": 2, "memory": "2g", "timeoutMinutes": 30, "pruneDays": 30,
   "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false,
-  "allowRemoteDocker": false, "maxOutputMegabytes": 1024 }
+  "allowRemoteDocker": false, "maxOutputMegabytes": 1024,
+  "processes": 1024, "maxProcesses": 1024 }
 ```
 
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
@@ -234,7 +253,10 @@ has, and the run then ends with exit 125 and Docker's message. On Docker
 Desktop the engine's CPUs are the VM's, which can be fewer than the host's, so
 keep `maxCpus` at or below the engine's CPUs. `maxOutputMegabytes` (default
 1024) is the most a copy to `--output` reads from the container; a repo cannot
-set it.
+set it. `maxProcesses` (default 1024) is the ceiling for `processes`; raising
+it never raises the default, and lowering it below 1024 lowers the default.
+Every athanor on the machine reads this file, so once it holds `processes` or
+`maxProcesses`, athanor 0.1.1 and older refuse it, and every run with them.
 
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. If you set `ATHANOR_HOME`,
@@ -310,8 +332,21 @@ threat model holds the full entries.
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
-  the slot is next used. Set `maxCpus` for a bound. Accepted
+  the slot is next used, and it keeps the run's snapshot, uncommitted files
+  included, until it is removed. Set `maxCpus` for a bound. Accepted
   risks 4 and 17.
+- **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
+  start up to that many processes. All runs share the engine's process table,
+  the whole host's on Linux. Filling it stops the engine and other programs
+  from starting processes, and can keep athanor from stopping a run at its
+  time limit. A container left running then may not be removable until you
+  restart the engine (on Linux, recover the host), and until it is removed it
+  keeps the run's snapshot, uncommitted files included. A restart stops it but
+  does not remove it: the next run on its slot removes it, or you remove it
+  yourself (`athanor status` lists it). Keep `maxProcesses`
+  times your largest run limit well below your
+  engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
+  it). Accepted risks 4 and 36.
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
@@ -339,8 +374,9 @@ threat model holds the full entries.
   platform, they can read the copy or redirect a write while it runs. Pick a
   parent under your user profile. On Linux, athanor refuses a parent that other
   accounts can write unless it has the sticky bit. Accepted risk 30.
-- **Your account name in messages.** A refusal about `allowRemoteDocker` or
-  `allowPlainTcp` names the machine configuration file by its full path,
+- **Your account name in messages.** Any message about the machine
+  configuration file (a refusal, a bad value, an unknown key, a value above a
+  ceiling) names it by its full path,
   which holds your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
   places your account name shouldn't go. Accepted risk 25.
