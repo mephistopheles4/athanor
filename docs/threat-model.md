@@ -48,7 +48,21 @@ fresh container that runs the test command. It writes only to its state folder (
   result. It reaches `main`, and the owner's machine through `npm ci`, only
   through a merge. The compiler is the one dev package that runs: once merged,
   it runs as the owner in every test run and in the build before a publish
-  (accepted risk 18).
+  (accepted risk 18). These, too, run once merged: the actions the release
+  workflow uses, among them `actions/upload-artifact` and
+  `actions/download-artifact`, and the build on the runner before a staged
+  release (accepted risks 21 and 22).
+- **Whoever controls the owner's GitHub account, or can push a branch to this repo,** can
+  change and start the release workflow; whoever controls the account can
+  also approve its deployment. They can
+  stage a version, but cannot make one live without the owner's npm
+  two-factor approval. Before that approval the owner checks that they
+  started the run, on the commit they merged, and reads the diff since the
+  last release tag. The GitHub approval guards the token only as far as npm
+  enforces the environment the trusted publisher names, which is unconfirmed
+  (claim R10 of the spec on issue 6). The actor stays "can push a branch"
+  until npm's docs say the environment is enforced, or a deliberate run from
+  a job with no environment, or another one, is shown refused.
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
@@ -147,9 +161,19 @@ above; the software they run is not.
     updates. A bot pull request's passing check is not evidence the update is
     safe: the wait and the owner's merge are the controls.
   - CI holds no secrets. Its token is read-only (accepted risk 19).
-  - The npm publish credential exists only on the owner's machine, from login
-    to logout around a hand publish (`docs/releasing.md`).
-  - See ADR 0018, A1 to A6.
+  - The first publish is by hand, as before (`docs/releasing.md`).
+  - Later versions are staged from the release workflow's `publish` job.
+    GitHub issues an identity token there only after the owner approves the
+    `npm` environment. That token proves the job's identity to any service
+    that trusts it, including Sigstore for provenance. npm exchanges it for a
+    token that can only stage, once the owner has added the trusted publisher
+    with staging as its only allowed action (step 9 of `docs/releasing.md`,
+    R10).
+  - A staged version goes live only when the owner approves it with npm 2FA.
+    The owner logs in only after the local build and logs out straight after.
+    Publishing access disallows tokens, once the owner has set it before the
+    merge (`docs/releasing.md` step 2, recorded in step 9).
+  - See ADR 0018, A1 to A6, and ADR 0019.
 
 ## The sensitive-work list
 
@@ -160,7 +184,11 @@ above; the software they run is not.
   `--output` folder is mode 0700 on Linux, and on Windows inherits its parent's
   rules (accepted risk 30). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
-  engine, its access control is its operator's (accepted risks 7 and 8).
+  engine, its access control is its operator's (accepted risks 7 and 8). The
+  release path has its own: npm's trusted-publisher binding to this repo,
+  workflow and environment, the `npm` environment's required reviewer, and
+  the owner's npm two-factor approval (the supply-chain bullet above;
+  ADR 0019).
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
@@ -177,7 +205,14 @@ above; the software they run is not.
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
   output goes on to that session's model provider, as it does when tests run
-  on the host.
+  on the host. The release path holds two credentials for a short time: the
+  publish job's identity token (accepted risk 22), and the owner's npm login
+  around an approval (accepted risk 26); see the supply-chain bullet above
+  and ADR 0019. The owner's
+  npm session token sits in the user npm configuration from login to logout,
+  unencrypted at file level. It relies on the machine's disk encryption, which
+  the owner confirmed is on (2026-10-24), and on npm's two-factor check on
+  every write.
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
   its image (accepted risk 8). Temporary names use Node's crypto random source.
@@ -188,7 +223,9 @@ above; the software they run is not.
   unencrypted on the engine's or builder's disk: on this machine they rely on
   its disk encryption; on a remote one, which the machine configuration must
   allow, on that machine's owner (accepted risk 7). `prune` does not clear Docker's build
-  cache; the README names the commands that do.
+  cache; the README names the commands that do. Each released version's
+  provenance is signed by npm through Sigstore (the supply-chain bullet above;
+  ADR 0019).
 - **Input validation.** Repo configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
@@ -202,6 +239,11 @@ above; the software they run is not.
   git settings, attributes, templates and `GIT_*` variables inherited from the
   host are kept out of the archive step (ADR 0020); the git calls that record
   the work still use them (accepted risk 23).
+  The release path's untrusted inputs are the artifact `publish` takes from
+  `check`, the staged tarball and manifest the owner downloads, and the
+  registry's answer to the version check. They are covered by the owner's
+  look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
+  ADR 0019.
 - **Data migrations.** None. The state folder holds only marks, temporary
   indexes and per-run object folders, which are safe to delete.
 
@@ -217,7 +259,10 @@ from"; a maintainer-only risk stays here alone.
 | Who | Accepted risks |
 | --- | --- |
 | User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30 |
-| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20 |
+| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29 |
+
+Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
+the lead session's chat, relayed by head-chef-field-test.
 
 1. **The image build has the network.** The image build runs the repo's own
    Dockerfile with network access, so a repo from someone else can run code
@@ -388,16 +433,49 @@ from"; a maintainer-only risk stays here alone.
     That includes code on a bot's pull request before merge. Accepted because
     the token is read-only, the repo is public, and CI holds no secrets. A
     workflow that holds a secret, such as issue 6's, needs its own controls.
+    The release workflow keeps its OIDC permission in the `publish` job,
+    which runs no repo code and installs no npm package. Its code is two
+    pinned actions and the Node and npm that setup-node provides (ADR 0019).
+    The release's `check` job holds the same kind of read-only token, with
+    `actions: read` added. This risk's reason, that CI holds no secrets,
+    doesn't cover the artifact that job hands on to be staged: see accepted
+    risk 21.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (data-lens F9). How the word arrived: the owner in chat with the planning session on 2026-10-22.
+    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM3); the Design review of spec revision 1 (data-lens F7, adversarial-lens F8). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 20. **A hijacked action could leave cache entries for a later workflow.** An
     action's code, run on a push to `main`, can write Actions cache entries,
     and a later workflow that restores the cache would read them. Accepted
-    because nothing restores a cache today. A workflow that restores one, such
-    as issue 6's, is a reason to revisit.
+    because nothing restores a cache today. A workflow that restores one is a
+    reason to revisit. The release workflow restores no
+    cache. The workflow check fails a workflow that uses the cache actions or
+    setup-node's cache in the block style it reads, and refuses a flow-style
+    `with:` on those actions.
     Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-
-<!-- Accepted risks 21 and 22 belong to issue 6's work. -->
-
+    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM4); the Design review of spec revision 1 (adversarial-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+    Edited 2026-10-24, to drop "such as issue 6's" from the revisit sentence. From: issue 6, the Test review of `9a1b0ba` (reader-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+21. **Code in the release's check job shapes the tarball.** A dev package,
+    the compiler, the test code, an action, or a process an earlier step left
+    running in `check` can change any file that is packed, and `publish`
+    stages exactly that. Matching the check job's integrity proves only that
+    `publish` staged what `check` made. The control is the owner's comparison
+    of every file of the staged package with a local pack of the same commit,
+    made before the login, which catches every change made only on the
+    runner. A hijacked compiler shapes both packs (accepted risk 18). Accepted
+    because the staged version goes live only after that comparison and the
+    owner's npm two-factor approval.
+    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM5); the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
+22. **An action in the release's publish job holds the identity token.**
+    `actions/download-artifact` or `actions/setup-node`, hijacked, or the npm
+    it provides, can ask for the token. With it they can stage another
+    tarball or extra versions, use up the 2-day validation of a new trusted
+    publisher, or get a Sigstore signature in this workflow's name for some
+    other file. The controls are the SHA pins and the pinned Node, each at
+    least 7 days old; stage-only publishing; the owner's look, which expects
+    exactly one staged entry whose integrity matches the check job's; and the
+    owner's 2FA approval. Accepted because nothing goes live without that
+    look and approval, and a stray signature names this workflow's run in
+    the public log.
+    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 23. **The git calls that record the work use the host's git config.** The
     snapshot's and the build context's git calls (`stash create`, `add`,
     `hash-object`) run with the host's git config and environment. A clean
@@ -432,6 +510,14 @@ from"; a maintainer-only risk stays here alone.
     to the owner's own session, and naming the file to fix is what makes the
     message actionable.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+26. **A program running as the owner can read the npm session token.** From
+    `npm login` to `npm logout`, around a release's approval, the session
+    token sits in the owner's user npm configuration, unencrypted at file
+    level. Any program running as the owner can read it then, including one
+    left behind by the local build just before. Accepted because npm requires
+    two-factor on every write, and the window lasts only from login to
+    logout.
+    Accepted 2026-10-24. From: issue 6, the follow-up Test review of `9fcdfcd` (data-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
 28. **A copied file's content is the test code's choice.** athanor checks
     names and types, never content.
     - A report written by test code lands on the host as written. Opening it,
@@ -439,19 +525,22 @@ from"; a maintainer-only risk stays here alone.
       host run would.
     - Copied files carry no Mark-of-the-Web, so Windows treats them as local.
     - What the test read inside the sealed container leaves it this way.
-    - Files Windows acts on when it shows a folder are written like any other
-      file. These are such as `desktop.ini`, `.lnk`, `.url`, `.scf`,
-      `.library-ms`, `.searchConnector-ms` and Windows theme files. Showing,
-      previewing or thumbnailing the folder can set it off, with no file
-      opened. Windows can then reach out to a place a file names, and sign in
-      there, sending the owner's account name and a response derived from the
-      owner's password. The address can carry data the test read inside the
-      sealed container, so the no-network boundary doesn't hold past a folder
-      view.
+    - Files Windows acts on when it shows a folder, such as `desktop.ini`,
+      `.lnk`, `.url`, `.scf`, `.library-ms`, `.searchConnector-ms` and Windows
+      theme files, can reach out to a place a file names and sign in there,
+      sending the owner's account name and a response derived from the owner's
+      password, when the folder is shown, previewed or thumbnailed. athanor
+      skips the file names it knows and counts them in `skipped`; a spelling
+      or a type it does not know is written like any other file.
+    - Ordinary files can be laid out as a bare git repository (`HEAD`,
+      `objects`, `refs`, `config`), which git run inside the folder can treat
+      as a repository. athanor refuses that layout; one it does not recognise
+      is written, so the README advises `safe.bareRepository=explicit`.
 
     Accepted because the repo is code the owner trusts to build, and a host run
     of the same tool writes the same files.
     Accepted 2026-10-24. From: the spec on issue 46, S6 (revision 4) and the Design reviews of its revisions (adversarial-lens, data-lens). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    Revised 2026-10-24. The act-on-view bullet now says athanor skips those files always, and the bare-repository bullet is new. From: the Test review of issue 46 (data-lens F2, adversarial-lens F2); the owner's q2 (a) and q3 (c). How the word arrived: the owner's picks in the lead session's chat, relayed by head-chef-field-test. The wording of these two bullets is the build session's, for the owner to confirm.
 29. **The agent test hook is a nudge, not a control.** The hook in
     `.claude/settings.json` (ADR 0024) refuses an agent session's host run of
     the fast tier while athanor is installed, but it fails open on any error,

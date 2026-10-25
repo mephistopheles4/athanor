@@ -52,10 +52,11 @@ repairs:
   merges into a folder.
 - athanor reads the tar itself (ADR 0001): ustar headers with their checksums,
   PAX `path` and `size`, and GNU long names. Links, devices and FIFOs are
-  skipped and counted. When the machine configuration sets `allowRemoteDocker`,
-  the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`,
-  `.url`, `.scf`, `.library-ms`, `.searchConnector-ms`, `.theme`, `.themepack`)
-  are skipped and counted too. Any other header type, a bad record or a truncated
+  skipped and counted. So are the files Windows acts on when it shows a folder
+  (`desktop.ini`, `.lnk`, `.url`, `.scf`, `.library-ms`, `.searchConnector-ms`,
+  `.theme`, `.themepack`), on every engine (the owner's q2 at Test). A folder
+  that would hold `HEAD` with `objects` or `refs`, the layout of a bare git
+  repository, is refused (q3). Any other header type, a bad record or a truncated
   stream is an error.
 - Names are read as text and never resolved. Each segment must pass rules that
   hold on every platform: no empty, `.` or `..` part, no `.git` in either case

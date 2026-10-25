@@ -152,8 +152,6 @@ export interface CopyRequest {
   maxBytes: number;
   maxEntries: number;
   timeMs: number;
-  // Skip the files Windows acts on when it shows a folder (accepted risk 28).
-  skipActOnView: boolean;
   signal?: AbortSignal;
   onProgress: (line: string) => void;
 }
@@ -165,6 +163,7 @@ export interface Copied {
   missing: string[];
 }
 
+// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted risk 28).
 const ACT_ON_VIEW = /(^desktop\.ini$)|(\.(lnk|url|scf|library-ms|searchConnector-ms|theme|themepack)$)/i;
 const MISSING = /no such container:path|could not find the file/i;
 const RETRY = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY']);
@@ -192,6 +191,8 @@ class Job {
   private made: Made[] = [];
   // Every folder and file written, by exact name, and by lower-case name for the case check.
   private kinds = new Map<string, 'file' | 'dir'>();
+  // What each folder holds, by lower-case name, to refuse a bare git repository layout.
+  private children = new Map<string, Set<string>>();
   private folded = new Map<string, string>();
   private counts: Copied = { files: 0, bytes: 0, skipped: 0, missing: [] };
   private req: CopyRequest;
@@ -299,6 +300,19 @@ class Job {
       }
       this.made.push({ path, kind: 'dir' });
       this.kinds.set(exact, 'dir');
+      this.beside(parts);
+    }
+  }
+
+  // git treats a folder holding HEAD with objects or refs as a bare repository, wherever the
+  // folder sits and in whatever order the files come (accepted risk 28).
+  private beside(parts: string[]): void {
+    const parent = parts.slice(0, -1).join('/');
+    const names = this.children.get(parent) ?? new Set<string>();
+    this.children.set(parent, names);
+    names.add(parts.at(-1)!.toLowerCase());
+    if (names.has('head') && (names.has('objects') || names.has('refs'))) {
+      throw new CopyError(`the folder "${showName(parent || '.')}" would hold HEAD with objects or refs, the layout of a bare git repository, which git run there could treat as one.`);
     }
   }
 
@@ -329,7 +343,7 @@ class Job {
   // Opens a file for the entry; returns null when the entry is skipped.
   file(raw: string, output: string): number | null {
     const segments = this.place(raw, output, false);
-    if (this.req.skipActOnView && ACT_ON_VIEW.test(segments.at(-1)!)) {
+    if (ACT_ON_VIEW.test(segments.at(-1)!)) {
       this.counts.skipped++;
       return null;
     }
@@ -345,6 +359,7 @@ class Job {
     }
     this.made.push({ path, kind: 'file' });
     this.kinds.set(exact, 'file');
+    this.beside(segments);
     this.counts.files++;
     return fd;
   }

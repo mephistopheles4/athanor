@@ -265,8 +265,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
         tail = await copyStep({
           docker, env: pinned, handed, outputs: config.outputs, target, maxBytes: config.maxOutputBytes,
           maxEntries: options.maxOutputEntries ?? MAX_ENTRIES, timeMs: options.copyTimeMs ?? COPY_TIME_MS,
-          // A machine that allows a remote engine may be copying files an operator chose (accepted risks 7 and 28).
-          skipActOnView: config.docker.allowRemoteDocker, signal, onProgress,
+          signal, onProgress,
         });
       }
     } finally {
@@ -288,7 +287,6 @@ interface CopyStep {
   maxBytes: number;
   maxEntries: number;
   timeMs: number;
-  skipActOnView: boolean;
   signal?: AbortSignal;
   onProgress: (line: string) => void;
 }
@@ -301,7 +299,7 @@ async function copyStep(c: CopyStep): Promise<Partial<RunResult>> {
     if (c.handed.id === undefined) throw new CopyError('athanor could not read the container\'s ID, so it cannot copy from it.');
     const copied = await copyOut({
       docker: c.docker, env: c.env, id: c.handed.id, work, outputs: c.outputs, target: c.target,
-      maxBytes: c.maxBytes, maxEntries: c.maxEntries, timeMs: c.timeMs, skipActOnView: c.skipActOnView,
+      maxBytes: c.maxBytes, maxEntries: c.maxEntries, timeMs: c.timeMs,
       signal: c.signal, onProgress: c.onProgress,
     });
     const notFound = copied.missing.length > 0 ? `, ${copied.missing.length} declared output${copied.missing.length === 1 ? '' : 's'} not found` : '';

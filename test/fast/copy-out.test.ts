@@ -234,6 +234,10 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     { name: '.git folder', tar: one('out/.git/config'), says: /out\/\.git\/config/ },
     { name: '.GIT folder deeper', tar: one('out/sub/.GIT/HEAD'), says: /\.GIT/ },
     { name: '.git as a regular file', tar: one('out/.git'), says: /out\/\.git/ },
+    // git treats a folder holding HEAD with objects or refs as a bare repository, in whatever order the files come.
+    { name: 'a bare repository layout, HEAD first', tar: buildTar([{ name: 'out/HEAD', content: 'ref: refs/heads/main\n' }, { name: 'out/objects/x' }]), says: /bare git repository/ },
+    { name: 'a bare repository layout, HEAD last', tar: buildTar([{ name: 'out/refs/x' }, { name: 'out/HEAD' }]), says: /bare git repository/ },
+    { name: 'a bare repository layout in a nested folder', tar: buildTar([{ name: 'out/sub/objects/', type: '5' }, { name: 'out/sub/HEAD' }]), says: /bare git repository/ },
     { name: 'a dotless i', tar: one('out/.gıt/config'), says: /\.gıt/ },
     { name: 'CON.txt', tar: one('out/CON.txt'), says: /CON\.txt/ },
     { name: 'nul', tar: one('out/nul'), says: /out\/nul/ },
@@ -307,7 +311,7 @@ test('M13 the caps hold across several outputs, and the test\'s own exit is repo
   });
 });
 
-test('M14 links, devices and FIFOs are skipped and counted, and act-on-view files are written unless the machine allows a remote engine', async (t) => {
+test('M14 links, devices, FIFOs and act-on-view files are skipped and counted', async (t) => {
   const viewed = ['out/a.lnk', 'out/b.scf', 'out/c.library-ms', 'out/d.searchConnector-ms', 'out/e.theme', 'out/f.themepack'];
   const tar = buildTar([
     { name: 'out/', type: '5' },
@@ -320,18 +324,15 @@ test('M14 links, devices and FIFOs are skipped and counted, and act-on-view file
     { name: 'out/dev', type: '3' },
     { name: 'out/fifo', type: '6' },
   ]);
-  const s = scene(t, { cp: { out: served(tar) } });
-  const { result } = await copy(s);
-  assert.equal(result.outcome, 'pass', JSON.stringify(result));
-  assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/desktop.ini', 'out/real.txt', 'out/x.URL', ...viewed].sort());
-  assert.equal(result.outputs!.files, 9);
-  assert.equal(result.outputs!.skipped, 4);
-
-  const remote = scene(t, { cp: { out: served(tar) }, machine: { allowRemoteDocker: true } });
-  const again = await copy(remote);
-  assert.equal(again.result.outcome, 'pass', JSON.stringify(again.result));
-  assert.deepEqual(Object.keys(tree(remote.dir)).sort(), ['out', 'out/real.txt']);
-  assert.equal(again.result.outputs!.skipped, 12, 'the eight act-on-view files are skipped too');
+  // The files Windows acts on when it shows a folder are skipped on every engine, local or not.
+  for (const machine of [undefined, { allowRemoteDocker: true }]) {
+    const s = scene(t, { cp: { out: served(tar) }, machine });
+    const { result } = await copy(s);
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/real.txt']);
+    assert.equal(result.outputs!.files, 1);
+    assert.equal(result.outputs!.skipped, 12, 'four links, devices and FIFOs, and the eight act-on-view files');
+  }
 });
 
 test('M15 nothing is copied unless the test ran and exited; a hanging cp, the time bound and an ssh login', async (t) => {

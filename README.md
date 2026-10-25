@@ -172,9 +172,10 @@ makes only the last folder:
   `outputs.missing` for declared paths the container did not have.
 
 athanor copies regular files and folders, checks every name, and refuses the
-whole copy on a bad one; links and devices are skipped, and so are the files
-Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url` and the
-like) when the machine configuration sets `allowRemoteDocker`. A copy reads at
+whole copy on a bad one, or on a folder laid out as a bare git repository
+(`HEAD` with `objects` or `refs`); links and devices are skipped, and so are
+the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url`
+and the like). A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
 ends the run with exit 125 and the test's own exit in `testExitCode`.
 
@@ -307,10 +308,13 @@ threat model holds the full entries.
   work before a run, or know that the filter sees it. Accepted risk 23.
 - **What a copied file holds.** With `--output`, a report the test code wrote
   lands on your machine as written, and athanor checks names and types, never
-  content. Opening it, or a viewer previewing it, does what it holds, and on
-  Windows, showing or previewing the folder can make the machine sign in to a
-  place a copied file names (`desktop.ini`, `.lnk`, `.url`, theme files and
-  others), sending your account name and a password-derived response. Open
+  content. Opening it, or a viewer previewing it, does what it holds. athanor
+  skips the file names that make Windows sign in to a place a file names when
+  the folder is shown (`desktop.ini`, `.lnk`, `.url`, theme files and others),
+  but not a spelling it does not know. It refuses a folder laid out as a bare
+  git repository, but not every layout git might read as one: set
+  `safe.bareRepository=explicit` in your git configuration so git does not
+  treat a copied folder as a repository. Open
   outputs from a repo you trust to build. Accepted risk 28.
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any

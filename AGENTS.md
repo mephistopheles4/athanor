@@ -22,7 +22,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
 - **The public interface is stable.** The JSON fields, the exit codes, the
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
-  and the package's major version. An addition bumps neither.
+  and the package's major version. An addition bumps neither. One exception:
+  a form that ran something other than what it named may be fixed without a
+  bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
 - **Nothing reaches the container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
@@ -72,7 +74,7 @@ skips the project file for those), so every pack builds `dist/` first
 the hand publish. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
-  Runs anywhere Node 24 and git run.
+  Runs anywhere Node 24, git and `tar` run (Linux, and Windows 10 and later).
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
 - `node node_modules/typescript/bin/tsc -p test/tsconfig.json` — the type check
@@ -88,7 +90,9 @@ syntax only, which Node runs directly. They import the core as `#dist/...`
 (`package.json` `imports`), which is `dist/` at run time and `src/` for
 `test/tsconfig.json`, so that the type check sees the test-only options (marked `@internal`, ADR 0003).
 
-CI runs zizmor on the workflows, a check that install scripts are off and
+CI runs zizmor on the workflows, the workflows' own rules
+(`scripts/check-workflows.mjs`: every checkout's `persist-credentials: false`,
+no Actions cache, no registry `.npmrc`, no npm token, no secret), a check that install scripts are off and
 every package resolves from the public registry, `npm ci`, `npm audit
 signatures` (the registry's signatures over the installed packages' metadata;
 `npm ci` enforces the lockfile hashes), a strict `tsc` check of `src/` and of
@@ -103,7 +107,8 @@ marks.
 Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
 spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
-issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
+issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
@@ -113,7 +118,22 @@ reading; no test carries their names. M18 is checked by reading at review (ADR
 0023, the docs, the threat-model text as the owner approved it, and that
 `src/container-settings.ts` changes only by the work line). M19 is a manual
 check, one Stryker run on a repo the owner names. M20 is checked at Test by the
-security pair.
+security pair. R1 and R2 are fast-tier tests. R3, R4,
+R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
+one-time checks by the owner recorded on issue 6; no test carries their names.
+
+## Releases
+
+Releases after the first are staged by `.github/workflows/release.yml` and
+made live by the owner ([ADR 0019](docs/adr/0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md),
+[the release steps](docs/releasing.md)). A change to `release.yml`, or to any
+script, test or dev package it runs, is security-sensitive work: among them
+`scripts/check-pack.mjs`, `scripts/check-workflows.mjs`, `scripts/build.mjs`,
+`scripts/check-source.mjs`, `test/run.mjs` with the fast tier, and the
+compiler in `package-lock.json`. So is a bot pull request
+that moves an action SHA in `release.yml`, and a hand change to its
+`node-version`, which the update bot never moves: the pull request names each
+release and its date, at least 7 days old.
 
 ## The tracker
 
