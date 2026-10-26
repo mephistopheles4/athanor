@@ -209,7 +209,7 @@ They hold against anyone without admin rights. An admin can lift them, so in
 Settings, General, Releases, also turn on immutable releases: a published
 release's tag then stays on its commit while the release exists.
 
-The commands on this page need gh 2.103.0 or later and PowerShell 7.3 or
+The commands on this page need gh 2.103.0 or later and PowerShell 7.4 or
 later (`gh --version`, `$PSVersionTable.PSVersion`). Run these checks with
 your own gh login, which is the repo's admin; without admin rights, fields
 can come back empty:
@@ -346,7 +346,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 17. Check that the version's npm page shows provenance naming this repo, the
     commit and the run. Check that `npm view @mephistopheles4/athanor@<version> --json`
     shows no `dependencies`, `optionalDependencies`, `peerDependencies` or
-    `bundleDependencies` (`devDependencies` are not installed for users and
+    `bundleDependencies` or `bundledDependencies` (`devDependencies` are not installed for users and
     may show), and the same `scripts` and `bin` as the
     local `package.json`. If it doesn't, unpublish the version while npm's
     unpublish policy allows it, else deprecate it at once; a deprecated
@@ -413,11 +413,11 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     account as author. Note its `id`, and read it by that id:
 
     ```powershell
-    gh api repos/mephistopheles4/athanor/releases/<id> --jq '{tag_name, draft, author: .author.login, body}'
+    gh api repos/mephistopheles4/athanor/releases/<id> --jq '{tag_name, name, draft, author: .author.login, assets: [.assets[].name], body}'
     ```
 
-    - `tag_name` must be `v<version>`, `draft` true, and `author` your
-      account.
+    - `tag_name` and `name` must be `v<version>`, `draft` true, `author`
+      your account, and `assets` `[]`.
     - The notes must hold nothing you wouldn't put on a permanent public
       record. To change them, edit this draft with
       `gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -F body=@<notes-file>`,
@@ -437,15 +437,20 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     Just before publishing, repeat the `git ls-remote` check, which must
     still print `<commit>`; the release list, which must still print the one
     draft, with the same `id`; and the two checks of "Before the next release,
-    once". Anything else is a stop. Then publish the draft by its id, with
+    once". Anything else is a stop. Note the time you finish these
+    checks. Then publish the draft by its id, with
     the tag and the notes you read set in the same call, so that an edit made
     after your read can't reach the record:
 
     ```powershell
-    gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -f tag_name=v<version> -F body=@<read-notes> -F draft=false --jq '{tag_name, draft, author: .author.login}'
+    gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -f tag_name=v<version> -f name=v<version> -F body=@<read-notes> -F draft=false --jq '{tag_name, name, draft, author: .author.login, assets: [.assets[].name], published_at}'
     ```
 
-    It must print `v<version>`, `false` and your account. Within a few
+    The author is the check: it must be your account. The tag, the name and
+    `false` echo the call's own inputs, so they only confirm that the call
+    landed. `assets` must be `[]`, and `published_at` later than the time
+    you noted; an earlier time means someone else published it first, an
+    incident under "If a run fails". Within a few
     minutes, Zenodo's GitHub page, under your Zenodo account's settings,
     lists `v<version>` with a DOI. Check that its record names the author and
     ORCID iD from `CITATION.cff`; if they are wrong, edit the record's
@@ -486,12 +491,14 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   - **One draft, your own,** left by a run of yours that stopped: go on from
     step 17's read by id. A failed publish is rerun by that id.
   - **One published release, your own:** check its notes against the
-    generated ones, which
+    saved read-notes file when there is one, and else against the generated
+    ones, which
     `gh api repos/mephistopheles4/athanor/releases/generate-notes -f tag_name=v<version> -f previous_tag_name=v<last> --jq .body`
     prints; notes you edited in your own draft are yours. If it all holds,
     don't make it again, and carry on with step 17's Zenodo checks.
   - **Anything else** is an incident: two releases on the tag, another
-    author, or notes you didn't write or generate. Stop releasing. Open a
+    author, a `published_at` earlier than your last recheck, or notes you
+    didn't write or generate. Stop releasing. Open a
     private security advisory on the repo (`SECURITY.md`), and copy into it
     each release's id, author, tag and notes, as the list and the read by id
     show them. Only then delete a draft that isn't yours; a published release

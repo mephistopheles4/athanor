@@ -136,7 +136,9 @@ is the diff's file list and CI; no test carries their names.
 reading at review, W1 with one run of its command on a local pack and W4 with
 one run of its two commands under the owner's gh login, both recorded in the
 review; W9 is a manual check at the next release recorded on issue 63; and
-W10 is the diff's file list and CI. No test carries their names.
+W10 rests on the diff's file list; on a docs-only diff the source check,
+which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
+check of its own. No test carries their names.
 
 ## Releases
 

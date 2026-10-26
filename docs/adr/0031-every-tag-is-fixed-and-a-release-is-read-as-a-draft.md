@@ -48,7 +48,7 @@ becomes public.
 
 ## Revisit
 
-- If anyone but the owner's account gains write access to the repo
-  (accepted risk 38).
+- If another account, a deploy key, or a new app or token gains write
+  access to the repo (accepted risk 38).
 - If GitHub adds a rule on who may publish a release.
 - If Zenodo turns out not to archive a release published from a draft (W9).
