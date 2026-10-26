@@ -514,8 +514,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     `published_at` later than the GitHub time you noted before your last
     publish. Its notes must match your saved read-notes file. Every publish
     in step 17 sends that file, so a published release with no saved file,
-    or no noted time, is an incident unless you know you published it
-    yourself. If it all holds, don't make it again, and carry on with step
+    or no noted time, is an incident. If it all holds, don't make it again, and carry on with step
     17's Zenodo checks.
   - **Anything else** is an incident: two releases on the tag, another
     author, an asset, a `published_at` earlier than the GitHub time you
