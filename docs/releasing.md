@@ -436,9 +436,17 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 
     Just before publishing, repeat the `git ls-remote` check, which must
     still print `<commit>`; the release list, which must still print the one
-    draft, with the same `id`; and the two checks of "Before the next release,
-    once". Anything else is a stop. As the last thing before the publish,
-    note the time in UTC, to the second (`(Get-Date).ToUniversalTime()`).
+    draft, with the same `id`; the read by id, whose `name` must still be
+    `v<version>` and `assets` still `[]`; and the two checks of "Before the
+    next release, once". Anything else is a stop. As the last thing before
+    the publish, and again before every rerun of it, note the time from
+    GitHub's own clock, which also stamps `published_at`; the line it prints
+    is in UTC, to the second:
+
+    ```powershell
+    gh api -i rate_limit | Select-String '^Date:'
+    ```
+
     Then publish the draft by its id, with
     the tag and the notes you read set in the same call, so that an edit made
     after your read can't reach the record:
@@ -447,12 +455,13 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -f tag_name=v<version> -f name=v<version> -F body=@<read-notes> -F draft=false --jq '{tag_name, name, draft, author: .author.login, assets: [.assets[].name], published_at}'
     ```
 
-    The author is the check: it must be your account. The tag, the name and
-    `false` echo the call's own inputs, so they only confirm that the call
-    landed. `assets` must be `[]`, and `published_at` later than the UTC
-    time you noted just before it; an earlier time means someone else
-    published it first, an
-    incident under "If a run fails". Within a few
+    `published_at` is the check: it must be later than the GitHub time you
+    noted just before the call. An earlier time means someone else published
+    the draft first. The author must still be your account, but it is likely
+    set when the draft is made, so it may not show who published. The tag,
+    the name and `false` echo the call's own inputs, so they only confirm
+    that the call landed. `assets` must be `[]`: an asset is one nobody
+    should have added. Each of these is an incident under "If a run fails". Within a few
     minutes, Zenodo's GitHub page, under your Zenodo account's settings,
     lists `v<version>` with a DOI. Check that its record names the author and
     ORCID iD from `CITATION.cff`; if they are wrong, edit the record's
@@ -491,16 +500,25 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     or no tag found): fix what the error names, repeat the `git ls-remote`
     check, and go on from step 17's release list. This is not an incident.
   - **One draft, your own,** left by a run of yours that stopped: go on from
-    step 17's read by id. A failed publish is rerun by that id.
-  - **One published release, your own:** check its notes against the
-    saved read-notes file when there is one, and else against the generated
-    ones, which
-    `gh api repos/mephistopheles4/athanor/releases/generate-notes -f tag_name=v<version> -f previous_tag_name=v<last> --jq .body`
-    prints; notes you edited in your own draft are yours. If it all holds,
-    don't make it again, and carry on with step 17's Zenodo checks.
+    step 17's read by id. A failed publish is rerun by that id, after
+    noting GitHub's time again.
+  - **One published release, your own:** read it by its id with the
+    publish call's fields:
+
+    ```powershell
+    gh api repos/mephistopheles4/athanor/releases/<id> --jq '{tag_name, name, draft, author: .author.login, assets: [.assets[].name], published_at, body}'
+    ```
+
+    Apply step 17's rules to what it prints: `tag_name` and `name`
+    `v<version>`, `draft` false, `author` your account, `assets` `[]`, and
+    `published_at` later than the GitHub time you noted before your last
+    publish. Its notes must match your saved read-notes file. Every publish
+    in step 17 sends that file, so a published release with no saved file,
+    or no noted time, is an incident. If it all holds, don't make it again,
+    and carry on with step 17's Zenodo checks.
   - **Anything else** is an incident: two releases on the tag, another
-    author, a `published_at` earlier than the UTC time you noted just
-    before the publish, or notes you
+    author, an asset, a `published_at` earlier than the GitHub time you
+    noted just before the publish, or notes you
     didn't write or generate. Stop releasing. Open a
     private security advisory on the repo (`SECURITY.md`), and copy into it
     each release's id, author, tag and notes, as the list and the read by id
