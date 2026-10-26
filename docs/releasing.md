@@ -437,8 +437,9 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     Just before publishing, repeat the `git ls-remote` check, which must
     still print `<commit>`; the release list, which must still print the one
     draft, with the same `id`; and the two checks of "Before the next release,
-    once". Anything else is a stop. Note the time you finish these
-    checks. Then publish the draft by its id, with
+    once". Anything else is a stop. As the last thing before the publish,
+    note the time in UTC, to the second (`(Get-Date).ToUniversalTime()`).
+    Then publish the draft by its id, with
     the tag and the notes you read set in the same call, so that an edit made
     after your read can't reach the record:
 
@@ -448,8 +449,9 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 
     The author is the check: it must be your account. The tag, the name and
     `false` echo the call's own inputs, so they only confirm that the call
-    landed. `assets` must be `[]`, and `published_at` later than the time
-    you noted; an earlier time means someone else published it first, an
+    landed. `assets` must be `[]`, and `published_at` later than the UTC
+    time you noted just before it; an earlier time means someone else
+    published it first, an
     incident under "If a run fails". Within a few
     minutes, Zenodo's GitHub page, under your Zenodo account's settings,
     lists `v<version>` with a DOI. Check that its record names the author and
@@ -497,7 +499,8 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     prints; notes you edited in your own draft are yours. If it all holds,
     don't make it again, and carry on with step 17's Zenodo checks.
   - **Anything else** is an incident: two releases on the tag, another
-    author, a `published_at` earlier than your last recheck, or notes you
+    author, a `published_at` earlier than the UTC time you noted just
+    before the publish, or notes you
     didn't write or generate. Stop releasing. Open a
     private security advisory on the repo (`SECURITY.md`), and copy into it
     each release's id, author, tag and notes, as the list and the read by id
