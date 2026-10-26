@@ -455,12 +455,13 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     gh api -X PATCH repos/mephistopheles4/athanor/releases/<id> -f tag_name=v<version> -f name=v<version> -F body=@<read-notes> -F draft=false --jq '{tag_name, name, draft, author: .author.login, assets: [.assets[].name], published_at}'
     ```
 
-    The author is the check: it must be your account. The tag, the name and
-    `false` echo the call's own inputs, so they only confirm that the call
-    landed. `assets` must be `[]`, and `published_at` later than the GitHub
-    time you noted just before it; an earlier time means someone else
-    published it first, and an asset is one nobody should have added: each
-    is an incident under "If a run fails". Within a few
+    `published_at` is the check: it must be later than the GitHub time you
+    noted just before the call. An earlier time means someone else published
+    the draft first. The author must still be your account, but it is likely
+    set when the draft is made, so it may not show who published. The tag,
+    the name and `false` echo the call's own inputs, so they only confirm
+    that the call landed. `assets` must be `[]`: an asset is one nobody
+    should have added. Each of these is an incident under "If a run fails". Within a few
     minutes, Zenodo's GitHub page, under your Zenodo account's settings,
     lists `v<version>` with a DOI. Check that its record names the author and
     ORCID iD from `CITATION.cff`; if they are wrong, edit the record's
