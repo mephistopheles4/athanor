@@ -557,7 +557,7 @@ the lead session's chat, relayed by head-chef-field-test.
     where a local address leads without trusting the machine it runs on, and
     Docker offers no check of the engine's identity to build on.
     Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-25. **A message names the machine file's or the state folder's full path.** Every message that
+25. **A message names the machine file's, the state folder's or the repo's full path.** Every message that
     names the machine configuration file names it by its full path, which holds
     the account's home-folder name: its JSON and shape errors, its unknown
     keys, its value checks, its ceilings, and the `allowRemoteDocker` and
@@ -568,6 +568,7 @@ the lead session's chat, relayed by head-chef-field-test.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
     Widened 2026-10-25 to every message that names the file. From: the Design review of the spec on issue 54 (data-lens, machine-file messages carry the account name). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
     Widened 2026-10-27 to messages that name a path in the state folder, such as a git error from a named base's calls that names the run's scratch folder. From: the Design review of the spec on issue 70, round 2 (data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
+    Widened 2026-10-27 to a git error from a named base's calls that names the repo's own path. From: the closing read of issue 70 (data-lens D2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef (q26).
 26. **A program running as the owner can read the npm session token.** From
     `npm login` to `npm logout`, around a release's approval, and around a
     step 17 unpublish or deprecate, the session

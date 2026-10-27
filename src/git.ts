@@ -90,10 +90,13 @@ function cleanGitEnv(emptyFile: string): Env {
   return { ...env, GIT_CONFIG_GLOBAL: emptyFile, GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' };
 }
 
-async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env; what: string }): Promise<string> {
+// The next step for a failed call that reads the repo's history.
+const HISTORY = 'Check that git fsck finds the repo sound, then run again.';
+
+async function git(args: string[], { cwd, env, what, next = 'Fix what git reports, then run again.' }: { cwd: string; env?: Env; what: string; next?: string }): Promise<string> {
   const r = await call(['git', ...args], { cwd, env });
   if (r.code !== 0) {
-    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. Check that git fsck finds the repo sound, then run again.`);
+    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. ${next}`);
   }
   return r.stdout;
 }
@@ -215,7 +218,7 @@ export async function snapshot(root: string, scratch: Scratch, { untracked }: { 
   // `stash create` refuses an index copy holding an intent-to-add entry (git add -N);
   // `add -u` turns each into a real entry at its working-tree content (issue 46, M8).
   await git(['add', '-u', '--', '.'], { cwd: root, env, what: 'read files added with git add -N' });
-  const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes' })).trim();
+  const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes', next: HISTORY })).trim();
   const id = stash || (await git(['rev-parse', 'HEAD'], { cwd: root, what: 'read HEAD' })).trim();
   return { id, untracked: false, untrackedLeftOut: untrackedCount, from: stash ? 'stash' : 'head' };
 }
@@ -272,7 +275,7 @@ export async function resolveBase(
   if (ref === BASE_BRANCH || ref.startsWith(`${BASE_BRANCH}/`)) {
     throw new AthanorError(`${label} resolves to ${ref}, which is reserved for the snapshot's own branch in the container. Name another ref.`);
   }
-  const tip = (await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { cwd: root, env, what: `read the commit ${ref} points at` })).trim();
+  const tip = (await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { cwd: root, env, what: `read the commit ${ref} points at`, next: 'Name a ref that points at a commit, then run again.' })).trim();
 
   const shallow = (await git(['rev-parse', '--is-shallow-repository'], { cwd: root, env, what: 'check whether the repo is shallow' })).trim();
   if (shallow !== 'false') {
@@ -287,14 +290,14 @@ export async function resolveBase(
   }
   const promised = promisors.stdout.split('\n').some((l) => / true$/.test(l));
   if (partial.stdout.trim() !== '' || promised) {
-    throw new AthanorError('This repo is a partial clone, so some of the history a base needs may be missing, and git would fetch it. Fetch the missing objects (git fetch --refetch), or use a full clone, then run again.');
+    throw new AthanorError('This repo is a partial clone, so some of the history a base needs may be missing, and git would fetch it. Use a full clone, or unset the remote\'s promisor and partialclonefilter settings (and extensions.partialClone, if set) and fetch again with --refetch, then run again.');
   }
 
   const head = snap.from === 'stash'
-    ? (await git(['rev-parse', '--verify', `${snap.id}^1`], { cwd: root, env, what: 'read the commit the snapshot sits on' })).trim()
+    ? (await git(['rev-parse', '--verify', `${snap.id}^1`], { cwd: root, env, what: 'read the commit the snapshot sits on', next: HISTORY })).trim()
     : snap.from === 'head'
       ? snap.id
-      : (await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: root, env, what: 'read HEAD' })).trim();
+      : (await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: root, env, what: 'read HEAD', next: HISTORY })).trim();
 
   const all = await call(['git', 'merge-base', '--all', tip, head], { cwd: root, env });
   const mergeBases = all.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -302,9 +305,9 @@ export async function resolveBase(
     if (all.code === 1 || (all.code === 0 && mergeBases.length === 0)) {
       throw new AthanorError(`${label} has no merge base with this branch: their histories are unrelated. Name a base this branch was made from.`);
     }
-    throw new AthanorError(`git could not find the merge base of ${label} and HEAD: ${firstLine(all.stderr) || `exit ${all.code}`}. Check that git fsck finds the repo sound, then run again.`);
+    throw new AthanorError(`git could not find the merge base of ${label} and HEAD: ${firstLine(all.stderr) || `exit ${all.code}`}. ${HISTORY}`);
   }
-  const mergeBase = (await git(['merge-base', tip, head], { cwd: root, env, what: 'find the merge base' })).trim();
+  const mergeBase = (await git(['merge-base', tip, head], { cwd: root, env, what: 'find the merge base', next: HISTORY })).trim();
 
   const held = await git(['ls-tree', '--name-only', snap.id, '--', BASE_FOLDER], { cwd: root, env, what: `check the snapshot for ${BASE_FOLDER}` });
   if (held.trim() !== '') {
@@ -331,14 +334,14 @@ export async function packBase(
   const env = scratch.baseEnv;
   const dir = folder ?? join(scratch.dir, 'base');
   if (folder === undefined) onDisk(() => mkdirSync(dir));
-  const later = (await git(['rev-list', base.tip, base.head, '--not', ...base.mergeBases], { cwd: root, env, what: 'list the commits from the merge base onward' }))
+  const later = (await git(['rev-list', base.tip, base.head, '--not', ...base.mergeBases], { cwd: root, env, what: 'list the commits from the merge base onward', next: HISTORY }))
     .split('\n').filter(Boolean);
   const carried = [...new Set([...later, ...base.mergeBases])];
   const kept = new Set(carried);
   const withParents = await gitFed(['rev-list', '--no-walk=unsorted', '--parents', '--stdin'], { cwd: root, env, input: carried.join('\n') + '\n', what: 'read the carried commits\' parents', signal });
   const shallow = withParents.split('\n').filter(Boolean).map((l) => l.split(' '))
     .filter(([, ...parents]) => parents.some((p) => !kept.has(p))).map(([id]) => id as string);
-  const tree = (await git(['rev-parse', '--verify', `${snap.id}^{tree}`], { cwd: root, env, what: 'read the snapshot\'s tree' })).trim();
+  const tree = (await git(['rev-parse', '--verify', `${snap.id}^{tree}`], { cwd: root, env, what: 'read the snapshot\'s tree', next: HISTORY })).trim();
   const objects = await gitFed(['rev-list', '--objects', '--no-object-names', '--no-walk=unsorted', '--stdin'], { cwd: root, env, input: [...carried, tree].join('\n') + '\n', what: 'list the objects of the base\'s history', signal });
   // One pack, whatever size limit the repo's config sets.
   const hashes = (await gitFed(['-c', 'pack.packSizeLimit=0', 'pack-objects', '-q', join(dir, 'base')], { cwd: root, env, input: objects, what: 'build the pack of the base\'s history', signal }))

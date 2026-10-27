@@ -1,6 +1,6 @@
 # 0032. A named base rides in the snapshot
 
-Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020, 0023 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round, q9 to q13 from its Design review of revision 1, q14 to q17 from the follow-up round on revision 2, q18 (proceed to Build on revision 3), q19 to q22 from the Test review and q23 and q24 from its closing read. q1 to q8, q12, q13, q16, q17 and q20 to q22 are the owner's word, relayed by the lead session; q9 to q11, q14, q15, q18, q19, q23 and q24 are the lead's own decisions under the owner's level-3 goal.
+Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020, 0023 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round, q9 to q13 from its Design review of revision 1, q14 to q17 from the follow-up round on revision 2, q18 (proceed to Build on revision 3), q19 to q22 from the Test review, q23 and q24 from its first closing read and q26 from its second. q1 to q8, q12, q13, q16, q17, q20 to q22 and q26 are the owner's word, relayed by the lead session; q9 to q11, q14, q15, q18, q19, q23 and q24 are the lead's own decisions under the owner's level-3 goal.
 
 The snapshot reached the container as one tar of the work's tree, and the
 boot script committed it as a single parentless commit. A check that compares
@@ -62,8 +62,10 @@ stream.
   HEAD) and the snapshot's tree id. These four files ride after the tree in
   the snapshot's tar, under `.athanor-base/`, added by `git archive
   --add-file`, and are deleted as soon as the archive ends, so the copy of the
-  history sits in the state folder only from the pack's build to the end of
-  the stream (q20). Only the four files go, never the folder they sit in
+  history sits in the state folder from the pack's build to the end of the
+  stream (or, if a file can't be removed then or the run stops before the
+  stream, until the run ends), and after a hard kill until the stale-run sweep
+  (q20). Only the four files go, never the folder they sit in
   (q23). `pack-objects` pins `pack.packSizeLimit=0`, so a repo's
   setting can't split the pack. Only commit, tree and file objects travel:
   never a tag object, a git setting, a hook, a remote, a reflog, a stash or
@@ -86,8 +88,8 @@ What it costs is accepted risk 39: with a base, the snapshot carries the
 history from the merge base onward wherever it goes. That history includes
 files deleted since, and commit metadata with other people's names and
 emails. A git error from the base's steps can name a path in the state
-folder, which holds the account name; accepted risk 25 was widened to cover
-that (q16). Risk 39 also says the pack sits unencrypted in the state folder
+folder, or the repo's own path, either of which holds the account name;
+accepted risk 25 was widened to cover that (q16, q26). Risk 39 also says the pack sits unencrypted in the state folder
 while it exists, as the repo's own objects do (q21). Five hardening items are
 recorded nowhere, on the owner's word (q12, q17, q22):
 
@@ -97,7 +99,8 @@ recorded nowhere, on the owner's word (q12, q17, q22):
   builds, though an interrupt stops it;
 - the test-only `basePackFolder` option writes the pack into a folder its
   caller chose, which the run never removes; the run removes the four files
-  once streamed, and leaves them only when the pack step fails;
+  once streamed, and leaves them when the pack step fails or the run ends
+  before the stream;
 - an interrupt reaches only the pack step's three calls that carry data, not
   its commit listing or its tree lookup, nor any call that resolves the base,
   which runs before a slot is taken.

@@ -426,7 +426,7 @@ threat model holds the full entries.
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a
   ceiling) names it by its full path, and a git error from a named base's
-  steps can name a path in the state folder;
+  steps can name a path in the state folder or the repo's own path;
   both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
   places your account name shouldn't go. Accepted risk 25.
