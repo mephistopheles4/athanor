@@ -23,6 +23,8 @@ export interface ContainerRun {
   root: string;
   scratch: Scratch;
   snapshotId: string;
+  // A carried base's four files, which ride after the snapshot's tree (ADR 0032).
+  added?: string[];
   // The container's name and the arguments that start it, from the container settings.
   container: Container;
   timeLimitSeconds: number;
@@ -84,7 +86,7 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   const write = (stream: Sink | null) => (c: Buffer | string) => { stream?.write(c); };
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
-  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
+  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot', o.added);
   const { name, args } = o.container;
   const container = start([...o.docker, ...args], {
     env: o.env, stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),

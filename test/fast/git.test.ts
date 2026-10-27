@@ -18,7 +18,7 @@ const dist = fileURLToPath(new URL('../../dist', import.meta.url));
 test('T11 git keeps its archive settings private, and the core gets the tar stream of a commit from git', async (t) => {
   isolate(t);
   const git = await import('#dist/git.js');
-  assert.deepEqual(Object.keys(git).sort(), ['buildContext', 'clearStale', 'makeScratch', 'repoRoot', 'snapshot', 'tarStream'],
+  assert.deepEqual(Object.keys(git).sort(), ['buildContext', 'clearStale', 'makeScratch', 'packBase', 'repoRoot', 'resolveBase', 'snapshot', 'tarStream'],
     'git exports these functions and no archive setting; a new export must keep the settings private');
   assert.equal(typeof git.tarStream, 'function');
   // Only the compiled git module starts git archive or names its settings.
