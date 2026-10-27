@@ -67,7 +67,7 @@ test('B1 a base name that is not a plain ref name exits 125 naming the flag, or 
   });
   for (const [label, c] of CONTROLS) {
     await t.test(`${label}, in each place a name comes from, never reaches a message raw`, async (t) => {
-      isolate(t);
+      const home = isolate(t);
       const asFlag = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }), { base: `a${c}b` });
       assertRefused(asFlag.result, asFlag.calls, /--base/);
       const asKey = await runIn(t, makeRepo(t, { athanor: withBase(`a${c}b`) }), { name: 'check' });
@@ -84,7 +84,10 @@ test('B1 a base name that is not a plain ref name exits 125 naming the flag, or 
       assertRefused(notArgs.result, notArgs.calls, /does not take arguments/);
       const ceiling = await runIn(t, named, { name: `n${c}` });
       assertRefused(ceiling.result, ceiling.calls, /above the machine ceiling/);
-      for (const r of [asFlag, asKey, inKey, inName, extraWords, notArgs, ceiling]) {
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ [`m${c}`]: 1 }));
+      const machineKey = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }));
+      assertRefused(machineKey.result, machineKey.calls, /unknown key/);
+      for (const r of [asFlag, asKey, inKey, inName, extraWords, notArgs, ceiling, machineKey]) {
         assert.doesNotMatch(r.result.message!, RAW_CONTROL, r.result.message);
         assert.ok(r.result.message!.includes(`\\u{${c.codePointAt(0)!.toString(16)}}`), `shown escaped: ${r.result.message}`);
       }
@@ -159,6 +162,35 @@ test('B1 a base name is resolved to one branch, remote-tracking branch or tag, a
     assert.equal('base' in result, false, 'no base in the result');
     assert.equal(callsOf(calls, 'run').length, 0, 'no container');
     assert.equal(result.slot, undefined, 'no slot was taken');
+  });
+  await t.test('an all-capitals tag gets advice that works, and a key is never told to name a local branch', async (t) => {
+    isolate(t);
+    const { repo, b2 } = historyRepo(t, withCommands({ test: ['true'], check: { argv: ['true'], base: 'RELEASE' } }));
+    git(repo, ['tag', 'RELEASE', b2]);
+    const asFlag = await runIn(t, repo, { base: 'RELEASE' });
+    assert.equal(asFlag.result.exitCode, 125, JSON.stringify(asFlag.result));
+    assert.match(asFlag.result.message!, /refs\/tags\/RELEASE/);
+    const asKey = await runIn(t, repo, { name: 'check' });
+    assert.equal(asKey.result.exitCode, 125, JSON.stringify(asKey.result));
+    assert.match(asKey.result.message!, /refs\/tags\/RELEASE/);
+    assert.doesNotMatch(asKey.result.message!, /refs\/heads\//, 'a key may not name a local branch, so it is never advised to');
+    const followed = await runIn(t, repo, { base: 'refs/tags/RELEASE' });
+    assert.equal(followed.result.outcome, 'pass', 'the advice works');
+  });
+  await t.test('a name that resolves through a symbolic ref is refused, naming the full ref to give', async (t) => {
+    isolate(t);
+    const { repo, b2 } = historyRepo(t, withCommands({ test: ['true'], check: { argv: ['true'], base: 'origin' } }));
+    git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+    for (const extra of [{ base: 'origin' }, { base: 'origin/HEAD' }, { name: 'check' }]) {
+      const { result, calls } = await runIn(t, repo, extra);
+      assert.equal(result.exitCode, 125, JSON.stringify(result));
+      assert.match(result.message!, /symbolic ref/);
+      assert.match(result.message!, /refs\/remotes\/origin\/main/, 'it names the ref to give');
+      assert.equal(callsOf(calls, 'run').length, 0, 'no container');
+      assert.equal(result.slot, undefined, 'no slot was taken');
+    }
+    const direct = await runIn(t, repo, { base: 'origin/main' });
+    assert.equal(direct.result.base?.tip, b2, 'the name it points at is taken');
   });
   await t.test('a raw commit id', async (t) => {
     isolate(t);
@@ -251,6 +283,11 @@ test('B7 a base that cannot be carried exits 125 before a slot is taken and befo
       git(clone, ['clone', '-q', '--filter=blob:none', '--branch', 'topic', `file://${h.repo}`, '.']);
       assert.equal(git(clone, ['config', '--type=bool', 'remote.origin.promisor']).trim(), 'true', 'the clone is partial');
       return { repo: clone };
+    }, /partial clone/i],
+    ['extensions.partialClone with no promisor remote', (t) => {
+      const h = historyRepo(t);
+      git(h.repo, ['config', 'extensions.partialClone', 'origin']);
+      return { repo: h.repo };
     }, /partial clone/i],
     ['a promisor remote set by hand to yes', (t) => {
       const h = historyRepo(t);
@@ -421,7 +458,13 @@ test('B3 the carried files give the host\'s merge base, files and snapshot tree 
     assert.equal(clean.result.outcome, 'pass', JSON.stringify(clean.result));
     const fresh = intoFreshRepo(t, carried(clean.calls).files);
     assert.equal(git(fresh, ['write-tree']).trim(), git(repo, ['rev-parse', 'HEAD^{tree}']).trim(), 'the ignored file is in the index as committed');
-    writeFiles(repo, { 't1.txt': 'edited\n', 'new.txt': 'new\n' });
+    writeFiles(repo, { 't1.txt': 'edited\n' });
+    const stashed = await runIn(t, repo, { name: 'check' });
+    assert.equal(stashed.result.outcome, 'pass', JSON.stringify(stashed.result));
+    const stashFiles = carried(stashed.calls).files;
+    assert.equal(stashFiles.refs!.toString('utf8').split('\n')[1], `update refs/heads/athanor ${git(repo, ['rev-parse', 'HEAD']).trim()}`, 'the snapshot sits on the host\'s HEAD, not on the stash commit');
+    assert.equal(git(intoFreshRepo(t, stashFiles), ['show', ':t1.txt']), 'edited\n', 'the uncommitted edit is in the index');
+    writeFiles(repo, { 'new.txt': 'new\n' });
     const edited = await runIn(t, repo, { name: 'check', untracked: true });
     assert.equal(edited.result.outcome, 'pass', JSON.stringify(edited.result));
     const inside = intoFreshRepo(t, carried(edited.calls).files);
@@ -511,6 +554,7 @@ test('B9 a run with a base leaves the repo as it was and no scratch folder behin
 
   // The copy of the history goes as soon as the stream is written, while the container still runs.
   const folder = tempDir(t, 'athanor-pack-');
+  writeFileSync(join(folder, 'keep.txt'), 'kept\n');
   const hanging = fake(t, { run: { hangMs: 3000 } });
   const running = run({ cwd: repo, docker: hanging.docker, prefix: uniquePrefix(), name: 'check', basePackFolder: folder });
   let done = false;
@@ -522,6 +566,7 @@ test('B9 a run with a base leaves the repo as it was and no scratch folder behin
   }
   assert.equal(done, false, 'the pack went before the run ended');
   assert.equal((await running).outcome, 'pass');
+  assert.ok(existsSync(join(folder, 'keep.txt')), 'only the four files are removed, not the folder they were written in');
 });
 
 test('B7 a failure while building the pack exits 125, frees the slot and leaves no scratch folder', async (t) => {

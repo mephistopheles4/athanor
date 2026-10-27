@@ -58,10 +58,11 @@ export const BOOT = [...UNPACK, ...COMMIT, ...START].join('\n');
 // four files athanor added, put the history into a fresh repo with the
 // repo's object format, read the index from the snapshot's own tree, and
 // commit it on top of the host's HEAD only when it differs. Any failure ends
-// the boot before the marker. `init` is the one line that differs by format.
+// the boot before the marker; its exit code is not read, since a missing
+// marker makes the run an error. `init` is the one line that differs by format.
 const baseCommit = (init: string): string[] => [
   'fail() { echo "athanor: $1" >&2; exit 3; }',
-  'command -v git >/dev/null 2>&1 || fail "the image has no git, which a run with a base needs."',
+  'command -v git >/dev/null 2>&1 || fail "the image has no git, which a run with a base needs. Add git to the image, or run without a base."',
   'b=.athanor-base',
   '{ [ -d "$b" ] && [ ! -L "$b" ]; } || fail "the snapshot has no base folder that athanor made. Run again; if it repeats, check the Docker engine."',
   'n=0; for f in "$b"/* "$b"/.[!.]* "$b"/..?*; do if [ -e "$f" ] || [ -L "$f" ]; then n=$((n+1)); fi; done',

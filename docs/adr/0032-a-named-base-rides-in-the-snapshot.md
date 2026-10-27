@@ -1,6 +1,6 @@
 # 0032. A named base rides in the snapshot
 
-Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020, 0023 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round, q9 to q13 from its Design review of revision 1, q14 to q17 from the follow-up round on revision 2, q18 (proceed to Build on revision 3) and q19 to q22 from the Test review. q1 to q8, q12, q13, q16, q17, q21 and q22 are the owner's word, relayed by the lead session; q9 to q11, q14, q15 and q18 to q20 are the lead's own decisions under the owner's level-3 goal.
+Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020, 0023 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round, q9 to q13 from its Design review of revision 1, q14 to q17 from the follow-up round on revision 2, q18 (proceed to Build on revision 3), q19 to q22 from the Test review and q23 and q24 from its closing read. q1 to q8, q12, q13, q16, q17 and q20 to q22 are the owner's word, relayed by the lead session; q9 to q11, q14, q15, q18, q19, q23 and q24 are the lead's own decisions under the owner's level-3 goal.
 
 The snapshot reached the container as one tar of the work's tree, and the
 boot script committed it as a single parentless commit. A check that compares
@@ -32,8 +32,12 @@ stream.
   anything under it, is the snapshot's own branch inside the container, so it
   is refused. The name git resolves to, which a symbolic ref such as a
   remote's HEAD can make differ from the given name, gets the control-set
-  check too (q20). Messages show every quoted name escaped, key and command
-  names included (q11, q15, q20).
+  check too (q20), one shared test beside the escaping (q23). A name that
+  goes through a symbolic ref, such as `origin` for `origin/HEAD`, is refused
+  and the full name it points at given instead, since only that name would
+  exist inside the container (q24). Messages show every quoted name escaped,
+  key and command names included, the machine file's too (q11, q15, q20,
+  q23).
 - **Resolving in a clean environment (q3).** Every git call that resolves the
   base or makes what carries it runs from the repo root, in ADR 0020's clean
   environment. On top of that environment it sets `GIT_NO_REPLACE_OBJECTS=1`,
@@ -59,7 +63,8 @@ stream.
   the snapshot's tar, under `.athanor-base/`, added by `git archive
   --add-file`, and are deleted as soon as the archive ends, so the copy of the
   history sits in the state folder only from the pack's build to the end of
-  the stream (q20). `pack-objects` pins `pack.packSizeLimit=0`, so a repo's
+  the stream (q20). Only the four files go, never the folder they sit in
+  (q23). `pack-objects` pins `pack.packSizeLimit=0`, so a repo's
   setting can't split the pack. Only commit, tree and file objects travel:
   never a tag object, a git setting, a hook, a remote, a reflog, a stash or
   another ref.
@@ -91,8 +96,10 @@ recorded nowhere, on the owner's word (q12, q17, q22):
 - the carried history has no size cap, and its pack holds the slot while it
   builds, though an interrupt stops it;
 - the test-only `basePackFolder` option writes the pack into a folder its
-  caller chose, which the run never removes;
-- an interrupt doesn't reach three of the base's quick git calls, only the
-  three that carry data.
+  caller chose, which the run never removes; the run removes the four files
+  once streamed, and leaves them only when the pack step fails;
+- an interrupt reaches only the pack step's three calls that carry data, not
+  its commit listing or its tree lookup, nor any call that resolves the base,
+  which runs before a slot is taken.
 
 athanor 0.2.0 is the first release that takes `base` and `--base` (q14).

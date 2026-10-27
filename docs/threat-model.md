@@ -239,8 +239,9 @@ above; the software they run is not.
   ssh or verified TLS unless `allowPlainTcp` is set (ADR 0013, ADR 0021). The
   `--output` folder sits unencrypted on the host's disk, like the state folder.
   With a base, a run's pack of the base's history sits unencrypted in the state
-  folder until the run has streamed it into the container, and after a hard
-  kill until the stale-run sweep, like the rest of it.
+  folder until the run has streamed it into the container (or, if it can't be
+  removed then, until the run ends), and after a hard kill until the stale-run
+  sweep, like the rest of it.
   Image layers, the build cache and a container's writable layer sit
   unencrypted on the engine's or builder's disk: on this machine they rely on
   its disk encryption; on a remote one, which the machine configuration must

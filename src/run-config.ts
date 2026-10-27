@@ -5,7 +5,7 @@ import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync,
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
-import { checkOutputs, showName } from './copy-out.js';
+import { checkOutputs, hasControl, showName } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -125,7 +125,7 @@ const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinut
 export function baseNameProblem(name: string): string | null {
   if (name === '') return 'it is empty';
   if (name.startsWith('-')) return 'it starts with "-"';
-  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/u.test(name)) return 'it holds a control character or an invisible formatting character';
+  if (hasControl(name)) return 'it holds a control character or an invisible formatting character';
   if (name.includes(' ')) return 'it holds a space';
   const syntax = name.match(/[~^:?*[\\]/);
   if (syntax) return `it holds "${syntax[0]}", which git reads as revision syntax`;
@@ -222,7 +222,7 @@ export function readMachineConfig(home: string): MachineConfig {
   for (const [key, value] of Object.entries(parsed)) {
     // A list lookup, so "constructor" or "__proto__" is not found on a prototype.
     if (!MACHINE_KEYS.includes(key as Key)) {
-      throw new AthanorError(`${where} has an unknown key "${key}". Its keys are: ${MACHINE_KEYS.join(', ')}.`);
+      throw new AthanorError(`${where} has an unknown key "${showName(key)}". Its keys are: ${MACHINE_KEYS.join(', ')}.`);
     }
     const check = checkOf(key as Key);
     if (check && !check.ok(value)) throw new AthanorError(`${where}: ${key} ${check.rule}.`);

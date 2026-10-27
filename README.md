@@ -143,6 +143,11 @@ check run on the host, reading only commits, would not.
 - A command's `base` may name only a remote-tracking branch or a tag.
   `athanor run --base <name>` sets the base for one run, a local branch
   included, and overrides the command's.
+- Name the base directly. A name that goes through a symbolic ref, such as
+  `origin` for `origin/HEAD`, is refused, since only the branch it points at
+  would exist inside; name that branch, such as `origin/main`. A name in
+  capitals, such as `HEAD`, is read as git's own pseudo ref: name such a tag
+  or branch in full, such as `refs/tags/RELEASE`.
 - The base is only as fresh as your last `git fetch`: athanor never fetches.
 - A shallow or partial clone is refused, since part of the history may be
   missing, and so is a snapshot that holds a path named `.athanor-base`.
@@ -302,7 +307,8 @@ Every athanor on the machine reads this file, so once it holds `processes` or
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. With a base, it also holds a
 pack of the history from the merge base onward, until the run has streamed it
-into the container, and for up to a day after a run that was killed hard. If you set
+into the container (or, if it can't be removed then, until the run ends), and
+for up to a day after a run that was killed hard. If you set
 `ATHANOR_HOME`, point it at a folder only you can read.
 
 ## Disk

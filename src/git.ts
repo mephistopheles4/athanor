@@ -7,7 +7,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
-import { showName } from './copy-out.js';
+import { hasControl, showName } from './copy-out.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -93,7 +93,7 @@ function cleanGitEnv(emptyFile: string): Env {
 async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env; what: string }): Promise<string> {
   const r = await call(['git', ...args], { cwd, env });
   if (r.code !== 0) {
-    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}.`);
+    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. Check that git fsck finds the repo sound, then run again.`);
   }
   return r.stdout;
 }
@@ -237,7 +237,9 @@ export async function resolveBase(
   // git resolves HEAD and its kin (FETCH_HEAD, ORIG_HEAD, @) to the branch they
   // point at, so they are refused by name before git sees them.
   if (name === '@' || /^[A-Z_]+$/.test(name)) {
-    const inFull = name === '@' || name.endsWith('HEAD') ? '' : `, or a branch or tag in full, such as refs/heads/${name}`;
+    const inFull = name === '@' || name.endsWith('HEAD')
+      ? ''
+      : `, or name it in full, such as refs/tags/${name} or refs/remotes/origin/${name}${fromKey ? '' : ` (refs/heads/${name} for a local branch)`}`;
     throw new AthanorError(`${label} names a pseudo ref such as HEAD, not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main${inFull}.`);
   }
   const resolved = await call(['git', '-c', 'core.warnAmbiguousRefs=true', 'rev-parse', '--verify', '--quiet', '--symbolic-full-name', '--end-of-options', name], { cwd: root, env });
@@ -251,11 +253,18 @@ export async function resolveBase(
   }
   // git follows a symbolic ref, such as a remote's HEAD, to a name the check
   // above never saw; that name must hold no control or format character either.
-  if (/[\u0000-\u0020\u007f-\u009f\u2028\u2029]|\p{Cf}/u.test(ref)) {
+  if (hasControl(ref)) {
     throw new AthanorError(`${label} resolves to ${showName(ref)}, a name with a control or invisible formatting character. Name the branch you mean directly.`);
+  }
+  if (ref.includes(' ')) {
+    throw new AthanorError(`${label} resolves to "${ref}", a name with a space. Name the branch you mean directly.`);
   }
   if (!CARRIED_PREFIXES.some((p) => ref.startsWith(p))) {
     throw new AthanorError(`${label} resolves to ${ref}, which is not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main.`);
+  }
+  const asGiven = [name, `refs/${name}`, `refs/heads/${name}`, `refs/tags/${name}`, `refs/remotes/${name}`];
+  if (!asGiven.includes(ref)) {
+    throw new AthanorError(`${label} goes through a symbolic ref to ${ref}, and only that name would exist inside the container. Name ${ref} directly.`);
   }
   if (fromKey && ref.startsWith('refs/heads/')) {
     throw new AthanorError(`${label} names the local branch ${ref}, but a command's base may name only a remote-tracking branch or a tag. Name one, such as origin/main, or pass a local branch with --base.`);

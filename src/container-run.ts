@@ -3,7 +3,6 @@
 // and return the outcome. What the container gets is decided by the container
 // settings, not here.
 import { rmSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { EXIT } from './errors.js';
 import { tarStream } from './git.js';
 import type { Scratch } from './git.js';
@@ -95,15 +94,18 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   });
   feed(archive, container);
   // A carried base's four files are read by the time the archive ends, so the
-  // copy of the history goes then, not at the end of the run (ADR 0032). If it
-  // can't be removed here, the run's own cleanup of its scratch folder does it.
+  // copy of the history goes then, not at the end of the run (ADR 0032). Only
+  // the four files go, never the folder they sit in. One that can't be removed
+  // here goes with the run's scratch folder, the test-only pack folder excepted.
   const added = o.added ?? [];
   if (added.length > 0) {
     void archive.done.then(() => {
-      try {
-        rmSync(dirname(added[0] as string), { recursive: true, force: true, maxRetries: 3 });
-      } catch {
-        // Left to the scratch folder's removal.
+      for (const file of added) {
+        try {
+          rmSync(file, { force: true, maxRetries: 3 });
+        } catch {
+          // Left to the scratch folder's removal.
+        }
       }
     });
   }
