@@ -1,12 +1,13 @@
 // A named base carried into the snapshot (issue 70, spec B1 to B9): the name
 // check, the refusals, what the stream carries and what it leaves out. Each
-// refusal exits 125 with a plain message. One top-level test per claim.
+// refusal exits 125 with a plain message. Each test is named by the claim it
+// backs; B1, B4, B6 and B7 have two each.
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run, BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
@@ -65,7 +66,7 @@ test('B1 a base name that is not a plain ref name exits 125 naming the flag, or 
     assert.throws(() => parseArgs(['run', '--base', '-x']), /--base needs/);
   });
   for (const [label, c] of CONTROLS) {
-    await t.test(`${label}, in each of the four places a name comes from, never reaches a message raw`, async (t) => {
+    await t.test(`${label}, in each place a name comes from, never reaches a message raw`, async (t) => {
       isolate(t);
       const asFlag = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }), { base: `a${c}b` });
       assertRefused(asFlag.result, asFlag.calls, /--base/);
@@ -75,7 +76,15 @@ test('B1 a base name that is not a plain ref name exits 125 naming the flag, or 
       assertRefused(inKey.result, inKey.calls, /unknown key/);
       const inName = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }), { name: `n${c}` });
       assertRefused(inName.result, inName.calls, /no command named/);
-      for (const r of [asFlag, asKey, inKey, inName]) {
+      // A command the repo itself names with the character, reached three more ways.
+      const named = makeRepo(t, { athanor: withCommands({ test: ['true'], [`n${c}`]: { argv: ['true'], memory: '64g' } }) });
+      const extraWords = await runIn(t, named, { name: `n${c}`, extraNames: [`w${c}`] });
+      assertRefused(extraWords.result, extraWords.calls, /takes one command name/);
+      const notArgs = await runIn(t, named, { name: `n${c}`, args: ['x'] });
+      assertRefused(notArgs.result, notArgs.calls, /does not take arguments/);
+      const ceiling = await runIn(t, named, { name: `n${c}` });
+      assertRefused(ceiling.result, ceiling.calls, /above the machine ceiling/);
+      for (const r of [asFlag, asKey, inKey, inName, extraWords, notArgs, ceiling]) {
         assert.doesNotMatch(r.result.message!, RAW_CONTROL, r.result.message);
         assert.ok(r.result.message!.includes(`\\u{${c.codePointAt(0)!.toString(16)}}`), `shown escaped: ${r.result.message}`);
       }
@@ -117,7 +126,8 @@ function historyRepo(t: TestContext, athanor: unknown = withCommands({ test: ['t
 
 test('B1 a base name is resolved to one branch, remote-tracking branch or tag, and anything else exits 125', async (t) => {
   const refusedAsFlag: Array<[string, (repo: string) => void, RegExp]> = [
-    ['HEAD', () => {}, /--base/],
+    ['HEAD', () => {}, /^(?![\s\S]*refs\/heads\/HEAD)[\s\S]*--base/],
+    ['@', () => {}, /^(?![\s\S]*refs\/heads\/@)[\s\S]*--base/],
     ['refs/stash', (repo) => { writeFiles(repo, { 't1.txt': 'edited\n' }); git(repo, ['stash', '-q']); }, /--base/],
     ['refs/heads/athanor', (repo) => git(repo, ['branch', 'athanor']), /reserved/],
     ['athanor/x', (repo) => git(repo, ['branch', 'athanor/x']), /reserved/],
@@ -136,6 +146,20 @@ test('B1 a base name is resolved to one branch, remote-tracking branch or tag, a
       assert.equal(result.slot, undefined, 'no slot was taken');
     });
   }
+  await t.test('a remote\'s HEAD that points at a branch whose name holds a bidi override', async (t) => {
+    isolate(t);
+    const { repo, b2 } = historyRepo(t);
+    const bidi = String.fromCharCode(0x202e);
+    git(repo, ['update-ref', `refs/remotes/origin/a${bidi}b`, b2]);
+    git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/a${bidi}b`]);
+    const { result, calls } = await runIn(t, repo, { base: 'origin/HEAD' });
+    assert.equal(result.exitCode, 125, JSON.stringify(result));
+    assert.match(result.message!, /control or invisible formatting character/);
+    assert.doesNotMatch(result.message!, RAW_CONTROL);
+    assert.equal('base' in result, false, 'no base in the result');
+    assert.equal(callsOf(calls, 'run').length, 0, 'no container');
+    assert.equal(result.slot, undefined, 'no slot was taken');
+  });
   await t.test('a raw commit id', async (t) => {
     isolate(t);
     const { repo, b2 } = historyRepo(t);
@@ -484,10 +508,25 @@ test('B9 a run with a base leaves the repo as it was and no scratch folder behin
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
   assert.deepEqual(gitState(repo), before, 'stash, index, status, refs and objects are unchanged');
   assert.deepEqual(readdirSync(join(home, 'runs')), [], 'no scratch folder is left');
+
+  // The copy of the history goes as soon as the stream is written, while the container still runs.
+  const folder = tempDir(t, 'athanor-pack-');
+  const hanging = fake(t, { run: { hangMs: 3000 } });
+  const running = run({ cwd: repo, docker: hanging.docker, prefix: uniquePrefix(), name: 'check', basePackFolder: folder });
+  let done = false;
+  void running.then(() => { done = true; });
+  const deadline = Date.now() + 20_000;
+  while (existsSync(join(folder, 'pack')) || callsOf(hanging.calls(), 'run').length === 0) {
+    assert.ok(Date.now() < deadline, 'the pack is removed once streamed');
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(done, false, 'the pack went before the run ended');
+  assert.equal((await running).outcome, 'pass');
 });
 
 test('B7 a failure while building the pack exits 125, frees the slot and leaves no scratch folder', async (t) => {
-  const home = isolate(t);
+  // One slot, so a slot the failed run kept would hold the next run until its timer.
+  const home = isolate(t, { ATHANOR_MAX_RUNS: '1' });
   const { repo } = historyRepo(t);
   const docker = fake(t);
   const prefix = uniquePrefix();
@@ -499,12 +538,13 @@ test('B7 a failure while building the pack exits 125, frees the slot and leaves 
   assert.match(result.message!, /pack/);
   assert.equal(callsOf(docker.calls(), 'run').length, 0, 'no container');
   assert.deepEqual(readdirSync(join(home, 'runs')), [], 'no scratch folder is left');
-  const again = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check' });
-  assert.equal(again.outcome, 'pass', 'the slot was freed');
+  const again = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check', signal: AbortSignal.timeout(30_000) });
+  assert.equal(again.outcome, 'pass', `the slot was freed: ${JSON.stringify(again)}`);
+  assert.equal(again.slot, 1);
   // A folder where the pack file should land, so the step that writes the four files fails.
   const taken = tempDir(t, 'athanor-taken-');
   writeFiles(taken, { 'pack/held': 'x\n' });
-  const files = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check', basePackFolder: taken });
+  const files = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check', basePackFolder: taken, signal: AbortSignal.timeout(30_000) });
   assert.equal(files.exitCode, 125, JSON.stringify(files));
   assert.match(files.message!, /could not write the base's pack/);
   assert.equal(files.message!.includes(taken), false, 'the message names no path');

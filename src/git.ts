@@ -7,6 +7,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
+import { showName } from './copy-out.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -111,7 +112,7 @@ async function gitFed(args: string[], { cwd, env, input, what, signal }: { cwd: 
   const r = await started.done;
   signal?.removeEventListener('abort', kill);
   if (r.code !== 0) {
-    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}.`);
+    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. Check that the disk has room and that git fsck finds the repo sound, then run again.`);
   }
   return r.stdout;
 }
@@ -233,29 +234,34 @@ export async function resolveBase(
   { name, fromKey, label }: { name: string; fromKey: boolean; label: string },
 ): Promise<ResolvedBase> {
   const env = scratch.baseEnv;
-  const shown = label;
   // git resolves HEAD and its kin (FETCH_HEAD, ORIG_HEAD, @) to the branch they
   // point at, so they are refused by name before git sees them.
   if (name === '@' || /^[A-Z_]+$/.test(name)) {
-    throw new AthanorError(`${shown} names a pseudo ref such as HEAD, not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main, or a branch in full, such as refs/heads/${name}.`);
+    const inFull = name === '@' || name.endsWith('HEAD') ? '' : `, or a branch or tag in full, such as refs/heads/${name}`;
+    throw new AthanorError(`${label} names a pseudo ref such as HEAD, not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main${inFull}.`);
   }
   const resolved = await call(['git', '-c', 'core.warnAmbiguousRefs=true', 'rev-parse', '--verify', '--quiet', '--symbolic-full-name', '--end-of-options', name], { cwd: root, env });
   const lines = resolved.stdout.split('\n').filter(Boolean);
   const ref = lines.length === 1 ? (lines[0] as string) : '';
   if (ref === '') {
     if (/ambiguous/.test(resolved.stderr)) {
-      throw new AthanorError(`${shown} is ambiguous: more than one ref has that name. Name it in full, such as refs/remotes/origin/main.`);
+      throw new AthanorError(`${label} is ambiguous: more than one ref has that name. Name it in full, such as refs/remotes/origin/main.`);
     }
-    throw new AthanorError(`${shown} names nothing athanor can carry. If it is a remote-tracking branch, fetch it, or name a ref that exists.`);
+    throw new AthanorError(`${label} names nothing athanor can carry. If it is a remote-tracking branch, fetch it, or name a ref that exists.`);
   }
-  if (!CARRIED_PREFIXES.some((p) => ref.startsWith(p)) || /\s/.test(ref)) {
-    throw new AthanorError(`${shown} resolves to ${ref}, which is not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main.`);
+  // git follows a symbolic ref, such as a remote's HEAD, to a name the check
+  // above never saw; that name must hold no control or format character either.
+  if (/[\u0000-\u0020\u007f-\u009f\u2028\u2029]|\p{Cf}/u.test(ref)) {
+    throw new AthanorError(`${label} resolves to ${showName(ref)}, a name with a control or invisible formatting character. Name the branch you mean directly.`);
+  }
+  if (!CARRIED_PREFIXES.some((p) => ref.startsWith(p))) {
+    throw new AthanorError(`${label} resolves to ${ref}, which is not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main.`);
   }
   if (fromKey && ref.startsWith('refs/heads/')) {
-    throw new AthanorError(`${shown} names the local branch ${ref}, but a command's base may name only a remote-tracking branch or a tag. Name one, such as origin/main, or pass a local branch with --base.`);
+    throw new AthanorError(`${label} names the local branch ${ref}, but a command's base may name only a remote-tracking branch or a tag. Name one, such as origin/main, or pass a local branch with --base.`);
   }
   if (ref === BASE_BRANCH || ref.startsWith(`${BASE_BRANCH}/`)) {
-    throw new AthanorError(`${shown} resolves to ${ref}, which is reserved for the snapshot's own branch in the container. Name another ref.`);
+    throw new AthanorError(`${label} resolves to ${ref}, which is reserved for the snapshot's own branch in the container. Name another ref.`);
   }
   const tip = (await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { cwd: root, env, what: `read the commit ${ref} points at` })).trim();
 
@@ -285,9 +291,9 @@ export async function resolveBase(
   const mergeBases = all.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
   if (mergeBases.length === 0 || !mergeBases.every((id) => HEX.test(id))) {
     if (all.code === 1 || (all.code === 0 && mergeBases.length === 0)) {
-      throw new AthanorError(`${shown} has no merge base with this branch: their histories are unrelated. Name a base this branch was made from.`);
+      throw new AthanorError(`${label} has no merge base with this branch: their histories are unrelated. Name a base this branch was made from.`);
     }
-    throw new AthanorError(`git could not find the merge base of ${shown} and HEAD: ${firstLine(all.stderr) || `exit ${all.code}`}.`);
+    throw new AthanorError(`git could not find the merge base of ${label} and HEAD: ${firstLine(all.stderr) || `exit ${all.code}`}. Check that git fsck finds the repo sound, then run again.`);
   }
   const mergeBase = (await git(['merge-base', tip, head], { cwd: root, env, what: 'find the merge base' })).trim();
 
@@ -349,7 +355,7 @@ function onDisk(step: () => void): void {
     step();
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? 'an unknown error';
-    throw new AthanorError(`athanor could not write the base's pack in its state folder (${code}). Free some disk space, then run again.`);
+    throw new AthanorError(`athanor could not write the base's pack in its state folder (${code}). If the disk is full, free some space; then run again.`);
   }
 }
 

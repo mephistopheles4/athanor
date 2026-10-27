@@ -430,15 +430,18 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   if (args.length > 0 && request.command !== undefined) {
     throw new AthanorError('Arguments go with a command name, not with a command given whole. Put the arguments after the name: athanor run <name> -- <arguments>.');
   }
-  const optIn = `Set "args": true on commands.${commandName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
+  // The name as every message below shows it, and the caller's extra words too.
+  const shownName = showName(commandName);
+  const optIn = `Set "args": true on commands.${shownName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
   if (request.extraNames?.length) {
-    const lead = oneNameLead(commandName, request.extraNames);
+    const extra = request.extraNames.map(showName);
+    const lead = oneNameLead(shownName, extra);
     throw new AthanorError(own?.args === true
-      ? `${lead} To pass arguments to "${commandName}", put them after --, such as athanor run ${commandName} -- ${request.extraNames.join(' ')}.`
+      ? `${lead} To pass arguments to "${shownName}", put them after --, such as athanor run ${shownName} -- ${extra.join(' ')}.`
       : `${lead} ${optIn}`);
   }
   if (args.length > 0 && own?.args !== true) {
-    throw new AthanorError(`The command "${commandName}" does not take arguments. ${optIn}`);
+    throw new AthanorError(`The command "${shownName}" does not take arguments. ${optIn}`);
   }
   const command = [...argv, ...args];
 
@@ -451,7 +454,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     }
     base = { name: request.base, fromKey: false, label: `--base "${request.base}"` };
   } else if (own?.base !== undefined) {
-    base = { name: own.base, fromKey: true, label: `commands.${showName(commandName)}.base "${own.base}" in ${where}` };
+    base = { name: own.base, fromKey: true, label: `commands.${shownName}.base "${own.base}" in ${where}` };
   }
 
   // Per-run limits: the command's own, then the repo's, then the machine file,
@@ -461,7 +464,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // 1024 and maxProcesses, so a raised ceiling never raises it (ADR 0028).
   // The -- form takes the repo's values.
   const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
-    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${commandName}.${key}` } };
+    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${shownName}.${key}` } };
     if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
     if (machine.values[key] !== undefined) return { value: machine.values[key] as Limits[K], source: machineSource };
     if (key === 'cpus') {

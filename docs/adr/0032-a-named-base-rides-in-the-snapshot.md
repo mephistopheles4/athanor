@@ -1,6 +1,6 @@
 # 0032. A named base rides in the snapshot
 
-Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round and q9 to q18 from its Design review. q1 to q8, q12, q13, q16 and q17 are the owner's word, relayed by the lead session; q9 to q11, q14, q15 and q18 are the lead's own decisions under the owner's level-3 goal.
+Date: 2026-10-27 · Status: accepted · Extends: 0007, 0016, 0020, 0023 · Source: the spec on issue 70 (revision 3, B1 to B15), with q1 to q8 from its Plan round, q9 to q13 from its Design review of revision 1, q14 to q17 from the follow-up round on revision 2, q18 (proceed to Build on revision 3) and q19 to q22 from the Test review. q1 to q8, q12, q13, q16, q17, q21 and q22 are the owner's word, relayed by the lead session; q9 to q11, q14, q15 and q18 to q20 are the lead's own decisions under the owner's level-3 goal.
 
 The snapshot reached the container as one tar of the work's tree, and the
 boot script committed it as a single parentless commit. A check that compares
@@ -15,7 +15,8 @@ stream.
 - **Naming (q1, q9).** A named command in object form may set `base`, which
   must resolve to a remote-tracking branch or a tag. That way a repo's
   configuration, which someone other than the owner may have written, can't
-  bring another local branch's unpushed history in. `athanor run --base
+  name a local branch's unpushed history; a local tag on unpushed work, or
+  another remote's branch, it still can, which accepted risk 39 covers. `athanor run --base
   <name>` sets it for one run, a local branch included, and overrides the key.
 - **The name (q2).** It is refused before git sees it when it is empty,
   starts with `-`, or holds revision syntax, a space, or a character of the
@@ -29,8 +30,10 @@ stream.
   run on git 2.55), and with the repo's setting turned off a same-named tag
   would win quietly, so the setting is pinned on. `refs/heads/athanor`, and
   anything under it, is the snapshot's own branch inside the container, so it
-  is refused. Messages show every quoted name escaped, key and command names
-  included (q11, q15).
+  is refused. The name git resolves to, which a symbolic ref such as a
+  remote's HEAD can make differ from the given name, gets the control-set
+  check too (q20). Messages show every quoted name escaped, key and command
+  names included (q11, q15, q20).
 - **Resolving in a clean environment (q3).** Every git call that resolves the
   base or makes what carries it runs from the repo root, in ADR 0020's clean
   environment. On top of that environment it sets `GIT_NO_REPLACE_OBJECTS=1`,
@@ -54,8 +57,12 @@ stream.
   two refs (the base's full name at its tip, `refs/heads/athanor` at the host's
   HEAD) and the snapshot's tree id. These four files ride after the tree in
   the snapshot's tar, under `.athanor-base/`, added by `git archive
-  --add-file`. Only commit, tree and file objects travel: never a tag object,
-  a git setting, a hook, a remote, a reflog, a stash or another ref.
+  --add-file`, and are deleted as soon as the archive ends, so the copy of the
+  history sits in the state folder only from the pack's build to the end of
+  the stream (q20). `pack-objects` pins `pack.packSizeLimit=0`, so a repo's
+  setting can't split the pack. Only commit, tree and file objects travel:
+  never a tag object, a git setting, a hook, a remote, a reflog, a stash or
+  another ref.
 - **Inside (q6).** With a base, one of two fixed boot scripts, one per object
   format, replaces only `BOOT`'s git block, and every other line stays the same
   byte for byte. It checks that the folder holds exactly its four regular
@@ -75,12 +82,17 @@ history from the merge base onward wherever it goes. That history includes
 files deleted since, and commit metadata with other people's names and
 emails. A git error from the base's steps can name a path in the state
 folder, which holds the account name; accepted risk 25 was widened to cover
-that (q16). Three hardening items are recorded nowhere, on the owner's word
-(q12, q17):
+that (q16). Risk 39 also says the pack sits unencrypted in the state folder
+while it exists, as the repo's own objects do (q21). Five hardening items are
+recorded nowhere, on the owner's word (q12, q17, q22):
 
 - the result doesn't say when `--base` overrode a command's base;
 - HEAD is resolved again for an `--untracked` snapshot;
 - the carried history has no size cap, and its pack holds the slot while it
-  builds, though an interrupt stops it.
+  builds, though an interrupt stops it;
+- the test-only `basePackFolder` option writes the pack into a folder its
+  caller chose, which the run never removes;
+- an interrupt doesn't reach three of the base's quick git calls, only the
+  three that carry data.
 
 athanor 0.2.0 is the first release that takes `base` and `--base` (q14).

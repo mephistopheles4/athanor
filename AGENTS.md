@@ -141,8 +141,8 @@ which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
 check of its own. No test carries their names.
 `B1` to `B15`, from the spec on issue 70: B1 to B9 are fast-tier tests and
 B10 to B12 docker-tier tests. B13 is checked by reading at review. B14 is a
-manual check after the next release, recorded on issue 70, with the docker
-tier on Docker Desktop (the K5 check). B15 is the fast tier (on Windows too,
+manual check after the next release, recorded on issue 70. The docker tier on
+Docker Desktop (the K5 check) is a manual check before the pull request. B15 is the fast tier (on Windows too,
 the T14 check), the type checks, the source check and the docker tier passing
 on the final head, and CI. No test carries the names B13 to B15.
 

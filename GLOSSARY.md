@@ -10,8 +10,9 @@
   or `HEAD` on a clean tree, or with `--untracked` a tree that also holds the
   untracked, non-ignored files. It reaches the container as a tar stream on
   stdin, made with no git content filter in the archive step. With a base, the
-  stream also carries the base's history, and inside the container the
-  snapshot is committed on top of the host's HEAD commit.
+  stream also carries the base's history, and inside the container HEAD is
+  the host's HEAD commit, with the snapshot committed on top of it when the
+  two differ.
 - **Base.** A branch, remote-tracking branch or tag a run carries into the
   snapshot, named by `--base` or a command's `base`, so a check that compares
   the branch with it, such as `git merge-base origin/main HEAD`, answers in the
@@ -36,7 +37,8 @@
   give the same tag in every clone and worktree.
 - **State folder.** `.athanor` in the home folder, or `ATHANOR_HOME`. It holds
   the machine configuration, the image last-use marks, temporary indexes and
-  per-run object folders. Run output is never written there.
+  per-run object folders, and with a base a run's pack of the base's history.
+  Run output is never written there.
 - **Machine configuration.** The optional `config.json` in the state folder:
   the run limit, default per-run limits, their ceilings, the copy-out size cap,
   and the default age for `prune`.
@@ -72,7 +74,8 @@
   stderr just before the boot marker, naming the work folder. The run strips it
   and, with `--output`, copies from that folder (ADR 0023).
 - **Named command.** An entry of `commands`: an argument array, or an object
-  with `argv` and optionally `args`, `outputs` and limits of its own (ADR 0023).
+  with `argv` and optionally `args`, `outputs`, limits of its own (ADR 0023)
+  and a `base` (ADR 0032).
 - **Outputs.** The paths a named command declares, relative to the work folder
   in the container, for copy-out.
 - **Copy-out.** With `--output <dir>`, copying a command's outputs from the

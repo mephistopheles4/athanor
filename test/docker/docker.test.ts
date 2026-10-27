@@ -444,8 +444,10 @@ test('V5 the memory limit: a killed child keeps the test\'s own exit, a killed t
   }
 });
 
-// A fixture repo with history for the base claims (issue 70): c0, then main
-// moves on to b1 and b2 (origin/main), and topic (checked out) to t1.
+// A fixture repo with history for the base claims (issue 70): c0, then c1 (mb,
+// the merge base); main moves on to b1 and b2 (origin/main), and topic (checked
+// out) to t1. mb has a parent that is not carried, so the shallow list is not
+// empty.
 function baseRepo(t: TestContext, commands: Record<string, unknown>, files: Record<string, string> = {}) {
   const repo = makeRepo(t, { athanor: { ...config, commands: { ...config.commands, ...commands } }, files: { ...FIXTURE, ...files } });
   const g = (args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8', shell: false }).stdout.trim();
@@ -455,13 +457,13 @@ function baseRepo(t: TestContext, commands: Record<string, unknown>, files: Reco
     g(['commit', '-q', '-m', file]);
     return g(['rev-parse', 'HEAD']);
   };
-  const c0 = g(['rev-parse', 'HEAD']);
+  const mb = commit('c1.txt');
   commit('b1.txt');
   const b2 = commit('b2.txt');
   g(['update-ref', 'refs/remotes/origin/main', b2]);
-  g(['checkout', '-q', '-b', 'topic', c0]);
+  g(['checkout', '-q', '-b', 'topic', mb]);
   const t1 = commit('t1.txt');
-  return { repo, g, commit, c0, b2, t1 };
+  return { repo, g, commit, mb, b2, t1 };
 }
 
 const inside = [
@@ -472,23 +474,27 @@ const inside = [
   'echo "remotes=$(git remote | wc -l)"',
   'echo "cfg=$(git config --local --get athanor.test || echo none)"',
   'if [ -e .athanor-base ] || [ -e "$HOME/.athanor-base" ]; then echo left=yes; else echo left=no; fi',
+  'if [ -s .git/shallow ]; then echo shallow=yes; else echo shallow=no; fi',
+  'if git fsck --connectivity-only --no-dangling >/dev/null 2>&1; then echo fsck=ok; else echo fsck=bad; fi',
 ].join('; ');
 const field = (out: string, key: string): string | undefined => out.split('\n').find((l) => l.startsWith(`${key}=`))?.slice(key.length + 1).trim();
 
 test('B10 inside a real container a base gives the host\'s merge base, on the host\'s HEAD, with none of the host\'s git settings', async (t) => {
   isolate(t);
-  const { repo, g, commit, c0 } = baseRepo(t, { inside: { argv: ['sh', '-c', inside], base: 'origin/main' } });
+  const { repo, g, commit, mb } = baseRepo(t, { inside: { argv: ['sh', '-c', inside], base: 'origin/main' } });
   g(['config', 'athanor.test', 'host-value']);
   g(['remote', 'add', 'other', 'https://example.invalid/x.git']);
   writeFileSync(join(repo, 't1.txt'), 'edited\n');
   const dirty = await runReal(t, repo, { name: 'inside' });
   assert.equal(dirty.result.outcome, 'pass', dirty.stderr);
-  assert.equal(field(dirty.stdout, 'mb'), c0, 'the host\'s merge base');
+  assert.equal(field(dirty.stdout, 'mb'), mb, 'the host\'s merge base');
   assert.equal(field(dirty.stdout, 'parent'), g(['rev-parse', 'HEAD']), 'the snapshot sits on the host\'s HEAD');
   assert.equal(field(dirty.stdout, 'branch'), 'athanor');
   assert.equal(field(dirty.stdout, 'remotes'), '0', 'no remote');
   assert.equal(field(dirty.stdout, 'cfg'), 'none', 'no key from the host repo\'s config');
   assert.equal(field(dirty.stdout, 'left'), 'no', 'the carried folder is gone');
+  assert.equal(field(dirty.stdout, 'shallow'), 'yes', 'the merge base\'s parent is listed shallow');
+  assert.equal(field(dirty.stdout, 'fsck'), 'ok', 'a clean connectivity check inside');
 
   g(['checkout', '-q', '--', 't1.txt']);
   writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
@@ -503,7 +509,7 @@ test('B10 inside a real container a base gives the host\'s merge base, on the ho
   commit('.gitattributes', '* text\n');
   const crlf = await runReal(t, repo, { name: 'inside' });
   assert.equal(crlf.result.outcome, 'pass', `a file whose bytes and attributes disagree does not end the boot: ${crlf.stderr}`);
-  assert.equal(field(crlf.stdout, 'mb'), c0);
+  assert.equal(field(crlf.stdout, 'mb'), mb);
 });
 
 test('B10 with a base the time limit and copy-out work as without one', async (t) => {
@@ -537,6 +543,7 @@ test('B10 a stream whose base folder holds an extra member ends before the marke
   const ran = spawnSync('docker', ['run', '-i', '--rm', '--network', 'none', '-e', 'ATHANOR_GRACE_LIMIT=30', first.result.image!.tag, 'sh', '-c', BOOT_BASE_SHA1, 'athanor', 'true'], { input: tar.stdout, encoding: 'utf8', shell: false });
   assert.notEqual(ran.status, 0, 'the boot stops');
   assert.equal(ran.stderr.includes('athanor-boot-ok'), false, `no marker: ${ran.stderr}`);
+  assert.match(ran.stderr, /holds something athanor did not put there/, 'the folder guard stopped it');
 });
 
 test('B11 a check that compares with the base fails without a version bump and passes with one, as on the host', async (t) => {

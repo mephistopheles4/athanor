@@ -132,8 +132,9 @@ it, such as a version-bump rule:
 
 With a base, the snapshot also carries the history from the merge base of the
 base and your HEAD onward, on both sides. Inside the container `origin/main`
-points at the base's tip, HEAD sits on a branch named `athanor` on top of your
-HEAD commit, and `git merge-base origin/main HEAD` and `git show
+points at the base's tip, and HEAD sits on a branch named `athanor`: a commit
+of the snapshot on top of your HEAD commit when your working tree differs from
+it, and your HEAD commit itself on a clean tree. `git merge-base origin/main HEAD` and `git show
 <merge-base>:<path>` answer as they do on the host. HEAD inside is the
 snapshot, so a check that compares HEAD with the base also counts your
 uncommitted edits (and, with `--untracked`, untracked files), which the same
@@ -300,7 +301,8 @@ Every athanor on the machine reads this file, so once it holds `processes` or
 
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. With a base, it also holds a
-pack of the history from the merge base onward while the run lasts. If you set
+pack of the history from the merge base onward, until the run has streamed it
+into the container, and for up to a day after a run that was killed hard. If you set
 `ATHANOR_HOME`, point it at a folder only you can read.
 
 ## Disk
@@ -332,10 +334,10 @@ build writes into the image can reach the test run (accepted risk 1 in
 
 Keep secrets out of the files a run sends: everything tracked in the repo (a
 file added with `git add -N` included) goes into the container, and with
-`--untracked` so does every untracked file git doesn't ignore. Everything
+`--untracked` so does every untracked file git doesn't ignore. With a base, the commits from the merge base onward go too, with every file they hold, deleted ones included. Everything
 tracked under `context` plus each `inputs` file goes into the image build,
 which has network access; untracked files never do. With a remote engine, an operator can also choose the
-files a copy to `--output` brings back. With a base, the commits from the merge base onward go too, with every file they hold, deleted ones included.
+files a copy to `--output` brings back.
 
 ## What athanor doesn't protect you from
 

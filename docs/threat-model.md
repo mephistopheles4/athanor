@@ -239,7 +239,8 @@ above; the software they run is not.
   ssh or verified TLS unless `allowPlainTcp` is set (ADR 0013, ADR 0021). The
   `--output` folder sits unencrypted on the host's disk, like the state folder.
   With a base, a run's pack of the base's history sits unencrypted in the state
-  folder while the run lasts, like the rest of it.
+  folder until the run has streamed it into the container, and after a hard
+  kill until the stale-run sweep, like the rest of it.
   Image layers, the build cache and a container's writable layer sit
   unencrypted on the engine's or builder's disk: on this machine they rely on
   its disk encryption; on a remote one, which the machine configuration must
@@ -263,9 +264,12 @@ above; the software they run is not.
   A base name is checked before git sees it (no leading `-`, no revision
   syntax, no control or format character), then resolved, with the ambiguity
   check pinned on, to one branch, remote-tracking branch or tag (a command's
-  `base` to the last two), in the archive step's clean environment with
-  replace refs, grafts and lazy fetching off. A shallow or partial clone, and a
-  snapshot holding the reserved path, are refused (ADR 0032; B1, B5, B7).
+  `base` to the last two), in ADR 0020's clean environment with the repo's own
+  config still read, replace refs and grafts off, and lazy fetching off on git
+  2.45 and later. The name git resolves to gets the same control-set check. A
+  shallow or partial clone, and a snapshot holding the reserved path, are
+  refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
+  against a fetch (ADR 0032; B1, B5, B7).
   The release path's untrusted inputs are the artifact `publish` takes from
   `check`, the staged tarball the owner downloads, the registry's manifest,
   which is checked once the version is live, and the
@@ -708,10 +712,13 @@ the lead session's chat, relayed by head-chef-field-test.
     engine's other users (accepted risk 8), the network under `allowPlainTcp`
     (accepted risk 10), and a container left running after a hard kill
     (accepted risk 4). A run killed hard can leave its pack of that history in
-    the state folder until the stale-run sweep a day later. The base is chosen
+    the state folder until the stale-run sweep a day later. While it exists,
+    that pack sits unencrypted in the state folder, as the repo's own objects
+    do on the same disk. The base is chosen
     by the caller's `--base`, or by a command's `base` in the repo
     configuration, which may name only a remote-tracking branch or a tag.
     Without a base, nothing changes. Accepted because the history is the
     repo's own, a base is named only for checks that need it, and the test
     container has no network.
     Accepted 2026-10-27. From: the Plan round of issue 70 (q4), widened at the Design review of its spec (data-lens D1, D3, D4; adversarial-lens F1, F2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
+    The sentence on the pack sitting unencrypted added 2026-10-27. From: the Test review of issue 70, round 1 (data-lens D3, q21). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
