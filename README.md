@@ -422,7 +422,12 @@ threat model holds the full entries.
   both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
   places your account name shouldn't go. Accepted risk 25.
-- **A named base.** With `--base` or a command's `base`, a run also sends the history from the merge base onward: files deleted since, and commit messages, authors' names, emails and dates. The test code can read it, and it goes wherever your snapshot goes, a remote or shared engine and plain tcp included. Name a base only for checks that need it, and remove a leaked secret from the history, not only from the tree. Accepted risk 39.
+- **A named base.** With `--base` or a command's `base`, a run also sends the
+  history from the merge base onward: files deleted since, and commit
+  messages, authors' names, emails and dates. The test code can read it, and
+  it goes wherever your snapshot goes, a remote or shared engine and plain tcp
+  included. Name a base only for checks that need it, and remove a leaked
+  secret from the history, not only from the tree. Accepted risk 39.
 
 ## More
 

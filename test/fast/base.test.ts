@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run, BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from '#dist/index.js';
@@ -135,6 +136,14 @@ test('B1 a base name is resolved to one branch, remote-tracking branch or tag, a
       assert.equal(result.slot, undefined, 'no slot was taken');
     });
   }
+  await t.test('a raw commit id', async (t) => {
+    isolate(t);
+    const { repo, b2 } = historyRepo(t);
+    const { result, calls } = await runIn(t, repo, { base: b2 });
+    assert.equal(result.exitCode, 125, JSON.stringify(result));
+    assert.match(result.message!, /--base/);
+    assert.equal(callsOf(calls, 'run').length, 0, 'no container');
+  });
   await t.test('a command\'s base naming a local branch is refused, while --base takes it', async (t) => {
     isolate(t);
     const { repo, b2, c0 } = historyRepo(t, withCommands({ test: ['true'], check: { argv: ['true'], base: 'main' } }));
@@ -492,4 +501,26 @@ test('B7 a failure while building the pack exits 125, frees the slot and leaves 
   assert.deepEqual(readdirSync(join(home, 'runs')), [], 'no scratch folder is left');
   const again = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check' });
   assert.equal(again.outcome, 'pass', 'the slot was freed');
+  // A folder where the pack file should land, so the step that writes the four files fails.
+  const taken = tempDir(t, 'athanor-taken-');
+  writeFiles(taken, { 'pack/held': 'x\n' });
+  const files = await run({ cwd: repo, docker: docker.docker, prefix, name: 'check', basePackFolder: taken });
+  assert.equal(files.exitCode, 125, JSON.stringify(files));
+  assert.match(files.message!, /could not write the base's pack/);
+  assert.equal(files.message!.includes(taken), false, 'the message names no path');
+  assert.deepEqual(readdirSync(join(home, 'runs')), [], 'no scratch folder is left');
+});
+
+test('B4 a repo that limits its pack size still carries one pack', async (t) => {
+  isolate(t);
+  const { repo, commit } = historyRepo(t);
+  writeFileSync(join(repo, 'big.bin'), randomBytes(3 * 1024 * 1024));
+  git(repo, ['add', 'big.bin']);
+  git(repo, ['commit', '-q', '-m', 'big']);
+  commit('after.txt');
+  git(repo, ['config', 'pack.packSizeLimit', '1m']);
+  const { result, calls } = await runIn(t, repo, { name: 'check' });
+  assert.equal(result.outcome, 'pass', JSON.stringify(result));
+  const { files } = carried(calls);
+  assert.equal(git(intoFreshRepo(t, files), ['cat-file', '-t', 'HEAD:big.bin']).trim(), 'blob', 'the large file is in the one pack');
 });

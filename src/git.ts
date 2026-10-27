@@ -315,7 +315,7 @@ export async function packBase(
 ): Promise<string[]> {
   const env = scratch.baseEnv;
   const dir = folder ?? join(scratch.dir, 'base');
-  if (folder === undefined) mkdirSync(dir);
+  if (folder === undefined) onDisk(() => mkdirSync(dir));
   const later = (await git(['rev-list', base.tip, base.head, '--not', ...base.mergeBases], { cwd: root, env, what: 'list the commits from the merge base onward' }))
     .split('\n').filter(Boolean);
   const carried = [...new Set([...later, ...base.mergeBases])];
@@ -325,14 +325,32 @@ export async function packBase(
     .filter(([, ...parents]) => parents.some((p) => !kept.has(p))).map(([id]) => id as string);
   const tree = (await git(['rev-parse', '--verify', `${snap.id}^{tree}`], { cwd: root, env, what: 'read the snapshot\'s tree' })).trim();
   const objects = await gitFed(['rev-list', '--objects', '--no-object-names', '--no-walk=unsorted', '--stdin'], { cwd: root, env, input: [...carried, tree].join('\n') + '\n', what: 'list the objects of the base\'s history', signal });
-  const hash = (await gitFed(['pack-objects', '-q', join(dir, 'base')], { cwd: root, env, input: objects, what: 'build the pack of the base\'s history', signal })).trim();
+  // One pack, whatever size limit the repo's config sets.
+  const hashes = (await gitFed(['-c', 'pack.packSizeLimit=0', 'pack-objects', '-q', join(dir, 'base')], { cwd: root, env, input: objects, what: 'build the pack of the base\'s history', signal }))
+    .split('\n').filter(Boolean);
+  if (hashes.length !== 1 || !HEX.test(hashes[0] as string)) {
+    throw new AthanorError('git did not build one pack of the base\'s history, as athanor asked. Check the repo\'s pack settings, then run again.');
+  }
   const files = { pack: join(dir, 'pack'), shallow: join(dir, 'shallow'), refs: join(dir, 'refs'), tree: join(dir, 'tree') };
-  renameSync(join(dir, `base-${hash}.pack`), files.pack);
-  for (const name of readdirSync(dir)) if (name.startsWith('base-')) rmSync(join(dir, name), { force: true });
-  writeFileSync(files.shallow, shallow.map((id) => `${id}\n`).join(''));
-  writeFileSync(files.refs, `update ${base.ref} ${base.tip}\nupdate ${BASE_BRANCH} ${base.head}\n`);
-  writeFileSync(files.tree, `${tree}\n`);
+  onDisk(() => {
+    renameSync(join(dir, `base-${hashes[0]}.pack`), files.pack);
+    for (const name of readdirSync(dir)) if (name.startsWith('base-')) rmSync(join(dir, name), { force: true });
+    writeFileSync(files.shallow, shallow.map((id) => `${id}\n`).join(''));
+    writeFileSync(files.refs, `update ${base.ref} ${base.tip}\nupdate ${BASE_BRANCH} ${base.head}\n`);
+    writeFileSync(files.tree, `${tree}\n`);
+  });
   return [files.pack, files.shallow, files.refs, files.tree];
+}
+
+// A file step of the base's pack, whose failure (a full disk, say) is a plain
+// message naming the error's code, never a path, which holds the account name.
+function onDisk(step: () => void): void {
+  try {
+    step();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'an unknown error';
+    throw new AthanorError(`athanor could not write the base's pack in its state folder (${code}). Free some disk space, then run again.`);
+  }
 }
 
 // The build context: tracked files under `context` at their working-tree
