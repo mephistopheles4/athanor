@@ -33,7 +33,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
-  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. A change here is security-sensitive work.
+  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. With a base, the base's history rides in the snapshot's own stream, and one of two fixed base boot scripts replaces only the boot script's git block (ADR 0032). A change here is security-sensitive work.
   So is a change to what reaches the image build, its build arguments included.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
@@ -139,6 +139,12 @@ review; W9 is a manual check at the next release recorded on issue 63; and
 W10 rests on the diff's file list; on a docs-only diff the source check,
 which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
 check of its own. No test carries their names.
+`B1` to `B15`, from the spec on issue 70: B1 to B9 are fast-tier tests and
+B10 to B12 docker-tier tests. B13 is checked by reading at review. B14 is a
+manual check after the next release, recorded on issue 70, with the docker
+tier on Docker Desktop (the K5 check). B15 is the fast tier (on Windows too,
+the T14 check), the type checks, the source check and the docker tier passing
+on the final head, and CI. No test carries the names B13 to B15.
 
 ## Releases
 

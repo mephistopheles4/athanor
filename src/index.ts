@@ -20,7 +20,7 @@ import { copyOut, checkOutputTarget, workFolder, CopyError, CopyInterrupted, MAX
 import type { OutputTarget } from './copy-out.js';
 
 export { AthanorError };
-export { BOOT } from './container-settings.js';
+export { BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from './container-settings.js';
 export type { Outcome, Sink };
 
 const TAG_PATTERN = /^athanor:([0-9a-f]{32})$/;
@@ -280,7 +280,10 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
       }
       if (signal?.aborted) return interruptedResult(partial);
     }
-    const container = containerSettings({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
+    const container = containerSettings({
+      limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command,
+      ...(base !== undefined ? { baseFormat: scratch.format } : {}),
+    });
     await clearSlotContainer(docker, container.name, pinned);
     if (signal?.aborted) return interruptedResult(partial);
 

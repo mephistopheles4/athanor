@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { run, BOOT } from '#dist/index.js';
+import { run, BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
 import { parseArgs } from '#dist/cli.js';
 import type { Call, TarEntry } from '../helpers.ts';
@@ -449,6 +449,21 @@ test('B6 without a base the stream, the boot script and the result are as they w
   const run1 = callsOf(calls, 'run').at(-1)!;
   assert.deepEqual(tarNames(run1.tar!), ['.athanor-base/x', 'package.json', 'test/Dockerfile'], 'a tracked .athanor-base rides as any file');
   assert.equal(run1.args[run1.args.indexOf('-c') + 1], BOOT, 'the boot script is BOOT');
+});
+
+test('B6 with a base the boot script is the fixed one for the repo\'s object format', async (t) => {
+  for (const [format, script] of [['sha1', BOOT_BASE_SHA1], ['sha256', BOOT_BASE_SHA256]] as const) {
+    await t.test(format, async (t) => {
+      isolate(t);
+      const repo = makeRepo(t, { athanor: withCommands({ test: ['true'] }), objectFormat: format });
+      git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+      const { result, calls } = await runIn(t, repo, { base: 'origin/main' });
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      const args = callsOf(calls, 'run').at(-1)!.args;
+      assert.equal(args[args.indexOf('-c') + 1], script);
+      assert.notEqual(script, BOOT);
+    });
+  }
 });
 
 test('B9 a run with a base leaves the repo as it was and no scratch folder behind', async (t) => {

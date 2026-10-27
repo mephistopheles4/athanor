@@ -118,7 +118,7 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   if (!filter.seen) {
     const why = c.code === 125
       ? 'docker run failed before the test started. Its message is above.'
-      : 'the container did not print athanor\'s start marker. Either the snapshot could not be unpacked, or the image breaks athanor\'s image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.';
+      : `the container did not print athanor's start marker. Either the snapshot could not be unpacked, or the image breaks athanor's image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.${o.added?.length ? ' A run with a base also needs git in the image, 2.29 or later for a sha256 repo.' : ''}`;
     return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: `The test never started: ${why}` });
   }
   if (!state) {

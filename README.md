@@ -123,6 +123,33 @@ command's own value first, then the repo's top level, then the machine
 configuration, then the default. The machine's `max*` ceilings hold for a
 command's own value.
 
+A command can also carry a base, for a check that compares the branch with
+it, such as a version-bump rule:
+
+```json
+"check": { "argv": ["node", "scripts/check.mjs"], "base": "origin/main" }
+```
+
+With a base, the snapshot also carries the history from the merge base of the
+base and your HEAD onward, on both sides. Inside the container `origin/main`
+points at the base's tip, HEAD sits on a branch named `athanor` on top of your
+HEAD commit, and `git merge-base origin/main HEAD` and `git show
+<merge-base>:<path>` answer as they do on the host. HEAD inside is the
+snapshot, so a check that compares HEAD with the base also counts your
+uncommitted edits (and, with `--untracked`, untracked files), which the same
+check run on the host, reading only commits, would not.
+
+- A command's `base` may name only a remote-tracking branch or a tag.
+  `athanor run --base <name>` sets the base for one run, a local branch
+  included, and overrides the command's.
+- The base is only as fresh as your last `git fetch`: athanor never fetches.
+- A shallow or partial clone is refused, since part of the history may be
+  missing, and so is a snapshot that holds a path named `.athanor-base`.
+- The image needs git for a run with a base, 2.29 or later for a sha256 repo.
+- athanor 0.2.0 is the first release that takes `base` and `--base`. A repo
+  that adopts the key needs 0.2.0 or later: an older athanor refuses the
+  unknown key.
+
 A mutation run's memory and processes grow with its runners: in one measured
 Stryker run, about 1.3 GiB of memory and about 65 processes per runner at peak.
 Give that command its own `memory` and `processes`, and raise `maxMemory` and
@@ -161,13 +188,16 @@ athanor run --untracked     # include untracked, non-ignored files
 athanor run -- node --test test/one.test.mjs
 athanor run mutation -- --mutate src/a.ts   # arguments for a command that sets "args": true
 athanor run mutation --output <your profile>/athanor-reports/mutation-1
+athanor run check --base origin/main   # carry a base for a check that compares with it
 athanor status              # who holds the slots, which containers exist
 athanor prune --dry-run     # list images unused for 30 days
 athanor prune --days 7
 ```
 
 Every command takes `--json`: stdout then holds exactly one JSON object, and
-everything else goes to stderr.
+everything else goes to stderr. With a base, the run's result has a `base`
+field: the full ref name (`ref`), its tip (`tip`) and the merge base
+(`mergeBase`), as full ids.
 
 After a command name, everything after `--` is an argument for that command,
 passed as literal words, `--json` included; with no name, `--` starts a whole
@@ -269,8 +299,9 @@ Every athanor on the machine reads this file, so once it holds `processes` or
 `maxProcesses`, athanor 0.1.1 and older refuse it, and every run with them.
 
 The state folder holds copies of your uncommitted files while a run lasts, and
-for up to a day after a run that was killed hard. If you set `ATHANOR_HOME`,
-point it at a folder only you can read.
+for up to a day after a run that was killed hard. With a base, it also holds a
+pack of the history from the merge base onward while the run lasts. If you set
+`ATHANOR_HOME`, point it at a folder only you can read.
 
 ## Disk
 
@@ -304,7 +335,7 @@ file added with `git add -N` included) goes into the container, and with
 `--untracked` so does every untracked file git doesn't ignore. Everything
 tracked under `context` plus each `inputs` file goes into the image build,
 which has network access; untracked files never do. With a remote engine, an operator can also choose the
-files a copy to `--output` brings back.
+files a copy to `--output` brings back. With a base, the commits from the merge base onward go too, with every file they hold, deleted ones included.
 
 ## What athanor doesn't protect you from
 
@@ -386,10 +417,12 @@ threat model holds the full entries.
   accounts can write unless it has the sticky bit. Accepted risk 30.
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a
-  ceiling) names it by its full path,
-  which holds your home folder's name. It reaches whatever reads athanor's
+  ceiling) names it by its full path, and a git error from a named base's
+  steps can name a path in the state folder;
+  both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
   places your account name shouldn't go. Accepted risk 25.
+- **A named base.** With `--base` or a command's `base`, a run also sends the history from the merge base onward: files deleted since, and commit messages, authors' names, emails and dates. The test code can read it, and it goes wherever your snapshot goes, a remote or shared engine and plain tcp included. Name a base only for checks that need it, and remove a leaked secret from the history, not only from the tree. Accepted risk 39.
 
 ## More
 
