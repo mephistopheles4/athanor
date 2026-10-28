@@ -6,7 +6,7 @@
 // One top-level test per acceptance claim, and one for the stream's pins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TarEntry } from '../helpers.ts';
@@ -108,4 +108,35 @@ test('M9 a -N file since deleted is in neither tar, and the run passes', async (
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
   assert.equal(tarFile(callsOf(docker.calls(), 'run').at(-1)!.tar!, 'gone.txt'), undefined);
   assert.equal(tarFile(callsOf(docker.calls(), 'build').at(-1)!.tar!, 'gone.txt'), undefined);
+});
+
+// The snapshot works on a copy of the index (issue 74, Q1). git trusts an
+// entry's cached stat only when the file is older than the index, so the copy
+// must keep the index's time: a fresh one hid an edit of the same size made in
+// the second of the last index write, on a git that compares whole seconds.
+// core.checkStat=minimal and pinned times give that case on any git build.
+test('Q1 a same-size edit made in the second of the last index write is in the snapshot', async (t) => {
+  isolate(t);
+  const repo = makeRepo(t, { athanor: baseConfig, files: { 'same.txt': 'before\n' } });
+  git(repo, ['config', 'core.checkStat', 'minimal']);
+  git(repo, ['config', 'core.trustctime', 'false']);
+  const second = Math.floor(Date.now() / 1000) - 100;
+  const file = join(repo, 'same.txt');
+  utimesSync(file, second, second);
+  git(repo, ['update-index', '--refresh']);
+  writeFileSync(file, 'edited\n');
+  utimesSync(file, second, second);
+  const index = git(repo, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim();
+  utimesSync(index, second, second);
+  // --no-optional-locks, so that status does not rewrite the index and its time.
+  assert.match(git(repo, ['--no-optional-locks', 'status', '--porcelain']), /same\.txt/, 'git itself sees the edit through the real index');
+  const fresh = join(tempDir(t), 'index');
+  copyFileSync(index, fresh);
+  const now = Date.now() / 1000;
+  utimesSync(fresh, now, now);
+  assert.equal(git(repo, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=no'], { GIT_INDEX_FILE: fresh }), '', 'a copy of the index with a fresh time hides the edit, so the case is forced');
+  const docker = fake(t);
+  const result = await run({ cwd: repo, docker: docker.docker, prefix: uniquePrefix() });
+  assert.equal(result.outcome, 'pass', JSON.stringify(result));
+  assert.equal(tarFile(callsOf(docker.calls(), 'run').at(-1)!.tar!, 'same.txt'), 'edited\n', 'the snapshot holds the edit');
 });

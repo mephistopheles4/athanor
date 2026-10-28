@@ -1,7 +1,7 @@
 // Snapshots and build contexts, made without writing the repo (ADR 0006, 0007).
 // Every git call in a run uses a copy of the index and a per-run object folder
 // whose alternates file names the repo's own object store.
-import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, utimesSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
@@ -121,7 +121,14 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
     // An env with a fresh copy of the real index (or an empty index).
     env(fromRealIndex = true): Env {
       const index = join(dir, `index-${++copies}`);
-      if (fromRealIndex && existsSync(realIndex)) copyFileSync(realIndex, index);
+      if (fromRealIndex && existsSync(realIndex)) {
+        copyFileSync(realIndex, index);
+        // git trusts an entry's cached stat only when the file is older than
+        // the index, so the copy keeps the index's time (issue 74). Rounding
+        // to milliseconds only makes it older, which makes git check more.
+        const { atime, mtime } = statSync(realIndex);
+        utimesSync(index, atime, mtime);
+      }
       return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' };
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
