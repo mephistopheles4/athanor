@@ -33,7 +33,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
-  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. A change here is security-sensitive work.
+  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. With a base, the base's history rides in the snapshot's own stream, and one of two fixed base boot scripts replaces only the boot script's git block (ADR 0032). A change here is security-sensitive work.
   So is a change to what reaches the image build, its build arguments included.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
@@ -111,7 +111,7 @@ spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the
 issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
 issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
 issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46; `N1` to `N10`, from the spec on issue 54; `V1` to `V8`, from the spec on
-issue 60; `Q1`, from issue 74, a fast-tier test). C22 (the Windows check), the required-check half of C23, T14 (C22
+issue 60; `B1` to `B15`, from the spec on issue 70; `Q1`, from issue 74, a fast-tier test). C22 (the Windows check), the required-check half of C23, T14 (C22
 and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
 Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
 reading at review; no test carries their names. K3 is shown by the docker
@@ -139,6 +139,12 @@ review; W9 is a manual check at the next release recorded on issue 63; and
 W10 rests on the diff's file list; on a docs-only diff the source check,
 which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
 check of its own. No test carries their names.
+`B1` to `B15`, from the spec on issue 70: B1 to B9 are fast-tier tests and
+B10 to B12 docker-tier tests. B13 is checked by reading at review. B14 is a
+manual check after the next release, recorded on issue 70. The docker tier on
+Docker Desktop (the K5 check) is a manual check before the pull request. B15 is the fast tier (on Windows too,
+the T14 check), the type checks, the source check and the docker tier passing
+on the final head, and CI. No test carries the names B13 to B15.
 
 ## Releases
 

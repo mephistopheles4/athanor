@@ -52,9 +52,12 @@ test('T4 a compile error fails the build of a copy, which clears its dist/ first
 
 test('T13 the boot script in the compiled output has no carriage return', async (t) => {
   isolate(t);
-  const { BOOT } = await import('#dist/index.js');
-  assert.match(BOOT, /^set -e\n/);
-  assert.equal(BOOT.includes('\r'), false);
+  const { BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } = await import('#dist/index.js');
+  // The base boot scripts too (issue 70, B13).
+  for (const script of [BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256]) {
+    assert.match(script, /^set -e\n/);
+    assert.equal(script.includes('\r'), false);
+  }
   assert.equal(readFileSync(join(dist, 'container-settings.js'), 'latin1').includes('\r'), false, 'dist/container-settings.js, which holds the boot script, has LF line endings');
 });
 

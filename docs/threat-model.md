@@ -83,7 +83,11 @@ above; the software they run is not.
   dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
   blocks, with empty values, the ten proxy names the Docker CLI fills from the
   five proxy settings it reads today (accepted risk 11). A value the build
-  writes into the image or its cache is accepted risk 1. This, and
+  writes into the image or its cache is accepted risk 1. With a base, the
+  snapshot's stream also carries the base's history: the commit, tree and file
+  objects from the merge base onward, a list of the commits whose parents were
+  left out, two refs and the snapshot's tree id; never a git setting, hook or
+  remote (ADR 0032; accepted risk 39). This, and
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
   decides (accepted risk 7).
@@ -202,7 +206,10 @@ above; the software they run is not.
   machine when the machine configuration allows it (accepted risk 7), and a
   remote builder can ask this machine for the
   owner's registry credentials (accepted risk 7). A file added with `git add -N`
-  goes where tracked files go. Copied outputs can hold whatever the tests
+  goes where tracked files go. With a base, the commits from the merge base
+  onward go into the container too, with every file they hold, deleted ones
+  included, and their authors' names, emails and messages, and they go
+  wherever the snapshot goes (accepted risk 39). Copied outputs can hold whatever the tests
   wrote, such as a mutation report's copy of the source, and stay in the
   caller's folder, as plain files (accepted risk 31); athanor never cleans them
   up. A named command's arguments show in the host's process list and the
@@ -231,6 +238,10 @@ above; the software they run is not.
   athanor encrypts nothing itself; transport to a remote engine or builder is
   ssh or verified TLS unless `allowPlainTcp` is set (ADR 0013, ADR 0021). The
   `--output` folder sits unencrypted on the host's disk, like the state folder.
+  With a base, a run's pack of the base's history sits unencrypted in the state
+  folder until the run has streamed it into the container (or, if it can't be
+  removed then, until the run ends), and after a hard kill until the stale-run
+  sweep, like the rest of it.
   Image layers, the build cache and a container's writable layer sit
   unencrypted on the engine's or builder's disk: on this machine they rely on
   its disk encryption; on a remote one, which the machine configuration must
@@ -251,6 +262,16 @@ above; the software they run is not.
   git settings, attributes, templates and `GIT_*` variables inherited from the
   host are kept out of the archive step (ADR 0020); the git calls that record
   the work still use them (accepted risk 23).
+  A base name is checked before git sees it (no leading `-`, no revision
+  syntax, no control or format character), then resolved, with the ambiguity
+  check pinned on, to one branch, remote-tracking branch or tag (a command's
+  `base` to the last two), in ADR 0020's clean environment with the repo's own
+  config still read, replace refs off (on git 2.32 to 2.41 the repo's own
+  config may turn them back on, issue 72), grafts off, and lazy fetching off on
+  git 2.45 and later. The name git resolves to gets the same control-set check. A
+  shallow or partial clone, and a snapshot holding the reserved path, are
+  refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
+  against a fetch (ADR 0032; B1, B5, B7).
   The release path's untrusted inputs are the artifact `publish` takes from
   `check`, the staged tarball the owner downloads, the registry's manifest,
   which is checked once the version is live, and the
@@ -258,7 +279,8 @@ above; the software they run is not.
   look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
   ADR 0019.
 - **Data migrations.** None. The state folder holds only marks, temporary
-  indexes and per-run object folders, which are safe to delete.
+  indexes and per-run folders (with a base, a run's pack of the base's
+  history among them), which are safe to delete.
 
 ## Accepted risks
 
@@ -271,7 +293,7 @@ from"; a maintainer-only risk stays here alone.
 
 | Who | Accepted risks |
 | --- | --- |
-| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36 |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36, 39 |
 | Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34, 38 |
 
 Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
@@ -536,7 +558,7 @@ the lead session's chat, relayed by head-chef-field-test.
     where a local address leads without trusting the machine it runs on, and
     Docker offers no check of the engine's identity to build on.
     Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-25. **A message names the machine file's full path.** Every message that
+25. **A message names the machine file's, the state folder's or the repo's full path.** Every message that
     names the machine configuration file names it by its full path, which holds
     the account's home-folder name: its JSON and shape errors, its unknown
     keys, its value checks, its ceilings, and the `allowRemoteDocker` and
@@ -546,6 +568,8 @@ the lead session's chat, relayed by head-chef-field-test.
     message actionable.
     Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
     Widened 2026-10-25 to every message that names the file. From: the Design review of the spec on issue 54 (data-lens, machine-file messages carry the account name). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
+    Widened 2026-10-27 to messages that name a path in the state folder, such as a git error from a named base's calls that names the run's scratch folder. From: the Design review of the spec on issue 70, round 2 (data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
+    Widened 2026-10-27 to a git error from a named base's calls that names the repo's own path. From: the closing read of issue 70 (data-lens D2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef (q26).
 26. **A program running as the owner can read the npm session token.** From
     `npm login` to `npm logout`, around a release's approval, and around a
     step 17 unpublish or deprecate, the session
@@ -678,3 +702,26 @@ the lead session's chat, relayed by head-chef-field-test.
     makes each release by hand, as a draft read before it is published
     (ADR 0031).
     Accepted 2026-10-25. From: issue 63, candidate 1 (the Test review of issues 57 and 59, the security pair); the reason reworded at the Design review of the spec on issue 63 (adversarial-lens F7, F1). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
+39. **A named base carries history wherever the snapshot goes.** With a base,
+    the snapshot also carries every commit from the merge base onward, on the
+    base's side and the branch's: its files, a file since deleted among them
+    (a secret, say), and its metadata: author and committer names, emails,
+    dates and time zones, the message with its trailers (a co-author's or
+    sign-off's email), any signature, and a merged signed tag's tagger and
+    message. It lands in the container's repository, where the test code can
+    read it, and the test's output or copied outputs can carry it out, on to
+    an agent session's model provider. It also goes wherever the snapshot
+    goes: a remote engine's or builder's operator (accepted risk 7), a shared
+    engine's other users (accepted risk 8), the network under `allowPlainTcp`
+    (accepted risk 10), and a container left running after a hard kill
+    (accepted risk 4). A run killed hard can leave its pack of that history in
+    the state folder until the stale-run sweep a day later. While it exists,
+    that pack sits unencrypted in the state folder, as the repo's own objects
+    do on the same disk. The base is chosen
+    by the caller's `--base`, or by a command's `base` in the repo
+    configuration, which may name only a remote-tracking branch or a tag.
+    Without a base, nothing changes. Accepted because the history is the
+    repo's own, a base is named only for checks that need it, and the test
+    container has no network.
+    Accepted 2026-10-27. From: the Plan round of issue 70 (q4), widened at the Design review of its spec (data-lens D1, D3, D4; adversarial-lens F1, F2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
+    The sentence on the pack sitting unencrypted added 2026-10-27. From: the Test review of issue 70, round 1 (data-lens D3, q21). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.

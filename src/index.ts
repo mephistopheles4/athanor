@@ -6,8 +6,8 @@ import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
 import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
-import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream } from './git.js';
-import type { Scratch, BuildContext } from './git.js';
+import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream, resolveBase, packBase } from './git.js';
+import type { Scratch, BuildContext, ResolvedBase } from './git.js';
 import { prepareDocker, recheckDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { acquire, ask } from './slots.js';
@@ -20,7 +20,7 @@ import { copyOut, checkOutputTarget, workFolder, CopyError, CopyInterrupted, MAX
 import type { OutputTarget } from './copy-out.js';
 
 export { AthanorError };
-export { BOOT } from './container-settings.js';
+export { BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from './container-settings.js';
 export type { Outcome, Sink };
 
 const TAG_PATTERN = /^athanor:([0-9a-f]{32})$/;
@@ -39,6 +39,9 @@ export interface RunOptions {
   // A new folder to copy the command's declared outputs into, after a test that ran and exited.
   output?: string;
   untracked?: boolean;
+  // A branch or tag whose history from the merge base onward rides in the
+  // snapshot (ADR 0032). Overrides the named command's base key.
+  base?: string;
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
   stdout?: Sink | null;
@@ -55,6 +58,8 @@ export interface RunOptions {
   maxOutputEntries?: number;
   /** @internal For tests (ADR 0003): the time bound of a copy, in milliseconds. */
   copyTimeMs?: number;
+  /** @internal For tests (ADR 0003): an existing folder to write the base's pack into. */
+  basePackFolder?: string;
 }
 
 export interface RunResult {
@@ -64,6 +69,9 @@ export interface RunResult {
   image?: { tag: string; built: boolean };
   snapshot?: { id: string; untracked: boolean };
   untrackedLeftOut?: number;
+  // Set when a base is carried (ADR 0032): its full ref name, its tip and the
+  // merge base, as full ids.
+  base?: { ref: string; tip: string; mergeBase: string };
   waitedMs?: number;
   slot?: number;
   ranMs?: number;
@@ -191,7 +199,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const machine = readMachineConfig(home);
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
-  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames });
+  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames, base: options.base });
   const { limits, command } = config;
   // The --output checks, before any Docker call (ADR 0023).
   let target: OutputTarget | undefined;
@@ -231,6 +239,15 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     }
     if (signal?.aborted) return interruptedResult(partial);
 
+    // The base, resolved and checked before a slot is taken (ADR 0032).
+    let base: ResolvedBase | undefined;
+    if (config.base !== undefined) {
+      base = await resolveBase(root, scratch, snap, config.base);
+      partial.base = { ref: base.ref, tip: base.tip, mergeBase: base.mergeBase };
+      onProgress(`base ${config.base.name} at ${base.tip.slice(0, 12)}, merge base ${base.mergeBase.slice(0, 12)}.`);
+      if (signal?.aborted) return interruptedResult(partial);
+    }
+
     const waitStart = Date.now();
     slot = await acquire({
       prefix,
@@ -251,12 +268,27 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     // A context or builder edited in place while this run waited would change
     // where the pinned names lead; checked as late as possible before the run.
     await recheckDocker(docker, checked);
-    const container = containerSettings({ limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command });
+    // The base's pack, built once the slot is held, so its copy of the history
+    // sits in the state folder for as short a time as the run allows (ADR 0032).
+    let added: string[] = [];
+    if (base !== undefined) {
+      try {
+        added = await packBase(root, scratch, snap, base, { folder: options.basePackFolder, signal });
+      } catch (error) {
+        if (signal?.aborted) return interruptedResult(partial);
+        throw error;
+      }
+      if (signal?.aborted) return interruptedResult(partial);
+    }
+    const container = containerSettings({
+      limits, timeLimitSeconds, graceSeconds, prefix, slot: slot.slot, tag: ctx.tag, command,
+      ...(base !== undefined ? { baseFormat: scratch.format } : {}),
+    });
     await clearSlotContainer(docker, container.name, pinned);
     if (signal?.aborted) return interruptedResult(partial);
 
     const handed = await runContainer({
-      docker, env: pinned, root, scratch, snapshotId: snap.id, container, timeLimitSeconds, stdout, stderr, signal,
+      docker, env: pinned, root, scratch, snapshotId: snap.id, added, container, timeLimitSeconds, stdout, stderr, signal,
     });
     const { ran } = handed;
     // Copy out only when the test ran and exited (pass, fail, or the memory limit,

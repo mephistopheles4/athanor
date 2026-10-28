@@ -5,7 +5,7 @@ import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync,
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
-import { checkOutputs } from './copy-out.js';
+import { checkOutputs, hasControl, showName } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -105,7 +105,7 @@ export interface MachineConfig {
 }
 
 // A command in object form (ADR 0023): its argv, whether it takes arguments,
-// its outputs, and limits of its own.
+// its outputs, limits of its own, and the base it carries (ADR 0032).
 interface CommandObject {
   argv: string[];
   args?: boolean;
@@ -114,9 +114,27 @@ interface CommandObject {
   cpus?: number;
   timeoutMinutes?: number;
   processes?: number;
+  base?: string;
 }
 
-const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes'];
+const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes', 'base'];
+
+// Why a base name is refused before git sees it, or null when it may go on to
+// be resolved (ADR 0032). It must read as one plain ref name: never an option,
+// never revision syntax, and nothing a terminal would act on.
+export function baseNameProblem(name: string): string | null {
+  if (name === '') return 'it is empty';
+  if (name.startsWith('-')) return 'it starts with "-"';
+  if (hasControl(name)) return 'it holds a control character or an invisible formatting character';
+  if (name.includes(' ')) return 'it holds a space';
+  const syntax = name.match(/[~^:?*[\\]/);
+  if (syntax) return `it holds "${syntax[0]}", which git reads as revision syntax`;
+  if (name.includes('@{')) return 'it holds "@{", which git reads as revision syntax';
+  if (name.includes('..')) return 'it holds "..", which git reads as a range';
+  return null;
+}
+
+const BASE_HINT = 'Name a remote-tracking branch or a tag, such as origin/main.';
 
 interface RepoValues {
   dockerfile: string;
@@ -156,6 +174,11 @@ export interface RunConfig {
   maxOutputBytes: number;
   // A command's own limit names its key: commands.<name>.<key>.
   from: Record<LimitKey | 'allowPlainTcp' | 'allowRemoteDocker', Source>;
+  // The base to carry, when one is named (ADR 0032): the name as given, whether
+  // it came from a command's base key (which may name only a remote-tracking
+  // branch or a tag), and the name as a message shows it, with where it was
+  // set. A name that passed the check holds no control character.
+  base?: { name: string; fromKey: boolean; label: string };
 }
 
 // What the caller asked to run. `extraNames` are words given after the name
@@ -165,6 +188,8 @@ export interface RunRequest {
   command?: string[];
   args?: string[];
   extraNames?: string[];
+  // The --base flag's name, which overrides the command's base key.
+  base?: string;
 }
 
 // The lead of every message about more than one name given without --.
@@ -197,7 +222,7 @@ export function readMachineConfig(home: string): MachineConfig {
   for (const [key, value] of Object.entries(parsed)) {
     // A list lookup, so "constructor" or "__proto__" is not found on a prototype.
     if (!MACHINE_KEYS.includes(key as Key)) {
-      throw new AthanorError(`${where} has an unknown key "${key}". Its keys are: ${MACHINE_KEYS.join(', ')}.`);
+      throw new AthanorError(`${where} has an unknown key "${showName(key)}". Its keys are: ${MACHINE_KEYS.join(', ')}.`);
     }
     const check = checkOf(key as Key);
     if (check && !check.ok(value)) throw new AthanorError(`${where}: ${key} ${check.rule}.`);
@@ -302,7 +327,7 @@ function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; valu
 function checkRepoValues(config: Record<string, unknown>, place: string, lead: string): RepoValues {
   for (const k of Object.keys(config)) {
     if (!REPO_KEYS.includes(k as Key)) {
-      throw new AthanorError(`${lead} has an unknown key "${k}". Its keys are: ${REPO_KEYS.join(', ')}.`);
+      throw new AthanorError(`${lead} has an unknown key "${showName(k)}". Its keys are: ${REPO_KEYS.join(', ')}.`);
     }
   }
   if (typeof config.dockerfile !== 'string' || config.dockerfile === '') {
@@ -330,8 +355,10 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
 const isStrings = (v: unknown): boolean => Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string');
 
 // One entry of commands: an argument array, or an object (ADR 0023). Every
-// command gets the shape checks, whether or not it runs.
-function checkCommand(name: string, command: unknown, place: string, lead: string): void {
+// command gets the shape checks, whether or not it runs. Its name is shown
+// escaped, as every quoted name is.
+function checkCommand(rawName: string, command: unknown, place: string, lead: string): void {
+  const name = showName(rawName);
   if (!isObject(command)) {
     if (!isStrings(command)) {
       throw new AthanorError(`In ${place}, commands.${name} must be an array of strings, such as ["npm", "test"], or an object with "argv". A single string is not allowed, because athanor never uses a shell.`);
@@ -340,7 +367,7 @@ function checkCommand(name: string, command: unknown, place: string, lead: strin
   }
   for (const k of Object.keys(command)) {
     if (!COMMAND_KEYS.includes(k)) {
-      throw new AthanorError(`${lead} has an unknown key "commands.${name}.${k}". A command's keys are: ${COMMAND_KEYS.join(', ')}.`);
+      throw new AthanorError(`${lead} has an unknown key "commands.${name}.${showName(k)}". A command's keys are: ${COMMAND_KEYS.join(', ')}.`);
     }
   }
   if (!isStrings(command.argv)) {
@@ -357,6 +384,15 @@ function checkCommand(name: string, command: unknown, place: string, lead: strin
     const check = checkOf(k);
     if (check && command[k] !== undefined && !check.ok(command[k])) {
       throw new AthanorError(`In ${place}, commands.${name}.${k} ${check.rule}.`);
+    }
+  }
+  if (command.base !== undefined) {
+    if (typeof command.base !== 'string') {
+      throw new AthanorError(`In ${place}, commands.${name}.base must be a string, the name of a remote-tracking branch or a tag, such as "origin/main".`);
+    }
+    const problem = baseNameProblem(command.base);
+    if (problem) {
+      throw new AthanorError(`In ${place}, commands.${name}.base "${showName(command.base)}" is not a ref name athanor takes: ${problem}. ${BASE_HINT}`);
     }
   }
 }
@@ -384,8 +420,8 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // Own keys only, so a name such as "constructor" is not found on the prototype.
   const entry = request.command === undefined && Object.hasOwn(repo.commands, commandName) ? repo.commands[commandName] : undefined;
   if (request.command === undefined && entry === undefined) {
-    if (request.extraNames?.length) throw new AthanorError(`${oneNameLead(commandName, request.extraNames)} To run a command of your own, put it after -- with no name before it: athanor run -- <command>.`);
-    throw new AthanorError(`There is no command named "${commandName}" in ${where}. Its commands are: ${Object.keys(repo.commands).join(', ')}.`);
+    if (request.extraNames?.length) throw new AthanorError(`${oneNameLead(showName(commandName), request.extraNames.map(showName))} To run a command of your own, put it after -- with no name before it: athanor run -- <command>.`);
+    throw new AthanorError(`There is no command named "${showName(commandName)}" in ${where}. Its commands are: ${Object.keys(repo.commands).map(showName).join(', ')}.`);
   }
   const own: CommandObject | undefined = entry !== undefined && !Array.isArray(entry) ? entry : undefined;
   const argv = request.command ?? (Array.isArray(entry) ? entry : own!.argv);
@@ -394,17 +430,32 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   if (args.length > 0 && request.command !== undefined) {
     throw new AthanorError('Arguments go with a command name, not with a command given whole. Put the arguments after the name: athanor run <name> -- <arguments>.');
   }
-  const optIn = `Set "args": true on commands.${commandName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
+  // The name as every message below shows it, and the caller's extra words too.
+  const shownName = showName(commandName);
+  const optIn = `Set "args": true on commands.${shownName} in ${where} (the command then needs the object form, with "argv"), or give the whole command after -- with no name: athanor run -- <command>.`;
   if (request.extraNames?.length) {
-    const lead = oneNameLead(commandName, request.extraNames);
+    const extra = request.extraNames.map(showName);
+    const lead = oneNameLead(shownName, extra);
     throw new AthanorError(own?.args === true
-      ? `${lead} To pass arguments to "${commandName}", put them after --, such as athanor run ${commandName} -- ${request.extraNames.join(' ')}.`
+      ? `${lead} To pass arguments to "${shownName}", put them after --, such as athanor run ${shownName} -- ${extra.join(' ')}.`
       : `${lead} ${optIn}`);
   }
   if (args.length > 0 && own?.args !== true) {
-    throw new AthanorError(`The command "${commandName}" does not take arguments. ${optIn}`);
+    throw new AthanorError(`The command "${shownName}" does not take arguments. ${optIn}`);
   }
   const command = [...argv, ...args];
+
+  // The base: the flag's, else the named command's key (ADR 0032).
+  let base: RunConfig['base'];
+  if (request.base !== undefined) {
+    const problem = baseNameProblem(request.base);
+    if (problem) {
+      throw new AthanorError(`--base "${showName(request.base)}" is not a ref name athanor takes: ${problem}. Name a branch, a remote-tracking branch or a tag, such as origin/main.`);
+    }
+    base = { name: request.base, fromKey: false, label: `--base "${request.base}"` };
+  } else if (own?.base !== undefined) {
+    base = { name: own.base, fromKey: true, label: `commands.${shownName}.base "${own.base}" in ${where}` };
+  }
 
   // Per-run limits: the command's own, then the repo's, then the machine file,
   // then the defaults, each held to the machine's ceilings. cpus has no
@@ -413,7 +464,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // 1024 and maxProcesses, so a raised ceiling never raises it (ADR 0028).
   // The -- form takes the repo's values.
   const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
-    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${commandName}.${key}` } };
+    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${shownName}.${key}` } };
     if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
     if (machine.values[key] !== undefined) return { value: machine.values[key] as Limits[K], source: machineSource };
     if (key === 'cpus') {
@@ -465,5 +516,6 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
       allowPlainTcp: machine.values.allowPlainTcp !== undefined ? machineSource : { kind: 'default' },
       allowRemoteDocker: machine.values.allowRemoteDocker !== undefined ? machineSource : { kind: 'default' },
     },
+    ...(base !== undefined ? { base } : {}),
   };
 }

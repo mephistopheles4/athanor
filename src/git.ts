@@ -1,12 +1,13 @@
 // Snapshots and build contexts, made without writing the repo (ADR 0006, 0007).
 // Every git call in a run uses a copy of the index and a per-run object folder
 // whose alternates file names the repo's own object store.
-import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, utimesSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, renameSync, utimesSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
+import { hasControl, showName } from './copy-out.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -17,8 +18,15 @@ export interface Scratch {
   env(fromRealIndex?: boolean): Env;
   objectsEnv: Env;
   archiveEnv: Env;
+  // The environment for every git call that resolves or carries a base (ADR
+  // 0032): the archive step's clean one, with replace refs and grafts off, no
+  // lazy fetch, and the run's object folder, so the snapshot's own objects are
+  // found. It sets no GIT_DIR: git finds the repo's refs from its root.
+  baseEnv: Env;
   // An empty file, for the archive's global config and attributes file.
   emptyFile: string;
+  // The repo's object format, sha1 or sha256.
+  format: string;
   remove(): void;
 }
 
@@ -27,7 +35,28 @@ export interface Snapshot {
   id: string;
   untracked: boolean;
   untrackedLeftOut: number;
+  // How the id was made: a `stash create` commit (whose first parent is HEAD),
+  // HEAD itself on a clean tree, or a tree with --untracked. A base reads HEAD's
+  // id from it (ADR 0032).
+  from: 'stash' | 'head' | 'tree';
 }
+
+// A base that can be carried (ADR 0032): its full ref name, its tip, the HEAD
+// commit the snapshot sits on, every merge base, and the one git names.
+export interface ResolvedBase {
+  ref: string;
+  tip: string;
+  head: string;
+  mergeBases: string[];
+  mergeBase: string;
+}
+
+// The folder the four files that carry a base ride in, at the top of the
+// snapshot's tar: pack, shallow, refs and tree, the names the base boot
+// script reads.
+const BASE_FOLDER = '.athanor-base';
+// The branch the snapshot sits on inside the container, when a base is carried.
+const BASE_BRANCH = 'refs/heads/athanor';
 
 export interface BuildContext {
   commit: string;
@@ -61,15 +90,35 @@ function cleanGitEnv(emptyFile: string): Env {
   return { ...env, GIT_CONFIG_GLOBAL: emptyFile, GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1' };
 }
 
-async function git(args: string[], { cwd, env, what }: { cwd: string; env?: Env; what: string }): Promise<string> {
+// The next step for a failed call that reads the repo's history.
+const HISTORY = 'Check that git fsck finds the repo sound, then run again.';
+
+async function git(args: string[], { cwd, env, what, next = 'Fix what git reports, then run again.' }: { cwd: string; env?: Env; what: string; next?: string }): Promise<string> {
   const r = await call(['git', ...args], { cwd, env });
   if (r.code !== 0) {
-    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}.`);
+    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. ${next}`);
   }
   return r.stdout;
 }
 
 const firstLine = (text: unknown): string => String(text).trim().split('\n')[0]?.trim() ?? '';
+
+// A git call fed `input` on stdin, which the run's abort signal ends.
+async function gitFed(args: string[], { cwd, env, input, what, signal }: { cwd: string; env: Env; input: string; what: string; signal?: AbortSignal }): Promise<string> {
+  const started = start(['git', ...args], { cwd, env, stdin: 'pipe' });
+  const kill = () => { started.child.kill(); };
+  if (signal?.aborted) kill();
+  signal?.addEventListener('abort', kill, { once: true });
+  // git may stop reading early, on an error; its exit code says what happened.
+  started.child.stdin?.on('error', () => {});
+  started.child.stdin?.end(input);
+  const r = await started.done;
+  signal?.removeEventListener('abort', kill);
+  if (r.code !== 0) {
+    throw new AthanorError(`git could not ${what}: ${firstLine(r.stderr) || `exit ${r.code}`}. Check that the disk has room and that git fsck finds the repo sound, then run again.`);
+  }
+  return r.stdout;
+}
 
 // The top of the work tree, after checking there is a commit and no conflict.
 export async function repoRoot(cwd: string): Promise<string> {
@@ -133,7 +182,12 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
     archiveEnv: { ...clean, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
+    baseEnv: {
+      ...clean, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1',
+      GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: emptyFile, GIT_NO_LAZY_FETCH: '1',
+    },
     emptyFile,
+    format,
     remove(): void {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
     },
@@ -165,15 +219,163 @@ export async function snapshot(root: string, scratch: Scratch, { untracked }: { 
     await git(['read-tree', 'HEAD'], { cwd: root, env, what: 'read HEAD into a temporary index' });
     await git(['add', '-A', '--', '.'], { cwd: root, env, what: 'add the work tree to a temporary index' });
     const tree = (await git(['write-tree'], { cwd: root, env, what: 'write the snapshot tree' })).trim();
-    return { id: tree, untracked: true, untrackedLeftOut: 0 };
+    return { id: tree, untracked: true, untrackedLeftOut: 0, from: 'tree' };
   }
   const env = scratch.env(true);
   // `stash create` refuses an index copy holding an intent-to-add entry (git add -N);
   // `add -u` turns each into a real entry at its working-tree content (issue 46, M8).
   await git(['add', '-u', '--', '.'], { cwd: root, env, what: 'read files added with git add -N' });
-  const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes' })).trim();
+  const stash = (await git(['stash', 'create'], { cwd: root, env, what: 'make a snapshot of the tracked changes', next: HISTORY })).trim();
   const id = stash || (await git(['rev-parse', 'HEAD'], { cwd: root, what: 'read HEAD' })).trim();
-  return { id, untracked: false, untrackedLeftOut: untrackedCount };
+  return { id, untracked: false, untrackedLeftOut: untrackedCount, from: stash ? 'stash' : 'head' };
+}
+
+const HEX = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+const CARRIED_PREFIXES = ['refs/heads/', 'refs/remotes/', 'refs/tags/'];
+
+// The base, resolved and checked on the host before a slot is taken (ADR
+// 0032). `label` names the base as a message shows it, with where it was set.
+// Every refusal is a plain message that says what to do; git's exit code is
+// never the test of an answer, only its output.
+export async function resolveBase(
+  root: string,
+  scratch: Scratch,
+  snap: Snapshot,
+  { name, fromKey, label }: { name: string; fromKey: boolean; label: string },
+): Promise<ResolvedBase> {
+  const env = scratch.baseEnv;
+  // git resolves HEAD and its kin (FETCH_HEAD, ORIG_HEAD, @) to the branch they
+  // point at, so they are refused by name before git sees them.
+  if (name === '@' || /^[A-Z_]+$/.test(name)) {
+    const inFull = name === '@' || name.endsWith('HEAD')
+      ? ''
+      : `, or name it in full, such as refs/tags/${name} or refs/remotes/origin/${name}${fromKey ? '' : ` (refs/heads/${name} for a local branch)`}`;
+    throw new AthanorError(`${label} names a pseudo ref such as HEAD, not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main${inFull}.`);
+  }
+  const resolved = await call(['git', '-c', 'core.warnAmbiguousRefs=true', 'rev-parse', '--verify', '--quiet', '--symbolic-full-name', '--end-of-options', name], { cwd: root, env });
+  const lines = resolved.stdout.split('\n').filter(Boolean);
+  const ref = lines.length === 1 ? (lines[0] as string) : '';
+  if (ref === '') {
+    if (/ambiguous/.test(resolved.stderr)) {
+      throw new AthanorError(`${label} is ambiguous: more than one ref has that name. Name it in full, such as refs/remotes/origin/main.`);
+    }
+    throw new AthanorError(`${label} names nothing athanor can carry. If it is a remote-tracking branch, fetch it, or name a ref that exists.`);
+  }
+  // git follows a symbolic ref, such as a remote's HEAD, to a name the check
+  // above never saw; that name must hold no control or format character either.
+  if (hasControl(ref)) {
+    throw new AthanorError(`${label} resolves to ${showName(ref)}, a name with a control or invisible formatting character. Name the branch you mean directly.`);
+  }
+  if (ref.includes(' ')) {
+    throw new AthanorError(`${label} resolves to "${ref}", a name with a space. Name the branch you mean directly.`);
+  }
+  if (!CARRIED_PREFIXES.some((p) => ref.startsWith(p))) {
+    throw new AthanorError(`${label} resolves to ${ref}, which is not a branch, a remote-tracking branch or a tag. Name one of those, such as origin/main.`);
+  }
+  const asGiven = [name, `refs/${name}`, `refs/heads/${name}`, `refs/tags/${name}`, `refs/remotes/${name}`];
+  if (!asGiven.includes(ref)) {
+    throw new AthanorError(`${label} goes through a symbolic ref to ${ref}, and only that name would exist inside the container. Name ${ref} directly.`);
+  }
+  if (fromKey && ref.startsWith('refs/heads/')) {
+    throw new AthanorError(`${label} names the local branch ${ref}, but a command's base may name only a remote-tracking branch or a tag. Name one, such as origin/main, or pass a local branch with --base.`);
+  }
+  if (ref === BASE_BRANCH || ref.startsWith(`${BASE_BRANCH}/`)) {
+    throw new AthanorError(`${label} resolves to ${ref}, which is reserved for the snapshot's own branch in the container. Name another ref.`);
+  }
+  const tip = (await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { cwd: root, env, what: `read the commit ${ref} points at`, next: 'Name a ref that points at a commit, then run again.' })).trim();
+
+  const shallow = (await git(['rev-parse', '--is-shallow-repository'], { cwd: root, env, what: 'check whether the repo is shallow' })).trim();
+  if (shallow !== 'false') {
+    throw new AthanorError(`This repo is a shallow clone, so the history a base needs may be cut short. Run git fetch --unshallow, then run again.`);
+  }
+  // A partial clone lacks some of the history's files, and git would fetch them
+  // from its remote; on git below 2.45 this refusal is the only guard.
+  const partial = await call(['git', 'config', '--get', 'extensions.partialClone'], { cwd: root, env });
+  const promisors = await call(['git', 'config', '--type=bool', '--get-regexp', '^remote\\..*\\.promisor$'], { cwd: root, env });
+  if (promisors.code !== 0 && promisors.code !== 1) {
+    throw new AthanorError(`git could not read this repo's remote settings: ${firstLine(promisors.stderr) || `exit ${promisors.code}`}. Fix the repo's git config, then run again.`);
+  }
+  const promised = promisors.stdout.split('\n').some((l) => / true$/.test(l));
+  if (partial.stdout.trim() !== '' || promised) {
+    throw new AthanorError('This repo is a partial clone, so some of the history a base needs may be missing, and git would fetch it. Use a full clone, or unset the remote\'s promisor and partialclonefilter settings (and extensions.partialClone, if set) and fetch again with --refetch, then run again.');
+  }
+
+  const head = snap.from === 'stash'
+    ? (await git(['rev-parse', '--verify', `${snap.id}^1`], { cwd: root, env, what: 'read the commit the snapshot sits on', next: HISTORY })).trim()
+    : snap.from === 'head'
+      ? snap.id
+      : (await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: root, env, what: 'read HEAD', next: HISTORY })).trim();
+
+  const all = await call(['git', 'merge-base', '--all', tip, head], { cwd: root, env });
+  const mergeBases = all.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (mergeBases.length === 0 || !mergeBases.every((id) => HEX.test(id))) {
+    if (all.code === 1 || (all.code === 0 && mergeBases.length === 0)) {
+      throw new AthanorError(`${label} has no merge base with this branch: their histories are unrelated. Name a base this branch was made from.`);
+    }
+    throw new AthanorError(`git could not find the merge base of ${label} and HEAD: ${firstLine(all.stderr) || `exit ${all.code}`}. ${HISTORY}`);
+  }
+  const mergeBase = (await git(['merge-base', tip, head], { cwd: root, env, what: 'find the merge base', next: HISTORY })).trim();
+
+  const held = await git(['ls-tree', '--name-only', snap.id, '--', BASE_FOLDER], { cwd: root, env, what: `check the snapshot for ${BASE_FOLDER}` });
+  if (held.trim() !== '') {
+    throw new AthanorError(`The snapshot holds a path named ${BASE_FOLDER}, which athanor keeps for carrying the base. Rename it, then run again.`);
+  }
+  return { ref, tip, head, mergeBases, mergeBase };
+}
+
+// The four files that carry a resolved base (ADR 0032), written into the run's
+// scratch folder once the slot is held: a pack of every commit from the merge
+// bases onward on both sides, with every tree and file each reaches (the ones
+// a merge base shares with later commits included, which is why the objects
+// are listed commit by commit and never with a negative revision), plus the
+// snapshot's own tree; the carried commits whose parents were not carried; the
+// two refs to set; and the snapshot's tree id. Returns their paths, in the
+// order the stream adds them. `folder` is for tests (ADR 0003).
+export async function packBase(
+  root: string,
+  scratch: Scratch,
+  snap: Snapshot,
+  base: ResolvedBase,
+  { folder, signal }: { folder?: string; signal?: AbortSignal } = {},
+): Promise<string[]> {
+  const env = scratch.baseEnv;
+  const dir = folder ?? join(scratch.dir, 'base');
+  if (folder === undefined) onDisk(() => mkdirSync(dir));
+  const later = (await git(['rev-list', base.tip, base.head, '--not', ...base.mergeBases], { cwd: root, env, what: 'list the commits from the merge base onward', next: HISTORY }))
+    .split('\n').filter(Boolean);
+  const carried = [...new Set([...later, ...base.mergeBases])];
+  const kept = new Set(carried);
+  const withParents = await gitFed(['rev-list', '--no-walk=unsorted', '--parents', '--stdin'], { cwd: root, env, input: carried.join('\n') + '\n', what: 'read the carried commits\' parents', signal });
+  const shallow = withParents.split('\n').filter(Boolean).map((l) => l.split(' '))
+    .filter(([, ...parents]) => parents.some((p) => !kept.has(p))).map(([id]) => id as string);
+  const tree = (await git(['rev-parse', '--verify', `${snap.id}^{tree}`], { cwd: root, env, what: 'read the snapshot\'s tree', next: HISTORY })).trim();
+  const objects = await gitFed(['rev-list', '--objects', '--no-object-names', '--no-walk=unsorted', '--stdin'], { cwd: root, env, input: [...carried, tree].join('\n') + '\n', what: 'list the objects of the base\'s history', signal });
+  // One pack, whatever size limit the repo's config sets.
+  const hashes = (await gitFed(['-c', 'pack.packSizeLimit=0', 'pack-objects', '-q', join(dir, 'base')], { cwd: root, env, input: objects, what: 'build the pack of the base\'s history', signal }))
+    .split('\n').filter(Boolean);
+  if (hashes.length !== 1 || !HEX.test(hashes[0] as string)) {
+    throw new AthanorError('git did not build one pack of the base\'s history, as athanor asked. Check the repo\'s pack settings, then run again.');
+  }
+  const files = { pack: join(dir, 'pack'), shallow: join(dir, 'shallow'), refs: join(dir, 'refs'), tree: join(dir, 'tree') };
+  onDisk(() => {
+    renameSync(join(dir, `base-${hashes[0]}.pack`), files.pack);
+    for (const name of readdirSync(dir)) if (name.startsWith('base-')) rmSync(join(dir, name), { force: true });
+    writeFileSync(files.shallow, shallow.map((id) => `${id}\n`).join(''));
+    writeFileSync(files.refs, `update ${base.ref} ${base.tip}\nupdate ${BASE_BRANCH} ${base.head}\n`);
+    writeFileSync(files.tree, `${tree}\n`);
+  });
+  return [files.pack, files.shallow, files.refs, files.tree];
+}
+
+// A file step of the base's pack, whose failure (a full disk, say) is a plain
+// message naming the error's code, never a path, which holds the account name.
+function onDisk(step: () => void): void {
+  try {
+    step();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'an unknown error';
+    throw new AthanorError(`athanor could not write the base's pack in its state folder (${code}). If the disk is full, free some space; then run again.`);
+  }
 }
 
 // The build context: tracked files under `context` at their working-tree
@@ -241,13 +443,15 @@ export async function buildContext(
 // A tar stream of a commit or tree, for a Docker child's stdin. It comes from
 // athanor's own git folder in the clean environment, so it holds exactly the
 // tree, with the archive settings pinned here; the attributes file is pinned
-// empty, as git reads its default one even with no global config. Returns the
-// git child; its stdout is the stream.
-export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf): Started {
+// empty, as git reads its default one even with no global config. A carried
+// base's four files ride after the tree, in their own folder (ADR 0032).
+// Returns the git child; its stdout is the stream.
+export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf, added: string[] = []): Started {
   const pinned = [
     ...ARCHIVE_CONFIG,
     '-c', `core.attributesFile=${scratch.emptyFile}`,
     ...(of === 'build context' ? BUILD_ARCHIVE_CONFIG : SNAPSHOT_ARCHIVE_CONFIG),
   ];
-  return start(['git', ...pinned, 'archive', '--format=tar', id], { cwd: root, env: scratch.archiveEnv, capture: false });
+  const carry = added.length > 0 ? [`--prefix=${BASE_FOLDER}/`, ...added.map((f) => `--add-file=${f}`), '--prefix='] : [];
+  return start(['git', ...pinned, 'archive', '--format=tar', ...carry, id], { cwd: root, env: scratch.archiveEnv, capture: false });
 }

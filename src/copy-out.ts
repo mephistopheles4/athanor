@@ -50,10 +50,19 @@ export function badSegment(segment: string): string | null {
   return null;
 }
 
+// The control set: C0 and C1 controls, DEL, the line and paragraph
+// separators, and Unicode format characters (bidi overrides, zero-width).
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/u;
+
+// Whether a name holds a character of the control set.
+export function hasControl(name: string): boolean {
+  return CONTROL.test(name);
+}
+
 // A name as the messages show it: control and format characters escaped,
 // nothing stripped.
 export function showName(name: string): string {
-  return name.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16)}}`);
+  return name.replace(new RegExp(CONTROL.source, 'gu'), (c) => `\\u{${c.codePointAt(0)!.toString(16)}}`);
 }
 
 // The `outputs` list of a command: each entry a relative path whose segments

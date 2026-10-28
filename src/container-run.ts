@@ -2,6 +2,7 @@
 // snapshot in, apply the interrupt and the time limit, find the boot marker,
 // and return the outcome. What the container gets is decided by the container
 // settings, not here.
+import { rmSync } from 'node:fs';
 import { EXIT } from './errors.js';
 import { tarStream } from './git.js';
 import type { Scratch } from './git.js';
@@ -23,6 +24,8 @@ export interface ContainerRun {
   root: string;
   scratch: Scratch;
   snapshotId: string;
+  // A carried base's four files, which ride after the snapshot's tree (ADR 0032).
+  added?: string[];
   // The container's name and the arguments that start it, from the container settings.
   container: Container;
   timeLimitSeconds: number;
@@ -84,12 +87,28 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   const write = (stream: Sink | null) => (c: Buffer | string) => { stream?.write(c); };
   const filter = markerFilter(write(o.stderr));
   const started = Date.now();
-  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot');
+  const archive = tarStream(o.root, o.scratch, o.snapshotId, 'snapshot', o.added);
   const { name, args } = o.container;
   const container = start([...o.docker, ...args], {
     env: o.env, stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
   feed(archive, container);
+  // A carried base's four files are read by the time the archive ends, so the
+  // copy of the history goes then, not at the end of the run (ADR 0032). Only
+  // the four files go, never the folder they sit in. One that can't be removed
+  // here goes with the run's scratch folder, the test-only pack folder excepted.
+  const added = o.added ?? [];
+  if (added.length > 0) {
+    void archive.done.then(() => {
+      for (const file of added) {
+        try {
+          rmSync(file, { force: true, maxRetries: 3 });
+        } catch {
+          // Left to the scratch folder's removal.
+        }
+      }
+    });
+  }
 
   let timedOut = false;
   let interrupted = false;
@@ -116,7 +135,7 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   if (!filter.seen) {
     const why = c.code === 125
       ? 'docker run failed before the test started. Its message is above.'
-      : 'the container did not print athanor\'s start marker. Either the snapshot could not be unpacked, or the image breaks athanor\'s image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.';
+      : `the container did not print athanor's start marker. Either the snapshot could not be unpacked, or the image breaks athanor's image contract: it needs sh and tar, and an ENTRYPOINT must run the arguments it is given.${o.added?.length ? ' A run with a base also needs git in the image, 2.29 or later for a sha256 repo.' : ''}`;
     return handed({ ...base, outcome: 'error', exitCode: EXIT.setup, message: `The test never started: ${why}` });
   }
   if (!state) {

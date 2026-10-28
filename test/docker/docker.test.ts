@@ -5,10 +5,10 @@ import { test, after } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run, status } from '#dist/index.js';
+import { run, status, BOOT_BASE_SHA1 } from '#dist/index.js';
 import type { RunOptions } from '#dist/index.js';
 import { ask } from '#dist/slots.js';
 import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.ts';
@@ -442,4 +442,157 @@ test('V5 the memory limit: a killed child keeps the test\'s own exit, a killed t
       assert.equal(result.containerExitCode, row.container, JSON.stringify(result));
     });
   }
+});
+
+// A fixture repo with history for the base claims (issue 70): c0, then c1 (mb,
+// the merge base); main moves on to b1 and b2 (origin/main), and topic (checked
+// out) to t1. mb has a parent that is not carried, so the shallow list is not
+// empty.
+function baseRepo(t: TestContext, commands: Record<string, unknown>, files: Record<string, string> = {}) {
+  const repo = makeRepo(t, { athanor: { ...config, commands: { ...config.commands, ...commands } }, files: { ...FIXTURE, ...files } });
+  const g = (args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8', shell: false }).stdout.trim();
+  const commit = (file: string, text = `${file}\n`) => {
+    writeFileSync(join(repo, file), text);
+    g(['add', '--', file]);
+    g(['commit', '-q', '-m', file]);
+    return g(['rev-parse', 'HEAD']);
+  };
+  const mb = commit('c1.txt');
+  commit('b1.txt');
+  const b2 = commit('b2.txt');
+  g(['update-ref', 'refs/remotes/origin/main', b2]);
+  g(['checkout', '-q', '-b', 'topic', mb]);
+  const t1 = commit('t1.txt');
+  return { repo, g, commit, mb, b2, t1 };
+}
+
+const inside = [
+  'echo "mb=$(git merge-base origin/main HEAD)"',
+  'echo "parent=$(git rev-parse HEAD^)"',
+  'echo "head=$(git rev-parse HEAD)"',
+  'echo "branch=$(git branch --show-current)"',
+  'echo "remotes=$(git remote | wc -l)"',
+  'echo "cfg=$(git config --local --get athanor.test || echo none)"',
+  'if [ -e .athanor-base ] || [ -e "$HOME/.athanor-base" ]; then echo left=yes; else echo left=no; fi',
+  'if [ -s .git/shallow ]; then echo shallow=yes; else echo shallow=no; fi',
+  'if git fsck --connectivity-only --no-dangling >/dev/null 2>&1; then echo fsck=ok; else echo fsck=bad; fi',
+].join('; ');
+const field = (out: string, key: string): string | undefined => out.split('\n').find((l) => l.startsWith(`${key}=`))?.slice(key.length + 1).trim();
+
+test('B10 inside a real container a base gives the host\'s merge base, on the host\'s HEAD, with none of the host\'s git settings', async (t) => {
+  isolate(t);
+  const { repo, g, commit, mb } = baseRepo(t, { inside: { argv: ['sh', '-c', inside], base: 'origin/main' } });
+  g(['config', 'athanor.test', 'host-value']);
+  g(['remote', 'add', 'other', 'https://example.invalid/x.git']);
+  writeFileSync(join(repo, 't1.txt'), 'edited\n');
+  const dirty = await runReal(t, repo, { name: 'inside' });
+  assert.equal(dirty.result.outcome, 'pass', dirty.stderr);
+  assert.equal(field(dirty.stdout, 'mb'), mb, 'the host\'s merge base');
+  assert.equal(field(dirty.stdout, 'parent'), g(['rev-parse', 'HEAD']), 'the snapshot sits on the host\'s HEAD');
+  assert.equal(field(dirty.stdout, 'branch'), 'athanor');
+  assert.equal(field(dirty.stdout, 'remotes'), '0', 'no remote');
+  assert.equal(field(dirty.stdout, 'cfg'), 'none', 'no key from the host repo\'s config');
+  assert.equal(field(dirty.stdout, 'left'), 'no', 'the carried folder is gone');
+  assert.equal(field(dirty.stdout, 'shallow'), 'yes', 'the merge base\'s parent is listed shallow');
+  assert.equal(field(dirty.stdout, 'fsck'), 'ok', 'a clean connectivity check inside');
+
+  g(['checkout', '-q', '--', 't1.txt']);
+  writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
+  writeFileSync(join(repo, 'ignored.txt'), 'kept\n');
+  g(['add', '-f', '.gitignore', 'ignored.txt']);
+  g(['commit', '-q', '-m', 'ignored']);
+  const clean = await runReal(t, repo, { name: 'inside' });
+  assert.equal(clean.result.outcome, 'pass', clean.stderr);
+  assert.equal(field(clean.stdout, 'head'), g(['rev-parse', 'HEAD']), 'a clean tree leaves HEAD at the host\'s HEAD');
+
+  commit('crlf.txt', 'a\r\nb\r\n');
+  commit('.gitattributes', '* text\n');
+  const crlf = await runReal(t, repo, { name: 'inside' });
+  assert.equal(crlf.result.outcome, 'pass', `a file whose bytes and attributes disagree does not end the boot: ${crlf.stderr}`);
+  assert.equal(field(crlf.stdout, 'mb'), mb);
+});
+
+test('B10 with a base the time limit and copy-out work as without one', async (t) => {
+  isolate(t);
+  const { repo } = baseRepo(t, {
+    slow: { argv: ['sleep', '60'], base: 'origin/main' },
+    writes: { argv: ['sh', '-c', 'echo made > out.txt'], base: 'origin/main', outputs: ['out.txt'] },
+  });
+  const slow = await runReal(t, repo, { name: 'slow', timeLimitSeconds: 3 });
+  assert.equal(slow.result.outcome, 'timeout', slow.stderr);
+  assert.equal(slow.result.exitCode, 124);
+  const target = join(tempDir(t, 'athanor-out-'), 'copied');
+  const writes = await runReal(t, repo, { name: 'writes', output: target });
+  assert.equal(writes.result.outcome, 'pass', writes.stderr);
+  assert.equal(readFileSync(join(target, 'out.txt'), 'utf8'), 'made\n');
+});
+
+test('B10 a stream whose base folder holds an extra member, a hidden member or a link ends before the marker', async (t) => {
+  isolate(t);
+  const { repo } = baseRepo(t, { check: { argv: ['true'], base: 'origin/main' } });
+  const first = await runReal(t, repo, { name: 'check' });
+  assert.equal(first.result.outcome, 'pass', first.stderr);
+  // Each tampered stream is made by tar in a container, where a link is easy on any host.
+  const streams: Array<[string, string]> = [
+    ['an extra member', 'for f in pack shallow refs tree extra; do echo $f > .athanor-base/$f; done'],
+    ['a hidden fifth member', 'for f in pack shallow refs tree .extra; do echo $f > .athanor-base/$f; done'],
+    ['a pack that is a link', 'for f in shallow refs tree; do echo $f > .athanor-base/$f; done; ln -s shallow .athanor-base/pack'],
+  ];
+  for (const [label, fill] of streams) {
+    const made = spawnSync('docker', ['run', '--rm', '--network', 'none', first.result.image!.tag, 'sh', '-c', `set -e; mkdir -p /t/.athanor-base; cd /t; ${fill}; echo a > a.txt; tar -cf - .athanor-base a.txt`], { shell: false, maxBuffer: 16 * 1024 * 1024 });
+    assert.equal(made.status, 0, `${label}: ${made.stderr}`);
+    const ran = spawnSync('docker', ['run', '-i', '--rm', '--network', 'none', '-e', 'ATHANOR_GRACE_LIMIT=30', first.result.image!.tag, 'sh', '-c', BOOT_BASE_SHA1, 'athanor', 'true'], { input: made.stdout, encoding: 'utf8', shell: false });
+    assert.notEqual(ran.status, 0, `${label}: the boot stops`);
+    assert.equal(ran.stderr.includes('athanor-boot-ok'), false, `${label}: no marker: ${ran.stderr}`);
+    assert.match(ran.stderr, /holds something athanor did not put there/, `${label}: the folder guard stopped it`);
+  }
+});
+
+test('B11 a check that compares with the base fails without a version bump and passes with one, as on the host', async (t) => {
+  isolate(t);
+  // grimoire's five git calls, in sh: merge-base, rev-parse, diff, and show at
+  // the merge base and at the base's tip.
+  const check = [
+    'mb=$(git merge-base origin/main HEAD) || { echo "cannot resolve origin/main"; exit 2; }',
+    'git rev-parse HEAD >/dev/null',
+    'touched=$(git diff --name-only "$mb..HEAD" -- skills)',
+    '[ -z "$touched" ] && { echo "nothing to release"; exit 0; }',
+    'version() { sed -n \'s/.*"version": *"\\([^"]*\\)".*/\\1/p\'; }',
+    'was=$(git show "$mb:plugin.json" | version)',
+    'tip=$(git show origin/main:plugin.json | version)',
+    'now=$(version < plugin.json)',
+    '[ "$was" = "$now" ] && { echo "version is still $now"; exit 1; }',
+    '[ "$tip" = "$now" ] && { echo "origin/main is already at $now"; exit 1; }',
+    'echo "bumped to $now"',
+  ].join('\n');
+  const { repo, g, commit } = baseRepo(t, { check: { argv: ['sh', '-c', check], base: 'origin/main' } }, { 'plugin.json': '{ "version": "1.0.0" }\n' });
+  mkdirSync(join(repo, 'skills'), { recursive: true });
+  commit('skills/a.md');
+  // The host's answer to the same question, from the host's own git.
+  const hostSays = (): boolean => {
+    const mb = g(['merge-base', 'origin/main', 'HEAD']);
+    const was = g(['show', `${mb}:plugin.json`]).match(/"version": *"([^"]*)"/)![1];
+    const now = readFileSync(join(repo, 'plugin.json'), 'utf8').match(/"version": *"([^"]*)"/)![1];
+    return was !== now;
+  };
+  const unbumped = await runReal(t, repo, { name: 'check' });
+  assert.equal(hostSays(), false);
+  assert.equal(unbumped.result.outcome, 'fail', unbumped.stdout + unbumped.stderr);
+  assert.match(unbumped.stdout, /version is still 1\.0\.0/);
+  commit('plugin.json', '{ "version": "1.1.0" }\n');
+  const bumped = await runReal(t, repo, { name: 'check' });
+  assert.equal(hostSays(), true);
+  assert.equal(bumped.result.outcome, 'pass', bumped.stdout + bumped.stderr);
+  assert.match(bumped.stdout, /bumped to 1\.1\.0/);
+});
+
+test('B12 an image without git ends a run with a base as error, and runs without one as before', async (t) => {
+  isolate(t);
+  const { repo } = baseRepo(t, { check: { argv: ['true'], base: 'origin/main' } }, { 'test/Dockerfile': 'FROM alpine:3.20\n' });
+  const withBase = await runReal(t, repo, { name: 'check' });
+  assert.equal(withBase.result.outcome, 'error', withBase.stderr);
+  assert.equal(withBase.result.exitCode, 125);
+  assert.match(withBase.result.message!, /A run with a base also needs git in the image, 2\.29 or later for a sha256 repo/);
+  const without = await runReal(t, repo, { name: 'test' });
+  assert.equal(without.result.outcome, 'pass', without.stderr);
 });

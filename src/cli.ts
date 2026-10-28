@@ -17,6 +17,8 @@ interface CliOptions {
   extraNames?: string[];
   untracked?: boolean;
   output?: string;
+  // The base to carry into the snapshot (ADR 0032).
+  base?: string;
   dryRun?: boolean;
   days?: number;
 }
@@ -45,7 +47,7 @@ export function parseArgs(argv: string[]): Parsed {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
   const allowed: string[] = {
-    run: ['--json', '--untracked', '--output'],
+    run: ['--json', '--untracked', '--output', '--base'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
   }[command];
@@ -74,6 +76,13 @@ export function parseArgs(argv: string[]): Parsed {
           throw new AthanorError('--output needs a folder to copy into, which must not exist yet. Put a folder name right after it, for example one under your user profile.');
         }
         options.output = value;
+      }
+      else if (arg === '--base') {
+        const value = rest[++i];
+        if (value === undefined || value === '' || value.startsWith('-')) {
+          throw new AthanorError('--base needs the name of the branch to compare with right after it, such as --base origin/main.');
+        }
+        options.base = value;
       }
       else if (arg === '--days') {
         const value = rest[++i];
@@ -155,6 +164,7 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
       extraNames: options.extraNames,
       output: options.output,
       untracked: options.untracked === true,
+      ...(options.base !== undefined ? { base: options.base } : {}),
       signal: controller.signal,
       onProgress,
       stdout: options.json ? process.stderr : process.stdout,
