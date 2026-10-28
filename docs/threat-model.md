@@ -266,8 +266,9 @@ above; the software they run is not.
   syntax, no control or format character), then resolved, with the ambiguity
   check pinned on, to one branch, remote-tracking branch or tag (a command's
   `base` to the last two), in ADR 0020's clean environment with the repo's own
-  config still read, replace refs and grafts off, and lazy fetching off on git
-  2.45 and later. The name git resolves to gets the same control-set check. A
+  config still read, replace refs off (on git 2.32 to 2.41 the repo's own
+  config may turn them back on, issue 72), grafts off, and lazy fetching off on
+  git 2.45 and later. The name git resolves to gets the same control-set check. A
   shallow or partial clone, and a snapshot holding the reserved path, are
   refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
   against a fetch (ADR 0032; B1, B5, B7).
@@ -278,7 +279,7 @@ above; the software they run is not.
   look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
   ADR 0019.
 - **Data migrations.** None. The state folder holds only marks, temporary
-  indexes and per-run object folders (with a base, a run's pack of the base's
+  indexes and per-run folders (with a base, a run's pack of the base's
   history among them), which are safe to delete.
 
 ## Accepted risks
