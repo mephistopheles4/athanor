@@ -130,7 +130,7 @@ export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
     throw new AthanorError(`The folder that should hold --output ${dir} does not exist. Make it first, then run again.`);
   }
   // A parent that other accounts can write, with no sticky bit, lets them swap folders in it
-  // (accepted risk 30). Windows has no mode bits to read, so this check is for the other systems.
+  // (accepted class "What athanor records, shows and leaves behind"). Windows has no mode bits to read, so this check is for the other systems.
   if (process.platform !== 'win32') {
     const mode = lstatSync(realParent).mode;
     if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {
@@ -180,7 +180,7 @@ export interface Copied {
   missing: string[];
 }
 
-// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted risk 28).
+// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted class "A repo you build").
 const ACT_ON_VIEW = /(^desktop\.ini$)|(\.(lnk|url|scf|library-ms|searchConnector-ms|theme|themepack)$)/i;
 const MISSING = /no such container:path|could not find the file/i;
 const RETRY = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY']);
@@ -329,7 +329,7 @@ class Job {
 
   // git treats a folder holding HEAD with objects, refs or a commondir file (which points at
   // them elsewhere) as a bare repository, wherever the
-  // folder sits and in whatever order the files come (accepted risk 28).
+  // folder sits and in whatever order the files come (accepted class "A repo you build").
   private beside(parts: string[]): void {
     const parent = parts.slice(0, -1).join('/');
     const names = this.children.get(parent) ?? new Set<string>();

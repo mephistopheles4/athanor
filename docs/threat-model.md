@@ -1,75 +1,122 @@
 # Threat model
 
-**Status: decided by the owner on 2026-10-20.** The owner accepted the risks
-under "Accepted risks" below, each with its date, the finding it came from and
-how the owner's word arrived. A change that would ease a path an accepted risk
-names, or remove a control it relies on, is raised in full at review.
+Last revised: 2026-11-07
 
 This page explains how athanor could break, what it does about each way, and
-which risks it would accept. A change that alters a defence named here
-updates this page in the same pull request.
+which threats it accepts. Read it before you use athanor on a repo, and before
+you change it. It describes athanor as at the `Last revised:` date above. A
+change that alters a defence named here updates this page in the same pull
+request. The owner decided the accepted classes; a change that would ease a
+path a class names, or remove a control it relies on, is raised in full at
+review. [`SECURITY.md`](../SECURITY.md) says how to report a hole.
 
-## Who and what this covers
+## Residual risk at a glance
+
+```mermaid
+quadrantChart
+  title Residual risk by class
+  x-axis Unlikely --> Likely
+  y-axis Minor --> Severe
+  quadrant-1 Act now
+  quadrant-2 Guard closely
+  quadrant-3 Accept
+  quadrant-4 Watch
+  A repo you build: [0.35, 0.75]
+  Other local programs: [0.55, 0.30]
+  A compromised machine: [0.08, 0.97]
+  Shared or remote engine: [0.15, 0.82]
+  Resource limits: [0.50, 0.38]
+  Recorded, shown, left behind: [0.72, 0.25]
+  Release and CI supply chain: [0.25, 0.92]
+```
+
+The chart places each class by what is left after today's guards: a repo you
+build is the likeliest of the severe ones, most of the rest is rare but severe,
+and the common ones are small.
+
+| Class | Risk | L | I | What stops it | What is left open |
+| --- | --- | --- | --- | --- | --- |
+| [A repo you build](#a-repo-you-build) | The repo's Dockerfile and tests run with the network at build time and the snapshot at run time | 0.35 | 0.75 | No shell on the host; nothing from the host reaches the test container; six capabilities, fixed limits | The build has the network and the proxy settings; the repo's code is trusted |
+| [Other local programs](#other-local-programs) | A program on the machine blocks runs, reads or fakes holder details, or plants what a run reads | 0.55 | 0.30 | The OS lock; configured paths stay in the repo; the open handle is checked | Slot names are open to any local program; point-in-time checks cannot tell a swapped path |
+| [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner | 0.08 | 0.97 | Nothing inside athanor | All of it |
+| [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs |
+| [Resource limits](#resource-limits) | A run or a leftover container holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal | No default CPU limit; a full process table can block removal |
+| [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | The archive step's clean environment; names checked as text; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
+| [The release and CI supply chain](#the-release-and-ci-supply-chain) | A hijacked dev package, action or account shapes what is built, staged or tagged | 0.25 | 0.92 | SHA pins, a 7-day wait, signatures, stage-only publishing, the owner's look and 2FA | A merged hijacked compiler; the release's `check` and `publish` jobs; any tag can be released |
+
+## Scale
+
+- **L and I** are likelihood and impact of what is left after today's guards,
+  from 0 to 1. They are judgement, used to rank; they do not measure.
+- **A class takes the highest L and the highest I** of the threats it covers,
+  per axis, so a class can sit higher than any one of them.
+
+## Scope
+
+**In scope:** anything that crosses a real boundary into or out of an athanor
+run: a repo's configuration, Dockerfile and tests, another local program that
+can reach the slot names or the state folder, the Docker engine and builder the
+user configured, and whoever runs them or sits on their network path, what a
+run copies back or prints, and this repo's dev packages, actions, CI and
+release path.
+
+**Out of scope:** flaws in Docker, Docker Desktop and its VM, git, Node and the
+operating system themselves. A machine already compromised as the owner's user
+(see the accepted class "A compromised machine or sandbox"). The operator of a
+remote engine or builder is in scope as an actor below; the software they run
+is not.
+
+## Who is in scope
+
+| Actor | Reaches athanor through |
+| --- | --- |
+| The repo's own code | The Dockerfile's `RUN` lines at build time and the test suite in the container; athanor is for repos the owner trusts to build |
+| Another local program, as any user | The slot names and the state folder |
+| A process that can write the owner's home folder | The machine configuration or the Docker configuration, as it could the environment |
+| Whoever runs the configured engine or builder, other users of a shared engine, someone on the network path | The build context, the snapshot, the result and the limits, when the machine configuration allows a remote engine |
+| An authenticated network user | The Windows slot pipe |
+| Whoever can publish a release of a dev package or an action CI uses, or take over the account or repository that does | CI on the bot's pull request before any merge; once merged, the compiler in every test run and the build before a publish, and the actions the release workflow uses |
+| Whoever controls the owner's GitHub account, or can push a branch to this repo | The release workflow: they can stage a version, but cannot make one live without the owner's npm two-factor approval. The GitHub approval guards the token only as far as npm enforces the environment the trusted publisher names, which is unconfirmed (claim R10 of the spec on issue 6); the actor stays "can push a branch" until npm's docs say it is enforced |
+
+## How athanor works
 
 **The setup.** One person, the owner, runs many Claude Code sessions on one
 Windows 11 machine with Docker Desktop, often in clones or worktrees of one
-repo. Each session runs `athanor run` to test its work in a Linux container.
-CI runs athanor on Linux. athanor uses the Docker engine and builder the user
-has configured, on this machine, or on another one when the machine
-configuration allows it (ADR 0012, ADR 0021).
+repo. Each session runs `athanor run` to test its work in a Linux container. CI
+runs athanor on Linux. athanor uses the Docker engine and builder the user has
+configured, on this machine, or on another one when the machine configuration
+allows it (ADR 0012, ADR 0021).
 
 **What athanor does.** It reads the repo configuration (`athanor.json`, or the
-`athanor` key in `package.json`) and an optional machine
-configuration, builds the repo's Dockerfile into an image, takes a snapshot of
-the work with git, holds one of N slot locks, and pipes the snapshot into a
-fresh container that runs the test command. It writes only to its state folder (`~/.athanor`, or `ATHANOR_HOME`), except that a host clean filter can write the repo's git folder (accepted risk 23); with `--output`, it also writes into the new folder the caller names (ADR 0023).
-
-**Who could act against it.**
-
-- **The repo's own code.** The Dockerfile's `RUN` lines run at build time;
-  the test suite runs in the container. athanor is for repos the owner
-  trusts to build.
-- **Another local program** running as any user on the machine, which can
-  connect to or squat on the slot names (accepted risks 2, 3 and 9).
-- **A process that can write the owner's home folder,** which can change the
-  machine configuration or the Docker configuration, as it could the
-  environment.
-- **Whoever runs the Docker engine or builder the user has configured**, when
-  the machine configuration allows a remote one (accepted risk 7).
-- **Other users of a Docker engine shared between machines or people**
-  (accepted risk 8).
-- **Someone on the network path to a remote engine or builder node**
-  (accepted risk 10).
-- **An authenticated network user who can reach the Windows slot pipe**
-  (accepted risk 3).
-- **Whoever can publish a release of a dev package or an action that CI uses,
-  or take over the account or repository that does.** A hijacked release runs
-  in CI on the bot's pull request before any merge, and can set that check's
-  result. It reaches `main`, and the owner's machine through `npm ci`, only
-  through a merge. The compiler is the one dev package that runs: once merged,
-  it runs as the owner in every test run and in the build before a publish
-  (accepted risk 18). These, too, run once merged: the actions the release
-  workflow uses, among them `actions/upload-artifact` and
-  `actions/download-artifact`, and the build on the runner before a staged
-  release (accepted risks 21 and 22).
-- **Whoever controls the owner's GitHub account, or can push a branch to this repo,** can
-  change and start the release workflow; whoever controls the account can
-  also approve its deployment. They can
-  stage a version, but cannot make one live without the owner's npm
-  two-factor approval. Before that approval the owner checks that they
-  started the run, on the commit they merged, and reads the diff since the
-  last release tag. The GitHub approval guards the token only as far as npm
-  enforces the environment the trusted publisher names, which is unconfirmed
-  (claim R10 of the spec on issue 6). The actor stays "can push a branch"
-  until npm's docs say the environment is enforced, or a deliberate run from
-  a job with no environment, or another one, is shown refused.
-
-**Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
-the operating system themselves. A machine already compromised as the owner's
-user (accepted risk 40). The operator of a remote engine or builder is in scope as an actor
-above; the software they run is not.
+`athanor` key in `package.json`) and an optional machine configuration, builds
+the repo's Dockerfile into an image, takes a snapshot of the work with git,
+holds one of N slot locks, and pipes the snapshot into a fresh container that
+runs the test command. It writes only to its state folder (`~/.athanor`, or
+`ATHANOR_HOME`), except that a host clean filter can write the repo's git
+folder; with `--output`, it also writes into the new folder the caller names
+(ADR 0023). Both are covered by the class "What athanor records, shows and
+leaves behind".
 
 ## Boundaries and how each holds
+
+```mermaid
+flowchart LR
+    subgraph Host["Owner's machine (a compromised one is out of reach)"]
+        Repo["Repo and its configuration"]
+        Athanor["athanor (no shell, git and docker by full path)"]
+        State["State folder and slot locks"]
+    end
+    subgraph Engine["Docker engine and builder (a shared or remote one is the operator's)"]
+        Build["Image build (has the network)"]
+        Run["Test container (no network, six capabilities, limits)"]
+    end
+    Repo --> Athanor
+    Athanor --- State
+    Athanor -- "build context" --> Build
+    Build --> Run
+    Athanor -- "snapshot on stdin" --> Run
+    Run -- "output, and --output files" --> Athanor
+```
 
 - **No shell on the host.** Every child process starts from an argument array
   with `shell: false` (ADR 0002). The source check fails the build on any
@@ -77,21 +124,21 @@ above; the software they run is not.
   the container as the same literal arguments (C16).
 - **Nothing from the host reaches the test container** but the snapshot on
   stdin and `ATHANOR_GRACE_LIMIT`: no network for the test run (the image
-  build has it, accepted risk 1), no host folder, no host environment
+  build has it, accepted class "A repo you build"), no host folder, no host environment
   value, no Docker socket, no privileged mode, and only six Linux capabilities: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`, every other one
   dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
   blocks, with empty values, the ten proxy names the Docker CLI fills from the
-  five proxy settings it reads today (accepted risk 11). A value the build
-  writes into the image or its cache is accepted risk 1. With a base, the
+  five proxy settings it reads today (accepted class "A repo you build"). A value the build
+  writes into the image or its cache is accepted class "A repo you build". With a base, the
   snapshot's stream also carries the base's history: the commit, tree and file
   objects from the merge base onward, a list of the commits whose parents were
   left out, two refs and the snapshot's tree id; never a git setting, hook or
-  remote (ADR 0032; accepted risk 39). This, and
+  remote (ADR 0032; accepted class "What athanor records, shows and leaves behind"). This, and
   the limits below, hold only as far as the engine enforces them: on an
   engine the owner runs, they hold; on someone else's engine, the operator
-  decides (accepted risk 7).
-- **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted risk 17). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
+  decides (accepted class "A shared or remote engine, and the network").
+- **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted class "Resource limits"). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
@@ -121,9 +168,9 @@ above; the software they run is not.
   pinned, and the tree's own `text`, `eol`, `ident` and
   `working-tree-encoding` attributes still apply (ADR 0020, C32, G1–G6). The
   git calls that make the snapshot's and the build context's trees still run
-  with the host's git config and environment (accepted risk 23, issue 42).
+  with the host's git config and environment (accepted class "What athanor records, shows and leaves behind", issue 42).
 - **athanor's own git calls never write the repo.** Snapshots use a copy of the index and a
-  per-run object folder (ADR 0007, C21, C30), except as accepted risk 23 says:
+  per-run object folder (ADR 0007, C21, C30), except as accepted class "What athanor records, shows and leaves behind" says:
   a clean filter the host defines, such as Git LFS's, can write the repo's git
   folder (issue 42).
 - **Docker on this machine, unless the machine allows otherwise, and never in
@@ -140,7 +187,7 @@ above; the software they run is not.
   copied from the stopped container, addressed by its ID with the pinned
   Docker environment, into a new folder the caller names. That folder is made
   by athanor. It is owner-only on Linux (mode 0700), and on Windows it
-  inherits its parent folder's access rules (accepted risk 30).
+  inherits its parent folder's access rules (accepted class "What athanor records, shows and leaves behind").
   - Names are checked as text and never resolved, `.git` included.
   - Only regular files and folders are written. Links and devices are skipped.
   - Every create is exclusive.
@@ -165,7 +212,7 @@ above; the software they run is not.
   - Updates come from the update bot after a 7-day wait, except security
     updates. A bot pull request's passing check is not evidence the update is
     safe: the wait and the owner's merge are the controls.
-  - CI holds no secrets. Its token is read-only (accepted risk 19).
+  - CI holds no secrets. Its token is read-only (accepted class "The release and CI supply chain").
   - The first publish is by hand, as before (`docs/releasing.md`).
   - Later versions are staged from the release workflow's `publish` job.
     GitHub issues an identity token there only after the owner approves the
@@ -180,113 +227,60 @@ above; the software they run is not.
     merge (`docs/releasing.md` step 2, recorded in step 9).
   - See ADR 0018, A1 to A6, and ADR 0019.
 
-## Two charts
-
-These draw what the page already says; they add no risk, control or scope.
-The owner asked for them in chat. Numbers are accepted risks. Where a point
-sits is a reading aid for the risk as accepted, not a measurement.
-
-**Residual risk.** Likelihood runs left to right, impact bottom to top, both
-after the controls above.
-
-```mermaid
-quadrantChart
-    title Residual risk of the accepted risks
-    x-axis Unlikely --> Likely
-    y-axis Low impact --> High impact
-    quadrant-1 Watch
-    quadrant-2 Rare but costly
-    quadrant-3 Minor
-    quadrant-4 Common but small
-    "1 build has network": [0.35, 0.75]
-    "7 remote engine operator": [0.15, 0.85]
-    "8 shared engine users": [0.2, 0.7]
-    "18 hijacked compiler": [0.1, 0.9]
-    "40 compromised machine": [0.1, 0.95]
-    "2 slot names open": [0.6, 0.2]
-    "17 no CPU limit": [0.55, 0.3]
-    "25 full path in messages": [0.8, 0.15]
-    "36 raised maxProcesses": [0.2, 0.45]
-    "39 base carries history": [0.5, 0.5]
-```
-
-**Trust boundaries.** What crosses from the owner's machine into the engine
-and back.
-
-```mermaid
-flowchart LR
-    subgraph Host["Owner's machine (accepted risk 40: if compromised, out of reach)"]
-        Repo["Repo and its configuration"]
-        Athanor["athanor (no shell, git and docker by full path)"]
-        State["State folder and slot locks"]
-    end
-    subgraph Engine["Docker engine and builder (accepted risks 7 and 8)"]
-        Build["Image build (has the network)"]
-        Run["Test container (no network, six capabilities, limits)"]
-    end
-    Repo --> Athanor
-    Athanor --- State
-    Athanor -- "build context" --> Build
-    Build --> Run
-    Athanor -- "snapshot on stdin" --> Run
-    Run -- "output, and --output files" --> Athanor
-```
-
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.
-  The slot locks are open to any local program (accepted risks 2, 3 and 9). It
+  The slot locks are open to any local program (accepted class "Other local programs"). It
   relies on the operating system's user separation for the state folder
   (mode 0700 on Linux; on Windows, the home folder's own access rules). The
   `--output` folder is mode 0700 on Linux, and on Windows inherits its parent's
-  rules (accepted risk 30). It relies on whatever access control the configured Docker engine has. Docker Desktop's
+  rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
-  engine, its access control is its operator's (accepted risks 7 and 8). The
+  engine, its access control is its operator's (accepted class "A shared or remote engine, and the network"). The
   release path has its own: npm's trusted-publisher binding to this repo,
   workflow and environment, the `npm` environment's required reviewer, and
   the owner's npm two-factor approval (the supply-chain bullet above;
   ADR 0019). The GitHub release has two tag rulesets on every tag, which
   keep each tag on its commit and let only an admin create one, immutable
   releases, and the owner's read of each release as a draft before it is
-  published (ADR 0031; accepted risk 38).
+  published (ADR 0031; accepted class "The release and CI supply chain").
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
-  (accepted risk 1). With `--untracked`, the untracked files git doesn't
+  (accepted class "A repo you build"). With `--untracked`, the untracked files git doesn't
   ignore go into the container too, so a secret in one the ignore list misses
   goes with them; they never reach the build. With a remote engine or builder, those copies go to that
-  machine when the machine configuration allows it (accepted risk 7), and a
+  machine when the machine configuration allows it (accepted class "A shared or remote engine, and the network"), and a
   remote builder can ask this machine for the
-  owner's registry credentials (accepted risk 7). A file added with `git add -N`
+  owner's registry credentials (accepted class "A shared or remote engine, and the network"). A file added with `git add -N`
   goes where tracked files go. With a base, the commits from the merge base
   onward go into the container too, with every file they hold, deleted ones
   included, and their authors' names, emails and messages, and they go
-  wherever the snapshot goes (accepted risk 39). Copied outputs can hold whatever the tests
+  wherever the snapshot goes (accepted class "What athanor records, shows and leaves behind"). Copied outputs can hold whatever the tests
   wrote, such as a mutation report's copy of the source, and stay in the
-  caller's folder, as plain files (accepted risk 31); athanor never cleans them
+  caller's folder, as plain files (accepted class "What athanor records, shows and leaves behind"); athanor never cleans them
   up. A named command's arguments show in the host's process list and the
-  engine's record of the container (accepted risk 32). The Docker client's proxy
+  engine's record of the container (accepted class "What athanor records, shows and leaves behind"). The Docker client's proxy
   settings can hold a password: the run blocks it (ADR 0016), and the build
-  receives it (accepted risk 1). Plain tcp transport is refused
-  by default (ADR 0013; accepted risk 10 for the opt-out). Test output can hold
+  receives it (accepted class "A repo you build"). Plain tcp transport is refused
+  by default (ADR 0013; accepted class "A shared or remote engine, and the network" for the opt-out). Test output can hold
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
-  publish job's identity token (accepted risk 22), and the owner's npm login
-  around an approval, and around a step 17 unpublish or deprecate (accepted
-  risk 26); see the supply-chain bullet above and ADR 0019. The GitHub
+  publish job's identity token (accepted class "The release and CI supply chain"), and the owner's npm login
+  around an approval, and around a step 17 unpublish or deprecate (accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
   release uses a third, long-lived one: the owner's gh login, kept in the
   system keyring, which can publish releases, create tags, change the tag
   rulesets and immutable releases, push branches, edit workflows and read
-  the repo's private security advisories (accepted risk 18). The owner's
+  the repo's private security advisories (accepted class "The release and CI supply chain"). The owner's
   npm session token sits in the user npm configuration from login to logout,
   unencrypted at file level. It relies on the machine's disk encryption, which
   the owner confirmed is on (2026-10-24), and on npm's two-factor check on
   every write.
 - **Crypto.** SHA-256 keys the image cache and is not a security control,
   except that on a shared engine the tag is the only link between a run and
-  its image (accepted risk 8). Temporary names use Node's crypto random source.
+  its image (accepted class "A shared or remote engine, and the network"). Temporary names use Node's crypto random source.
   athanor encrypts nothing itself; transport to a remote engine or builder is
   ssh or verified TLS unless `allowPlainTcp` is set (ADR 0013, ADR 0021). The
   `--output` folder sits unencrypted on the host's disk, like the state folder.
@@ -297,7 +291,7 @@ flowchart LR
   Image layers, the build cache and a container's writable layer sit
   unencrypted on the engine's or builder's disk: on this machine they rely on
   its disk encryption; on a remote one, which the machine configuration must
-  allow, on that machine's owner (accepted risk 7). `prune` does not clear Docker's build
+  allow, on that machine's owner (accepted class "A shared or remote engine, and the network"). `prune` does not clear Docker's build
   cache; the README names the commands that do. Each released version's
   provenance is signed by npm through Sigstore (the supply-chain bullet above;
   ADR 0019).
@@ -313,7 +307,7 @@ flowchart LR
   again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
   git settings, attributes, templates and `GIT_*` variables inherited from the
   host are kept out of the archive step (ADR 0020); the git calls that record
-  the work still use them (accepted risk 23).
+  the work still use them (accepted class "What athanor records, shows and leaves behind").
   A base name is checked before git sees it (no leading `-`, no revision
   syntax, no control or format character), then resolved, with the ambiguity
   check pinned on, to one branch, remote-tracking branch or tag (a command's
@@ -328,469 +322,235 @@ flowchart LR
   `check`, the staged tarball the owner downloads, the registry's manifest,
   which is checked once the version is live, and the
   registry's answer to the version check. They are covered by the owner's
-  look before approval (`docs/releasing.md`), accepted risks 21 and 22, and
+  look before approval (`docs/releasing.md`), accepted class "The release and CI supply chain", and
   ADR 0019.
 - **Data migrations.** None. The state folder holds only marks, temporary
   indexes and per-run folders (with a base, a run's pack of the base's
   history among them), which are safe to delete.
 
-## Accepted risks
+## Accepted threat classes
 
-The owner decided each of these on 2026-10-20. Each keeps the number it had as a
-candidate, so other work can point at it.
+The owner accepts each class below. A finding that fits one needs nothing,
+though a session may still fix it in passing if it's cheap. A finding that fits
+none comes to the owner as a new class, and only a merge the owner confirms
+adds or widens one. A class says what it covers, never the steps. A class a
+user has to act on or know about has a line in the README's "What athanor
+doesn't protect you from"; the release and CI class stays here alone.
 
-Who each concerns. A user-facing risk is one a user has to act on or know
-about, and has a line in the README's "What athanor doesn't protect you
-from"; a maintainer-only risk stays here alone.
+- **A repo you build.** The image build runs the repo's own Dockerfile with
+  the network, so a repo from someone else can run code that reaches the
+  internet, and a `FROM` line can pull the owner's private images with the
+  owner's registry login and send their content out. The build also gets the
+  Docker client's proxy settings as build arguments, and a proxy setting can
+  hold a password: a build step can send it out or print it into the build
+  output, which reaches the caller and, from an agent session, the model
+  provider; a Dockerfile can leave it in the image's files, metadata or
+  history, or in the build cache, which `prune` does not clear, where the test
+  run, the engine's operator and a shared engine's other users can read it.
+  Files added with `git add -N` under `context` reach the build too. A proxy
+  setting that a later Docker client adds reaches the container until
+  athanor's list of ten blocked names is updated. The test runs as the image's
+  user, root unless the Dockerfile names another, with six Linux capabilities
+  that a flaw in Docker or the kernel could use to read or change what root
+  can reach on the engine's machine, and the run limit is the owner's own
+  setting. What a copied file holds is the test code's choice: athanor checks
+  names and types, never content, so a report lands as written and opening it,
+  or a viewer previewing it, does what it holds; copied files carry no
+  Mark-of-the-Web; and what the test read inside the sealed container leaves
+  this way. athanor skips the file names Windows acts on when it shows a
+  folder (`desktop.ini`, `.lnk`, `.url`, `.scf`, `.library-ms`,
+  `.searchConnector-ms`, theme files), and refuses a folder laid out as a bare
+  git repository it recognises; a spelling or layout it does not know is
+  written, so the README advises `safe.bareRepository=explicit`. Git's error
+  text is printed as git wrote it, so a name in the repo can carry terminal
+  escape codes to the caller or session. Accepted because athanor is for repos
+  the owner trusts to build, most Dockerfiles need the network, blocking the
+  proxy would mean athanor choosing the build's Docker configuration (ADR
+  0012), the other five capabilities are what a root-run test can plausibly
+  need and `KILL` is what the in-container time limit needs, and a host run of
+  the same tool writes the same files and prints the same text.
 
-| Who | Accepted risks |
-| --- | --- |
-| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36, 39, 40 |
-| Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34, 38 |
+- **Other local programs.** Any local program can take the slot names to
+  block runs, or answer `status` with false holder details, and can read the
+  details a holder reports (pid, start time, repo folder name, limit); on
+  Windows possibly an authenticated network user can too, since the pipe does
+  not refuse remote clients. A program that owns a slot name and holds the
+  Windows privilege to impersonate clients can act with the owner's identity
+  for that connection. A program that can write the repo or the folders around
+  it can swap a folder under an in-repo link to a configuration file while a
+  run reads it, give an outside file its only name in the repo for the moment
+  of the read, or mount a file over a configuration name on Linux (root), so
+  that at most a key name or path value from it appears in a message; a
+  dangling link named `athanor.json` counts as absent, so the `athanor` key in
+  `package.json` is used with no conflict message; and on Windows a link at the
+  repo root to a network location is followed before athanor tests whether it
+  is inside the repo, so the machine can start a sign-in there, with no content
+  read. An endpoint athanor counts as local, a `unix://` socket, the local pipe
+  or a loopback port, can lead elsewhere: forwarded to another machine, or
+  held by another local program while the engine does not (Docker Desktop
+  stopped, say); `localhost` is trusted as loopback. The agent test hook (ADR
+  0024) is a nudge, not a control: it fails open on any error, stays silent
+  when it cannot find athanor, and reads only a command's plain forms. Accepted
+  because limiting the Windows pipe needs a native package, which "no
+  dependencies" rules out; a process with the impersonation privilege can
+  usually reach SYSTEM anyway; each file path needs write access the owner's
+  own programs already have, or mount privilege, with a gain limited to what a
+  message shows; athanor cannot tell where a local address leads without
+  trusting the machine, and Docker offers no check of the engine's identity;
+  and the hook exists to make a skipped rule visible.
 
-Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
-the lead session's chat, relayed by head-chef-field-test.
+- **A compromised machine or sandbox.** Once a program, process or agent on
+  the machine or in the sandbox works against you, it can plant programs a
+  bare command name runs, change files a session or a hook reads, and act as a
+  session would; athanor does not defend against it. That covers local prompt
+  injection and planted files: a rogue agent in the system can change what a
+  session reads and runs, and athanor cannot tell it from the owner. It adds
+  to the actors this page lists and to the machine "already compromised as the
+  owner's user" under Out of scope. It takes over none of the paths the class
+  "Other local programs" names, and no control named here is removed or eased:
+  the argument-array starts, the full-path git and docker lookup, the clean
+  archive environment and the container's limits keep holding against what they
+  hold against. Accepted because a program that already acts as the owner or as
+  a session reaches everything athanor reads and starts, so no control inside
+  athanor can stop it.
 
-1. **The image build has the network.** The image build runs the repo's own
-   Dockerfile with network access, so a repo from someone else can run code
-   that reaches the internet, and a `FROM` line can pull the owner's private
-   images with the owner's registry login and send their content out.
-   Accepted because athanor is for repos the owner trusts to build, and most
-   Dockerfiles need the network to install packages.
-   Accepted 2026-10-20. From: Spec revision 5, S9 and T4; the security review of the first build (adversarial-lens F8, data-lens F6). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
+- **A shared or remote engine, and the network.** With `"allowRemoteDocker":
+  true` in the machine configuration, athanor uses the engine and builder the
+  user has configured, including one on another machine or a cloud builder.
+  Whoever runs it receives the build context and the snapshot, uncommitted
+  changes, files added with `git add -N` and any committed secret included,
+  and keeps copies in its image layers and build cache. It decides the result
+  athanor reports, whether "no network" and the limits are enforced, the text
+  streamed back into the session and the files a copy writes to the host; as a
+  builder it can ask this machine for the owner's registry credentials; and
+  before athanor decides on a builder, `buildx inspect` contacts its nodes, so
+  a remote builder host sees the connection and, for an ssh node, the owner's
+  login, but no repo data. Other users of a shared engine can put their own
+  image under the tag athanor runs, read the snapshot in a running container
+  and the build context in an image, reach a stopped container for the length
+  of a copy, and remove containers, which also breaks the run limit across
+  machines. With `"allowPlainTcp": true`, the snapshot, the build context, the
+  build arguments, the test output and copied files cross the network
+  unencrypted, readable and changeable by anyone on the path; plain tcp to
+  another host also needs `allowRemoteDocker`, and the opt-in covers builder
+  nodes and builders whose transport athanor could not read (ADR 0021).
+  Accepted because the owner chose to let athanor run against any Docker the
+  user sets up and the user chooses whom to trust with that; the README and
+  SECURITY.md say not to share an engine with people you don't trust; and the
+  opt-ins can be set only in the machine configuration, never by a repo.
 
-   The build also gets the Docker client's proxy settings as build arguments,
-   and a proxy setting can hold a password.
+- **Resource limits.** A test that kills the in-container timer, together with
+  a hard-killed caller, leaves one container running until its slot is next
+  used, when the next run removes it; until then it keeps the run's snapshot,
+  uncommitted files included. With no CPU limit configured (`maxCpus` unset), a
+  run, or such a leftover container, can keep every CPU the engine has busy,
+  which on Docker Desktop is every core of the VM, slowing the host and the
+  owner's other runs; the run's time limit ends it. A machine that raises
+  `maxProcesses` lets a repo's test code hold that many processes in each
+  run, all from the engine's one process table; several runs near a high
+  ceiling can fill it, and the engine and its other containers then cannot
+  start processes (on Docker Desktop that may reach other programs sharing the
+  VM; on a Linux host the table is the host's own). While it is full,
+  athanor's stop at the time limit may fail to start, so a test that has ended
+  the in-container timer can outlast the limit, and removing a leftover
+  container can fail too, so recovery may need an engine restart (on Linux,
+  the host's own recovery). A ceiling near the top (4194304) is in effect no
+  limit. Memory, swap and the default of 1024 processes stay bounded. Accepted
+  because the next run on the slot removes a leftover container, the owner
+  chose speed by default and `maxCpus` bounds it, the repo is code the owner
+  trusts to build, raising the ceiling is the machine owner's act, and the
+  README advises keeping `maxProcesses` times the largest run limit, plus the
+  engine's other containers, well below the engine's process limit.
 
-   - A build step can read it and send it out over the build's network.
-   - It can print it into the build output, which reaches the caller and, from
-     an agent session, the session's model provider.
-   - A Dockerfile that writes it into the image, or only refers to it, can
-     leave it in the image's files, metadata or history, or in the build cache.
-     There it stays until removed, and `prune` does not clear the build cache.
-     The test run, the engine's operator and a shared engine's other users can
-     read it there (accepted risks 7 and 8).
-   - The configured builder receives it too (accepted risk 7).
+- **What athanor records, shows and leaves behind.** The git calls that make
+  the snapshot and the build context (`stash create`, `add`, `hash-object`)
+  run with the host's git config and environment, so a clean filter the repo's
+  attributes name runs on the host, its output reaches the container and the
+  build, and Git LFS's filter writes the repo's `.git/lfs` folder, where the
+  copy stays, including, with `--untracked`, files the owner has not added
+  (issue 42). Messages that name the machine configuration file, a path in the
+  state folder, or the repo carry the full path, which holds the account's
+  home-folder name, to whatever reads athanor's output, such as an agent
+  session and its model provider; an unexpected file-system error while
+  copying, such as a full disk, can end athanor with a stack trace showing
+  local paths, though the copy is still removed and the slot released. The
+  `--output` folder gets no access rules from athanor and, on Windows,
+  inherits its parent's: under a parent other accounts can read, they can read
+  the copied files, and under a parent they can change, they can swap a folder
+  inside it for a link while the copy runs, so a write or cleanup lands
+  elsewhere the owner can write, on any platform without a sticky bit; every
+  path is built from the parent's real path recorded at the start, which
+  narrows the swap of the parent but not of a folder inside. Copied outputs sit
+  as plain files with nothing encrypting them, and can hold a copy of the
+  source or anything the test read; the README advises a parent under the user
+  profile. A named command's arguments show in the host's process list, in the
+  engine's record of the container until it is removed, and to a remote
+  engine's operator. A named base carries every commit from the merge base
+  onward, on the base's side and the branch's, into the snapshot: its files, a
+  file since deleted (a secret, say) among them, and its metadata (author and
+  committer names, emails, dates, messages with trailers, signatures, a merged
+  signed tag's tagger and message). It lands in the container's repository,
+  where the test code can read it and the output can carry it out, and it goes
+  wherever the snapshot goes; a run killed hard can leave its pack of that
+  history, unencrypted, in the state folder until the stale-run sweep a day
+  later. Accepted because the owner's own `git add` runs the same filters and a
+  fix changes what the snapshot holds (issue 42); the names are the owner's
+  own, going to the owner's own session, and naming the file to fix is what
+  makes a message actionable; the rare failure is not worth wrapping each file
+  call in code; the owner chose the folder's place and a host run's reports
+  land under the same rules; the repo's working tree sits unencrypted on the
+  same disk; the README says not to pass secrets as arguments; and the history
+  is the repo's own, a base is named only for checks that need it, and the test
+  container has no network.
 
-   Accepted because the build needs the proxy behind one, and blocking it would
-   mean athanor choosing the build's Docker configuration, against ADR 0012.
-   Extended 2026-10-21. From: issue 23 (a data-lens finding in the Test review of #13; the Design reviews of this spec). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
-   Extended 2026-10-24. Files added with `git add -N` under `context` reach the build too. From: the spec on issue 46, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-2. **The slot names are open to local programs.** Any local program can take
-   the slot names to block runs, or answer `status` with false holder
-   details. Accepted because limiting the Windows pipe to the owner's account
-   needs a native package, which "no dependencies" rules out.
-   Accepted 2026-10-20. From: The spec review (adversarial-lens: the slot locks trust any local process); the security review of the first build. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-3. **Holder details are readable by local programs, and possibly over the
-   network.** The pid, start time, repo folder name and limit a holder reports
-   can be read by any local program, and, on Windows, possibly by an
-   authenticated network user, since the pipe does not refuse remote clients
-   (the probe's "another machine" criterion was not tried). Accepted because
-   the details are low in value and the pipe's access rules need a native
-   package.
-   Accepted 2026-10-20. From: The spec review (adversarial-lens and data-lens: holder details disclosed); the security review of the first build (adversarial-lens F5, data-lens F7). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-4. **A hostile test can outlive a hard-killed caller.** A test that kills the
-   in-container timer, together with a hard-killed caller, leaves one
-   container running until its slot is next used. Accepted because the next
-   run on the slot removes it. With no CPU limit configured, the container left running can also hold every CPU the engine has (accepted risk 17). With a raised `maxProcesses`, it can also hold up to that many processes (accepted risk 36); while the engine's process table is full, its removal can fail too, and recovery may need an engine restart (on a Linux host, the host's own recovery). Until it is removed, the container keeps the run's snapshot, uncommitted files included.
-   Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-   The `maxProcesses` clause added 2026-10-25. From: the Design review of the spec on issue 54, revision 1 (adversarial-lens, accepted risk 4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-   The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-   The clause's "while the engine's process table is full" reworded 2026-10-25, restating the owner's q11 words. From: the closing read of issue 54 on 393dc0d (adversarial-lens A4). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-5. **A root test keeps six Linux capabilities, and the run limit has no upper
-   bound.** The test runs as the image's user, root unless the Dockerfile names
-   another. A root test holds `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`,
-   `SETUID` and `SETGID`, which a flaw in Docker or the kernel that lets a
-   process out of the container could use to read or change what root can reach
-   on the engine's machine, such as other runs' snapshots and image layers.
-   Every other capability is dropped by an allow-list, so one a later Docker
-   adds does not reach the container (ADR 0016). Accepted because the container
-   also has no network, no host folders and `no-new-privileges`, the other five are
-   what a root-run test can plausibly need and `KILL` is what the in-container
-   time limit needs for a test that switches user, and the run limit is the
-   owner's own setting.
-   Accepted 2026-10-20. From: Spec revision 5, S9. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-   Narrowed 2026-10-21. From: issue 4, spec revision 4; the security review of revision 3 (adversarial-lens F1, data-lens F1). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-6. **The folder lock's shared count.** This candidate does not arise: the
-   probe selected the OS lock, and the folder lock was not built. It is kept
-   here so the owner can see it was considered. The owner confirmed on
-   2026-10-20 that it does not arise.
-7. **The configured engine or builder's operator has full control of a run.**
-   With `"allowRemoteDocker": true` in the machine configuration, athanor uses
-   the Docker engine and builder the user has configured,
-   including one on another machine or a cloud builder. Whoever runs it
-   receives the build context and the snapshot, uncommitted changes and any
-   committed secret included, and keeps copies in its image layers and build
-   cache. It also decides the result athanor reports, whether "no network" and
-   the limits are enforced, and the text streamed back into the session; and,
-   as a builder, it can ask this machine for the owner's registry credentials.
-   Accepted because the owner chose to let athanor run against any Docker the
-   user sets up, and the user chooses whom to trust with that. Before athanor
-   decides on a builder, with or without the opt-out, `buildx inspect`
-   contacts the configured builder's nodes, so a remote builder host sees the
-   connection and, for an ssh node, the owner's login, but no repo data.
-   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F1, data-lens F2), after the owner removed C29. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-   Narrowed 2026-10-24. From: the spec on issue 33, S6, and the Design review of revision 2 (data-lens F5). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-   Extended 2026-10-24. A remote engine's operator also receives files added with `git add -N`, and chooses the files a copy writes to the host, not only the text streamed back. From: the spec on issue 46, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-8. **A shared engine's other users can read and change runs.** The slot lock
-   is per machine, but the container names `athanor-slot-<n>`, the images and
-   their tags are per engine. Anyone else who can use the engine can put their
-   own image under the tag athanor runs, read the snapshot in a running
-   container and the build context in an image, and remove containers, which
-   also breaks the run limit across machines. Accepted because the README and
-   SECURITY.md say not to share an engine with people you don't trust; this
-   is decided under the security bar, not the Hardening budget.
-   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F3, data-lens F3). How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-   Extended 2026-10-24. A shared engine's other users can reach the stopped container for the length of a copy, and through a hard kill until the slot's next run. From: the spec on issue 46, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-9. **A squatter on a slot name can impersonate the owner on Windows.** Every
-   run connects as a client to the other slot names, and `status` does too. A
-   local program that owns one of those names and holds the Windows privilege
-   to impersonate clients can act with the owner's identity for that
-   connection. Accepted because a process with that privilege can usually
-   reach SYSTEM by other means, so the gain is marginal, and the fix would drop
-   a spec'd warning.
-   Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F4); the owner's q10 A. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-10. **Plain tcp, when the owner opts in.** With `"allowPlainTcp": true` in the
-    machine configuration, the snapshot, the build context, the build arguments and the test output
-    cross the network unencrypted, readable and changeable by anyone on the
-    path. Accepted because the opt-out is for networks the owner trusts, and
-    only the machine configuration can set it. Plain tcp to another host,
-    engine or builder node, now needs `allowRemoteDocker` as well, and the
-    opt-in covers builder nodes and builders whose transport athanor could not
-    read (ADR 0021).
-    Accepted 2026-10-20. From: The security review of the first build (adversarial-lens F2, data-lens F1); the owner's q8 A2. How the word arrived: the owner, in chat with the lead session, relayed to the build session.
-    Extended 2026-10-24. From: the spec on issue 33, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    Extended 2026-10-24. Under `allowPlainTcp`, copied files cross the network unencrypted. From: the spec on issue 46, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-11. **A proxy setting a later Docker client adds.** athanor blanks the ten
-    proxy names the Docker client fills from the five proxy settings it reads
-    today (ADR 0016). A setting that a later client adds, beyond those five,
-    reaches the container until athanor's list is updated, and P1 cannot see
-    it. Accepted because a guard at run time would mean either reading the
-    client configuration, against ADR 0012, or blanking names in the boot
-    script, which is fragile and leaves the engine's copy in place. A Docker
-    release that adds a proxy setting is a reason to update the list.
-    Accepted 2026-10-21. From: issue 23, the Design review of the spec (adversarial-lens, the fixed list of names; data-lens, P1's reach). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
-12. **A configuration-file link that Windows follows to a network location.** On
-    Windows, a link at the repo root named `athanor.json` or `package.json`
-    that leads to a network location is followed by the path resolution before
-    athanor tests whether it is inside the repo, so the machine can start a
-    sign-in to that location. No content is read. Accepted because it needs a
-    Windows checkout with real links turned on and a repo from someone who
-    wants this, and `package.json` already had the same path before the
-    `athanor.json` change.
-    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, the Windows network location at the repo root; data-lens). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-13. **A folder swapped under an in-repo link to a configuration file.** When
-    `athanor.json` or `package.json` is a link to a file in a subfolder of the
-    repo, a program that can write the repo while athanor runs can swap that
-    subfolder for a link out between the path check and the open, and an outside
-    file is read as configuration. At most a key name or a path value from it
-    appears in a message. Accepted because it needs write access to the repo
-    during the run, which the owner's own programs already have, and a fix
-    would either refuse links at the repo root or work on Linux only.
-    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a folder swapped on the path of an in-repo link). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-14. **A dangling link named `athanor.json` counts as absent.** A link named
-    `athanor.json` that points nowhere is treated as not there, so an
-    `athanor` key in `package.json` is used with no conflict message.
-    Accepted because the spec defines "exists" as what the file system call
-    sees, and anyone who can plant the link can already edit the repo.
-    Accepted 2026-10-21. From: issue 7, the first-round review of #30 (unstated-lens, a broken link read as absent). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-15. **A file moved into the repo for the moment of the read.** A program that
-    can write both the repo root and the folder of an outside file can give that
-    file its only name in the repo for the moment athanor reads it, and no
-    point-in-time check can tell it from a real configuration file. Accepted
-    because the attacker needs write access to both places, and the gain is
-    limited to what a message shows.
-    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file whose only name is placed in the repo for the read). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-16. **A file mounted over a configuration file name on Linux.** A file mounted
-    over `athanor.json` or `package.json` passes every check, because the
-    path, the link count and the opened file all agree. Accepted because it
-    needs mount privilege, which is root, and finding it would mean parsing the
-    mount table on Linux only.
-    Accepted 2026-10-21. From: issue 7, the Test review of #30 (adversarial-lens, a file mounted over the configuration name). How the word arrived: the owner in chat to the lead session on 2026-10-21, relayed.
-17. **A run with no CPU limit, or with a limit the repo chose, can use every CPU the engine has.** When the machine configuration sets no `maxCpus`, the repo's test code can keep every core of the engine busy, which on Docker Desktop is every core the VM has, slowing the host and the owner's other runs. The run's time limit ends it, except in accepted risk 4's case, where it lasts until the slot is next used. Memory, swap and processes stay bounded (processes by `maxProcesses`, accepted risk 36). Accepted because the owner chose speed by default, the repo is code the owner trusts to build, and a machine that wants a bound sets `maxCpus`.
-    Accepted 2026-10-22. From: the spec on issue 36, revisions 1–4 (S6; the decisions in S7, items 3 and 6), and the Design review of revision 2 (adversarial-lens F1–F5, data-lens F1–F2). How the word arrived: the owner, in chat with the session that wrote the spec.
-18. **A merged hijacked compiler runs with the owner's rights.** The TypeScript
-    compiler is the one dev package that runs. A hijacked release that stays
-    hidden past the update bot's wait runs as the owner once the owner merges
-    it: in every test run, and in the build before a publish. It can read what
-    the owner's account can read, and shape the published code. A rebuild uses
-    the same compiler, so it cannot see the change. Accepted because no cheap
-    independent check of the compiler's output exists. The wait, the
-    registry's signatures and the owner's merge narrow the window.
-    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-    The same code can use the owner's gh login, which stays in the system
-    keyring between releases. With it, the code can publish a GitHub release
-    (a permanent Zenodo record), create tags, edit or delete the tag
-    rulesets, and turn immutable releases off. Its `repo` and `workflow`
-    scopes also let the code push branches, edit workflows and read the
-    repo's private security advisories.
-    Widened 2026-10-25. From: the Design review of the spec on issue 63 (adversarial-lens F6 and F2, data-lens D2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-    The scopes sentence added 2026-10-25. From: the Test review of issue 63, round 1 (data-lens D2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-19. **Code in the CI job can read the job's token.** A dev package, an action
-    or the test code running in CI can read the job's token until the job ends.
-    That includes code on a bot's pull request before merge. Accepted because
-    the token is read-only, the repo is public, and CI holds no secrets. A
-    workflow that holds a secret, such as issue 6's, needs its own controls.
-    The release workflow keeps its OIDC permission in the `publish` job,
-    which runs no repo code and installs no npm package. Its code is two
-    pinned actions and the Node and npm that setup-node provides (ADR 0019).
-    The release's `check` job holds the same kind of read-only token, with
-    `actions: read` added. This risk's reason, that CI holds no secrets,
-    doesn't cover the artifact that job hands on to be staged: see accepted
-    risk 21.
-    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (data-lens F9). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM3); the Design review of spec revision 1 (data-lens F7, adversarial-lens F8). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-20. **A hijacked action could leave cache entries for a later workflow.** An
-    action's code, run on a push to `main`, can write Actions cache entries,
-    and a later workflow that restores the cache would read them. Accepted
-    because nothing restores a cache today. A workflow that restores one is a
-    reason to revisit. The release workflow restores no
-    cache. The workflow check fails a workflow that uses the cache actions or
-    setup-node's cache in the block style it reads, and refuses a flow-style
-    `with:` on those actions.
-    Accepted 2026-10-22. From: issue 34, the Design review of spec revision 1 (adversarial-lens T4). How the word arrived: the owner in chat with the planning session on 2026-10-22.
-    Extended 2026-10-24. From: issue 6, spec revision 2 (S10, TM4); the Design review of spec revision 1 (adversarial-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-    Edited 2026-10-24, to drop "such as issue 6's" from the revisit sentence. From: issue 6, the Test review of `9a1b0ba` (reader-lens F7). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-21. **Code in the release's check job shapes the tarball.** A dev package,
-    the compiler, the test code, an action, or a process an earlier step left
-    running in `check` can change any file that is packed, and `publish`
-    stages exactly that. Matching the check job's integrity proves only that
-    `publish` staged what `check` made. The control is the owner's comparison
-    of every file of the staged package with a local pack of the same commit,
-    made before the login, which catches every change made only on the
-    runner. A hijacked compiler shapes both packs (accepted risk 18). Accepted
-    because the staged version goes live only after that comparison and the
-    owner's npm two-factor approval.
-    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM5); the Design review of spec revision 1 (adversarial-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-22. **An action in the release's publish job holds the identity token.**
-    `actions/download-artifact` or `actions/setup-node`, hijacked, or the npm
-    it provides, can ask for the token. With it they can stage another
-    tarball or extra versions, use up the 2-day validation of a new trusted
-    publisher, or get a Sigstore signature in this workflow's name for some
-    other file. The controls are the SHA pins and the pinned Node, each at
-    least 7 days old; stage-only publishing; the owner's look, which expects
-    exactly one staged entry whose integrity matches the check job's; and the
-    owner's 2FA approval. Accepted because nothing goes live without that
-    look and approval, apart from the registry's manifest, which step 17
-    checks once live, and a stray signature names this workflow's run in
-    the public log.
-    Accepted 2026-10-24. From: issue 6, spec revision 2 (S10, TM6); the Design review of spec revision 1 (adversarial-lens F3, data-lens F2). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-    npm 11.19.1's `npm stage view` shows no manifest, so the registry's
-    manifest, which a publish sends apart from the tarball, is first seen in
-    step 17's `npm view`, after the version is live. Whoever installs before
-    that check gets that manifest's dependencies. A bad one is unpublished
-    while npm's policy allows, else deprecated, and a deprecated version
-    still installs. This risk stays maintainer-only: a user has nothing to
-    act on, and the response is the maintainer's.
-    Widened 2026-10-25. From: issue 53; the Design review of the spec on issue 63 (adversarial-lens F2, data-lens D5). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-    The reason's "apart from the registry's manifest" clause added 2026-10-25. From: the Test review of issue 63, round 1 (adversarial-lens F2). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-23. **The git calls that record the work use the host's git config.** The
-    snapshot's and the build context's git calls (`stash create`, `add`,
-    `hash-object`) run with the host's git config and environment. A clean
-    filter that the repo's attributes name runs on the host while they run;
-    its output reaches the container and the build; and Git LFS's clean filter
-    writes the repo's `.git/lfs` folder, where the copy stays after the run,
-    including, with `--untracked`, untracked files the owner has not added.
-    Accepted because the owner's own `git add` in the repo runs the same
-    filters, and a fix changes what the snapshot holds (issue 42).
-    Accepted 2026-10-24. From: issue 20, the Design review of spec revision 1 (executability-lens, the deferral of the snapshot side; data-lens F3; adversarial-lens F3). How the word arrived: the owner, in chat with the lead session, relayed to the planning session.
-    Extended 2026-10-24. From: issue 20, the Test review (data-lens TM5), the owner's H1. How the word arrived: the owner, in the lead's chat, relayed by head-chef-field-test.
-    Extended 2026-10-24. The snapshot's `git add -u` runs the host's clean filters on files added with `git add -N` in the default run, and Git LFS keeps its copy in the repo's git folder. From: the spec on issue 46, S6. How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-24. **A local address that leads elsewhere.** An endpoint athanor counts as
-    local, a `unix://` socket, the local pipe or a loopback port, can lead
-    elsewhere: forwarded to another machine (an ssh tunnel, a socket proxy, a
-    port forward), or held by another local program, running as any user,
-    that owns that loopback port, socket path or pipe name while the engine
-    does not (for example while Docker Desktop is stopped). The name
-    `localhost` is trusted as loopback, so a resolver that answers it with
-    another address leads elsewhere too. The refusal does not stop it. Setting up a forward takes the owner's own
-    configuration or a process that can already write the owner's home
-    folder; holding a port or socket takes another local program, which this
-    page already lists as an attacker. Accepted because athanor cannot tell
-    where a local address leads without trusting the machine it runs on, and
-    Docker offers no check of the engine's identity to build on.
-    Accepted 2026-10-24. From: the spec on issue 33, S6, widened by the Design review of revision 1 (adversarial-lens F8) and the Test review of PR 44 (adversarial-lens F4, F6). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-25. **A message names the machine file's, the state folder's or the repo's full path.** Every message that
-    names the machine configuration file names it by its full path, which holds
-    the account's home-folder name: its JSON and shape errors, its unknown
-    keys, its value checks, its ceilings, and the `allowRemoteDocker` and
-    `allowPlainTcp` refusals. That message goes to whatever reads athanor's
-    output, such as an agent session and its model provider. Accepted because it is the owner's own account name, going
-    to the owner's own session, and naming the file to fix is what makes the
-    message actionable.
-    Accepted 2026-10-24. From: the Design review of the spec on issue 33, revision 1 (data-lens T1). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    Widened 2026-10-25 to every message that names the file. From: the Design review of the spec on issue 54 (data-lens, machine-file messages carry the account name). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    Widened 2026-10-27 to messages that name a path in the state folder, such as a git error from a named base's calls that names the run's scratch folder. From: the Design review of the spec on issue 70, round 2 (data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
-    Widened 2026-10-27 to a git error from a named base's calls that names the repo's own path. From: the closing read of issue 70 (data-lens D2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef (q26).
-26. **A program running as the owner can read the npm session token.** From
-    `npm login` to `npm logout`, around a release's approval, and around a
-    step 17 unpublish or deprecate, the session
-    token sits in the owner's user npm configuration, unencrypted at file
-    level. Any program running as the owner can read it then, including one
-    left behind by the local build just before. Accepted because npm requires
-    two-factor on every write, and the window lasts only from login to
-    logout.
-    Accepted 2026-10-24. From: issue 6, the follow-up Test review of `9fcdfcd` (data-lens F1). How the word arrived: the owner in chat with the lead session on 2026-10-24, relayed by head-chef-field-test.
-    The step 17 unpublish or deprecate window added 2026-10-25. From: the Test review of issue 63, round 1 (data-lens D1). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-28. **A copied file's content is the test code's choice.** athanor checks
-    names and types, never content.
-    - A report written by test code lands on the host as written. Opening it,
-      or a viewer previewing it, does whatever it holds, as a report from a
-      host run would.
-    - Copied files carry no Mark-of-the-Web, so Windows treats them as local.
-    - What the test read inside the sealed container leaves it this way.
-    - Files Windows acts on when it shows a folder, such as `desktop.ini`,
-      `.lnk`, `.url`, `.scf`, `.library-ms`, `.searchConnector-ms` and Windows
-      theme files, can reach out to a place a file names and sign in there,
-      sending the owner's account name and a response derived from the owner's
-      password, when the folder is shown, previewed or thumbnailed. athanor
-      skips the file names it knows and counts them in `skipped`; a spelling
-      or a type it does not know is written like any other file.
-    - Ordinary files can be laid out as a bare git repository, which git run
-      inside the folder can treat as a repository. athanor refuses a folder
-      holding `HEAD` with `objects`, `refs` or `commondir`; a layout it does
-      not recognise is written, so the README advises
-      `safe.bareRepository=explicit`.
+- **The release and CI supply chain.** A hijacked release of a dev package or
+  an action that CI uses, or a taken-over account or repository, runs in CI on
+  the bot's pull request before any merge, with the job's read-only token, and
+  can set that check's result; CI holds no secrets. Once merged, the
+  TypeScript compiler, the one dev package that runs, runs as the owner in
+  every test run and in the build before a publish: it can read what the owner's
+  account can read, shape the published code, and use the owner's `gh` login,
+  kept in the system keyring between releases, with which it can publish a
+  GitHub release (a permanent Zenodo record), create tags, edit or delete the
+  tag rulesets, turn immutable releases off, push branches, edit workflows and
+  read the repo's private security advisories; a rebuild uses the same
+  compiler, so it cannot see the change. A hijacked action run on a push to
+  `main` can write Actions cache entries that a later workflow restoring the
+  cache would read; nothing restores a cache today, and the workflow check
+  fails one that does. Code in the release's `check` job (a dev package, the
+  compiler, the test code, an action, or a process an earlier step left
+  running) can change any file that is packed, and `publish` stages exactly
+  that; the owner's comparison of every staged file with a local pack of the
+  same commit, before the login, catches every change made only on the runner.
+  An action in the `publish` job (`actions/download-artifact`,
+  `actions/setup-node`, or the npm it provides) can ask for the identity token,
+  and with it stage another tarball or extra versions, use up the 2-day
+  validation of a new trusted publisher, or get a Sigstore signature in this
+  workflow's name for some other file. The registry's manifest, which a publish
+  sends apart from the tarball, is first seen in step 17's `npm view`, after
+  the version is live, so whoever installs before then gets that manifest's
+  dependencies; a bad one is unpublished while npm's policy allows, else
+  deprecated, and a deprecated version still installs. From `npm login` to
+  `npm logout`, around an approval and around a step 17 unpublish or
+  deprecate, the npm session token sits in the user npm configuration
+  unencrypted at file level, readable by any program running as the owner,
+  including one left behind by the local build. Whoever can write to the repo,
+  or act as the owner's account, can publish a GitHub release on any tag
+  already pushed, and Zenodo then archives that tag's tree for good and mints a
+  DOI; the tag rulesets keep each tag on its commit and let only an admin
+  create one, but no repository setting limits who publishes a release.
+  Accepted because the wait before the update bot's pull requests, the
+  registry's signatures, the SHA pins, the owner's merge, stage-only
+  publishing, the owner's look at the staged version and the owner's npm
+  two-factor approval narrow every window, nothing goes live without that look
+  and approval, no cheap independent check of the compiler's output exists,
+  npm requires two-factor on every write, and no other collaborator or deploy
+  key can write to the repo; the owner makes each release by hand, as a draft
+  read before it is published (ADR 0019, ADR 0031).
 
-    Accepted because the repo is code the owner trusts to build, and a host run
-    of the same tool writes the same files.
-    Accepted 2026-10-24. From: the spec on issue 46, S6 (revision 4) and the Design reviews of its revisions (adversarial-lens, data-lens). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    Revised 2026-10-24. The act-on-view bullet now says athanor skips those files always, and the bare-repository bullet is new. From: the Test review of issue 46 (data-lens F2, adversarial-lens F2); the owner's q2 (a) and q3 (c). How the word arrived: the owner's picks in the lead session's chat, relayed by head-chef-field-test. The owner confirmed the wording of these two bullets on 2026-10-24, relayed by head-chef-field-test.
-29. **The agent test hook is a nudge, not a control.** The hook in
-    `.claude/settings.json` (ADR 0024) refuses an agent session's host run of
-    the fast tier while athanor is installed, but it fails open on any error,
-    stays silent when it cannot find athanor, and reads only the command's
-    plain forms: a run through another shell's command string, or from inside
-    `test/`, gets past it. Accepted because it exists to make a skipped rule
-    visible, the tests are the repo's own code, and the session names any
-    host run in its report.
-    Accepted 2026-10-24. From: the athanor-hook QA review of PR 50 (behaviour-lens F2). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-30. **A parent another account can change, and on Windows the `--output`
-    folder inherits its parent's access rules.** athanor sets no access rules
-    on the folder it makes.
-    - Under a parent other accounts can read, they can read the copied files,
-      such as a mutation report's copy of the source.
-    - Under a parent they can change, they can also swap a folder inside it
-      for a link while the copy runs, so a write lands elsewhere. This holds
-      on any platform, and so covers Linux under a writable parent with no
-      sticky bit too. A write or a cleanup removal can land in any place the
-      owner can write.
-    - On a second drive, Windows commonly gives every signed-in account change
-      rights by default, so the README example sits under the profile.
-    - Every path is built from the parent's real path recorded at the start,
-      which narrows the swap of the parent itself; a swap of a folder inside
-      the `--output` folder remains.
+## Open issues
 
-    The README advises a parent under the user profile. Accepted because the
-    owner chose the folder's place and a host run's reports land under the same
-    rules. A Windows access step would add a child process for a case the owner
-    can avoid by choosing the parent.
-    Accepted 2026-10-24. From: the spec on issue 46, S6 (revision 4) and the Design reviews of its revisions (adversarial-lens, data-lens). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test. The number was assigned by the lead.
-31. **The `--output` folder holds plain files.** Copied outputs sit as ordinary
-    files in the folder the user names, with nothing encrypting them. They can
-    hold a copy of the source or anything the test read, and rely on the
-    host's disk encryption and the folder's access rules (accepted risk 30).
-    Accepted because the repo's own working tree sits unencrypted on the same
-    disk, and a report that its viewers could not open would defeat the copy.
-    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens, the `--output` folder at rest). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-32. **Command arguments are visible beyond the owner.** The words after
-    `<name> --` become part of the `docker run` command. They show in the host's
-    process list, in the engine's record of the container (`docker inspect`)
-    until it is removed, and to a remote engine's operator (accepted risk 7).
-    The `--` form with no name already did. Accepted because the caller chooses
-    the arguments, and the README says not to pass secrets as arguments.
-    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens, command arguments). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-33. **A file-system error can surface as a stack trace.** An unexpected error
-    while copying, such as a full disk, can end athanor with an uncaught error
-    that shows local paths, an account name among them, to the user and to the
-    session's model provider. What the copy made is still removed and the slot
-    is still released. Accepted because it needs a rare failure, the paths are
-    the owner's own (as in accepted risk 25), and wrapping each file call would
-    be code for a path that is not a security finding.
-    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens D5, adversarial-lens E4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-34. **Git's error text is printed as git wrote it.** A message that quotes git's
-    first error line does not escape it, so a name in the repo, such as a file
-    or branch name, can carry terminal escape codes into the caller's terminal
-    or session. Accepted because the repo is code the owner trusts to build,
-    every git message already did this, and the same text prints from git
-    itself on the host.
-    Accepted 2026-10-24. From: the Test review of issue 46, round 2 (data-lens D4). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-36. **A machine that raises `maxProcesses` lets a repo's test code hold that
-    many processes in each run.** With the ceiling raised, a runaway loop that
-    starts processes is stopped later. Every run's processes come from the
-    engine's one process table. Several runs at once, each near a high ceiling,
-    can fill that table, and the engine and its other containers then cannot
-    start processes until the runs end. On Docker Desktop that may reach other
-    programs sharing its VM; on a Linux host with its own engine the table is
-    the host's own, so filling it stops every program there, athanor's own
-    Docker calls included. Memory does not prevent this: a process costs little
-    memory. While the table is full, athanor's stop at the time limit may fail
-    to start, so a test that has ended the in-container timer can outlast the
-    limit; in accepted risk 4's case, the container lasts until the slot is
-    next used, and while the table is full its removal can fail too, so
-    recovery may need an engine restart (on a Linux host, the host's own
-    recovery). Until it is removed, a leftover container keeps the run's
-    snapshot, uncommitted files included. A ceiling near the top (4194304) is in effect no limit. The
-    ceiling comes from the machine file, so whoever sets `ATHANOR_HOME`
-    chooses it. Accepted because the default stays 1024, raising it is the
-    machine owner's act, the README advises keeping `maxProcesses` times the
-    largest run limit any caller uses, plus the engine's other containers, well
-    below the engine's process limit and says how to read that limit, and the
-    repo is code the owner trusts to build.
-    Accepted 2026-10-25. From: the spec on issue 54, S6, redrafted after its Design reviews (adversarial-lens, revisions 1 and 3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-    The removal and snapshot clause added 2026-10-25. From: the Test review of issue 54, round 1 (adversarial-lens F1, data-lens D3). How the word arrived: the owner, in the lead session's chat, relayed by head-chef-field-test.
-38. **A release can be published on any tag that exists.** Whoever can write
-    to the repo can publish a GitHub release on a tag already pushed,
-    `v0.1.0` and `v0.1.1` among them. Zenodo then archives that tag's tree for
-    good and mints a DOI. The tag rulesets keep each tag on its commit and let
-    only an admin create one, but no repository setting limits who publishes
-    a release. Anyone acting as the owner's account can do this too: whoever
-    takes the account over, code using the owner's gh login (accepted risk
-    18), or an app or token the owner has authorized with repo access.
-    Accepted because no other collaborator or deploy key can write to the
-    repo, and every app or token with repo access is one the owner uses and
-    reviews regularly. Those grants act as the owner's account, and the
-    account's own protections hold everyone who would act as it. The owner
-    makes each release by hand, as a draft read before it is published
-    (ADR 0031).
-    Accepted 2026-10-25. From: issue 63, candidate 1 (the Test review of issues 57 and 59, the security pair); the reason reworded at the Design review of the spec on issue 63 (adversarial-lens F7, F1). How the word arrived: the owner, in the lead session's chat on 2026-10-25, relayed by head-chef-field-test.
-39. **A named base carries history wherever the snapshot goes.** With a base,
-    the snapshot also carries every commit from the merge base onward, on the
-    base's side and the branch's: its files, a file since deleted among them
-    (a secret, say), and its metadata: author and committer names, emails,
-    dates and time zones, the message with its trailers (a co-author's or
-    sign-off's email), any signature, and a merged signed tag's tagger and
-    message. It lands in the container's repository, where the test code can
-    read it, and the test's output or copied outputs can carry it out, on to
-    an agent session's model provider. It also goes wherever the snapshot
-    goes: a remote engine's or builder's operator (accepted risk 7), a shared
-    engine's other users (accepted risk 8), the network under `allowPlainTcp`
-    (accepted risk 10), and a container left running after a hard kill
-    (accepted risk 4). A run killed hard can leave its pack of that history in
-    the state folder until the stale-run sweep a day later. While it exists,
-    that pack sits unencrypted in the state folder, as the repo's own objects
-    do on the same disk. The base is chosen
-    by the caller's `--base`, or by a command's `base` in the repo
-    configuration, which may name only a remote-tracking branch or a tag.
-    Without a base, nothing changes. Accepted because the history is the
-    repo's own, a base is named only for checks that need it, and the test
-    container has no network.
-    Accepted 2026-10-27. From: the Plan round of issue 70 (q4), widened at the Design review of its spec (data-lens D1, D3, D4; adversarial-lens F1, F2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
-    The sentence on the pack sitting unencrypted added 2026-10-27. From: the Test review of issue 70, round 1 (data-lens D3, q21). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
-40. **A compromised machine or sandbox.** Once a program, process or agent on
-    the machine or in the sandbox works against you, it can plant programs a
-    bare command name runs, change files a session or a hook reads, and act as
-    a session would; athanor does not defend against it. That covers local
-    prompt injection and planted files: a rogue agent in the system can change
-    what a session reads and runs, and athanor cannot tell it from the owner.
-    It adds to the actors this page already lists (the home-folder writer, the
-    other local program) and to the machine "already compromised as the owner's
-    user" under Out of scope, and it sits beside accepted risks 2, 13, 15, 24,
-    26 and 29, which name single paths of it. It takes none of them over, and
-    no control named here is removed or eased: the argument-array starts, the
-    full-path git and docker lookup, the clean archive environment and the
-    container's limits keep holding against what they hold against.
-    Accepted because a program that already acts as the owner or as a session
-    reaches everything athanor reads and starts, so no control inside athanor
-    can stop it.
-    Accepted 2026-11-07. From: issue 77, matching the pact's threat model (the-pact#482). How the word arrived: the owner, in chat, relayed by backlog-head-chef.
+- **#42:** the snapshot's git calls still run the host's content filters and
+  can write the repo's LFS store.
+- **#72:** a named base's git calls do not yet pin replace refs off on git 2.32
+  to 2.41, or match an inherited `GIT_DIR`.

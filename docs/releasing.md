@@ -309,7 +309,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
       ships, not as a check of their own. A change to them in the repo shows
       in step 13's diff. The registry's own manifest, which a publish sends apart
       from the tarball, is first seen in step 17, after the version is live
-      (accepted risk 22).
+      (accepted class "The release and CI supply chain").
     - Only npm, `tar`, `git` and PowerShell run here: nothing from the repo
       or from the extracted folders.
 
@@ -525,7 +525,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     show them. Only then delete a draft that isn't yours; a published release
     that isn't yours stays, as evidence. If any of those notes hold a
     secret, rotate it. Don't cite any DOI. Find and remove
-    that write access, and make no release until accepted risk 38 has been
+    that write access, and make no release until accepted class "The release and CI supply chain" has been
     revisited (ADR 0031).
 
 ### Upkeep
@@ -534,7 +534,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
 - From time to time, review the authorized OAuth apps, authorized GitHub
   Apps, installed GitHub Apps and personal access tokens that have access to
   the repo, and revoke any that is no longer used. Each acts as your account
-  (accepted risk 38).
+  (accepted class "The release and CI supply chain").
 - After any rename or transfer of the repo or the account, revoke the trusted
   publisher and add it again. Before deleting the repo, revoke it.
 - A bot pull request that moves an action SHA in `release.yml`, and a change
@@ -556,7 +556,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   configuration file. That file is not encrypted: it relies on your disk
   encryption, and any program running as you can read it. npm's two-factor
   check on every write is what keeps the token alone from approving
-  (accepted risk 26 in the threat model).
+  (accepted class "The release and CI supply chain" in the threat model).
 - **A publish makes your npm account's name and email address public** in the
   registry's records. Publish from an account whose email address you are
   content to show.
@@ -564,7 +564,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   the dry run, and in step 14 of each release.** A hijacked compiler can
   shape the published code, and
   neither the install-scripts setting nor CI's comparison with a rebuild sees
-  it (accepted risk 18 in the threat model).
+  it (accepted class "The release and CI supply chain" in the threat model).
 - **A new trusted publisher lasts 2 days unused.** npm expires one that no
   publish has validated within 2 days, and the first publish binds it to the
   repository's fixed ids. After a rename or transfer, add it again.
