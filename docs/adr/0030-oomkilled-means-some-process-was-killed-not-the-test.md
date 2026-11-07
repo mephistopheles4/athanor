@@ -50,7 +50,7 @@ the container's own exit away.
   `OOMKilled` a moment after the container's exit, so one read straight after
   `docker run` returns could show a memory kill as a plain failure. When the
   container's exit is 137 and the flag is false, athanor reads it again up to
-  5 more times, 200 ms apart (about a second in all), and reports `memory` as
+  5 more times, 200 ms apart (about a second of waiting, plus the reads), and reports `memory` as
   soon as it shows. A 137 whose flag never shows stays `fail`. Nothing in the
   public interface changes.
 

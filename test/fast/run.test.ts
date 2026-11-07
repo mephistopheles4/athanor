@@ -572,9 +572,12 @@ test('S1 an OOMKilled flag that Docker records a moment after the exit still mak
 test('S2 an exit 137 whose flag never shows stays a plain failure, after a bounded wait', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
-  const result = await runWith(t, repo, fake(t, { run: { exitCode: 137 } }));
+  const docker = fake(t, { run: { exitCode: 137 } });
+  const result = await runWith(t, repo, docker);
   assert.equal(result.outcome, 'fail', JSON.stringify(result));
   assert.equal(result.exitCode, 137);
+  // The first read and five more, no more.
+  assert.equal(callsOf(docker.calls(), 'inspect').length, 6);
 });
 
 test('V1 a memory run keeps the container\'s own exit in containerExitCode, and no other run has it', async (t) => {
