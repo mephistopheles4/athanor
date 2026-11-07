@@ -333,8 +333,8 @@ password in your Docker client configuration does not reach the test code. That
 also blanks a value the image's own `ENV` gives them; the test container has
 no network, so a proxy in it does nothing. The image build still gets the proxy
 settings as build arguments, so a Dockerfile can read them, and a value the
-build writes into the image can reach the test run (accepted class "A repo you build" in
-[the threat model](docs/threat-model.md)).
+build writes into the image can reach the test run (out of scope, a repo's own
+code, in [the threat model](docs/threat-model.md#scope)).
 
 ## Secrets
 
@@ -348,15 +348,17 @@ files a copy to `--output` brings back.
 ## What athanor doesn't protect you from
 
 Each line names the accepted threat class in
-[the threat model](docs/threat-model.md#accepted-threat-classes) it comes from;
-the threat model holds the full class.
+[the threat model](docs/threat-model.md#accepted-threat-classes) it comes from,
+or says it is out of scope; the threat model holds the full class.
 
-- **A repo you don't trust.** The image build runs the repo's Dockerfile with
-  the network and gets your Docker client's proxy settings, passwords
-  included. The tests run as root unless the Dockerfile names another user,
-  and keep six Linux capabilities. Everything tracked under `context`, a
-  file added with `git add -N` included, reaches that build. Use athanor only
-  on repos you trust to build. Accepted class "A repo you build".
+- **A repo you don't trust.** athanor is not a sandbox: it keeps parallel
+  runs from colliding, and does not contain a hostile repo. The image build
+  runs the repo's Dockerfile with the network and gets your Docker client's
+  proxy settings, passwords included. The tests run as root unless the
+  Dockerfile names another user, and keep six Linux capabilities. Everything
+  tracked under `context`, a file added with `git add -N` included, reaches
+  that build. Use athanor only on repos you trust to build. Out of scope: a
+  repo's own code, in the threat model's [Scope](docs/threat-model.md#scope).
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
   builder's operator receives your work, decides the result and chooses the
@@ -369,15 +371,20 @@ the threat model holds the full class.
   outputs cross the network unencrypted. Set it only on a network you trust. Accepted class "A shared or remote engine, and the network".
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
   that athanor counts as local can be forwarded to another machine, or held by
-  another local program. Know where your Docker endpoint leads. Accepted class "Other local programs".
-- **Other local programs.** Any program on the machine can block runs, and
-  read or fake what `status` shows about slot holders. On Windows, a user
-  elsewhere on the network may also be able to read those details, and a
-  program with the privilege to impersonate clients can act as you on a slot
-  connection.
-  Don't run athanor on a machine where you don't trust the other programs.
-  Accepted class "Other local programs".
-- **A compromised machine or sandbox.** Once a program, process or agent on
+  another local program. Know where your Docker endpoint leads. Accepted class
+  "A shared or remote engine, and the network"; a local program holding it is
+  the class "A compromised machine or sandbox".
+- **The Windows slot pipe on the network.** On Windows, a user elsewhere on
+  the network may be able to read what `status` shows about slot holders:
+  pid, start time, repo folder name and limit. On a network whose signed-in
+  users you don't trust with those details, keep repo folder names you'd
+  rather not show off the machine's runs. Accepted class "The Windows slot
+  pipe on the network".
+- **A compromised machine or sandbox.** Any program on the machine can block
+  runs, read or fake what `status` shows about slot holders, and, with the
+  privilege to impersonate clients, act as you on a slot connection. Don't
+  run athanor on a machine where you don't trust the other programs. Once a
+  program, process or agent on
   your machine or in your sandbox works against you, it can plant programs a
   bare command name runs, change files a session or a hook reads, and act as a
   session would. athanor does not defend against it. Keep the machine and the
@@ -387,7 +394,7 @@ the threat model holds the full class.
   when athanor itself is killed hard, can leave the container running until
   the slot is next used, and it keeps the run's snapshot, uncommitted files
   included, until it is removed. Set `maxCpus` for a bound. Accepted
-  class "Resource limits".
+  class "The machine's load".
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,
   the whole host's on Linux. Filling it stops the engine and other programs
@@ -399,7 +406,7 @@ the threat model holds the full class.
   yourself (`athanor status` lists it). Keep `maxProcesses`
   times your largest run limit well below your
   engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
-  it). Accepted class "Resource limits".
+  it). Accepted class "The machine's load".
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
@@ -414,7 +421,9 @@ the threat model holds the full class.
   git repository, but not every layout git might read as one: set
   `safe.bareRepository=explicit` in your git configuration so git does not
   treat a copied folder as a repository. Open
-  outputs from a repo you trust to build. Accepted class "A repo you build".
+  outputs from a repo you trust to build. Out of scope, a repo's own code;
+  from a remote engine, accepted class "A shared or remote engine, and the
+  network".
 - **Plain files in the `--output` folder.** Copied outputs are ordinary files,
   with nothing encrypting them. They rely on your disk encryption and the
   folder's access rules; keep the folder where only you can read it. Accepted
