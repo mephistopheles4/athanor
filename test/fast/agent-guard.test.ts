@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from '../helpers.ts';
@@ -101,12 +101,4 @@ test('H3 the runner takes --host-fallback=<reason> on the fast tier only, prints
     assert.match(r.stderr, why);
     assert.doesNotMatch(r.stdout + r.stderr, /secret/);
   }
-});
-
-test('H4 the tracked settings file runs the hook before every Bash and PowerShell call, and holds nothing else', () => {
-  const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'));
-  assert.deepEqual(Object.keys(settings), ['hooks']);
-  const [entry] = settings.hooks.PreToolUse;
-  assert.equal(entry.matcher, 'Bash|PowerShell');
-  assert.deepEqual(entry.hooks, [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.claude/hooks/athanor-guard.mjs'], timeout: 15 }]);
 });

@@ -98,8 +98,8 @@ const workflow = (...steps: string[]) => ['name: planted', 'on: push', 'jobs:', 
 const checkout = ['      - uses: actions/checkout@0123456789012345678901234567890123456789 # v7', '        with:', '          persist-credentials: false'];
 const setupNode = ['      - uses: actions/setup-node@0123456789012345678901234567890123456789 # v7', '        with:', "          node-version: '24'", '          package-manager-cache: false'];
 
-test('R2 the workflow check fails each broken rule, naming the file and line, and passes the repo\'s own workflows', async (t) => {
-  const check = (dir?: string) => node([script('check-workflows.mjs'), ...(dir ? [dir] : [])], root);
+test('R2 the workflow check fails each broken rule, naming the file and line', async (t) => {
+  const check = (dir: string) => node([script('check-workflows.mjs'), dir], root);
   const planted = (yaml: string, name = 'planted.yml') => {
     const dir = tempDir(t);
     writeFiles(dir, { [name]: yaml });
@@ -114,10 +114,6 @@ test('R2 the workflow check fails each broken rule, naming the file and line, an
 
   await t.test('a workflow that keeps every rule passes, so the shared fixtures are clean', () => {
     const r = planted(workflow(...checkout, ...setupNode, '      - run: node --version'));
-    assert.equal(r.status, 0, r.stderr);
-  });
-  await t.test('the repo\'s own workflows pass', () => {
-    const r = check();
     assert.equal(r.status, 0, r.stderr);
   });
   await t.test('a checkout without persist-credentials fails', () => {

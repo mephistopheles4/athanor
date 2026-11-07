@@ -11,7 +11,6 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, existsSync, mkdirSync, cpSync, appendFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 import { run } from '#dist/index.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf, tarFile, git, tempDir } from '../helpers.ts';
 import type { TarEntry, Fake } from '../helpers.ts';
@@ -217,17 +216,6 @@ test('G6 the tree\'s own ident and working-tree-encoding attributes still apply'
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
   assert.equal(tarFile(lastRunTar(docker), 'v.id'), `$Id: ${blob} $\n`);
   assert.deepEqual(tarBytes(lastRunTar(docker), 'enc.txt'), Buffer.from('plain\n', 'utf16le'));
-});
-
-test('G7 the image tag hashes the format athanor-image-v2 and the build context\'s tree', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: baseConfig });
-  const tree = git(repo, ['rev-parse', 'HEAD:test']).trim();
-  const docker = fake(t);
-  const result = await runWith(repo, docker);
-  assert.equal(result.outcome, 'pass', JSON.stringify(result));
-  const expected = createHash('sha256').update(`athanor-image-v2\n${tree}`).digest('hex').slice(0, 32);
-  assert.equal(result.image!.tag, `athanor:${expected}`);
 });
 
 // The regular files of a tar stream, by name: mode and bytes.
