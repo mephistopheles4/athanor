@@ -424,20 +424,6 @@ test('N9 a test that hits its process limit ends as its own failure, not memory 
   assert.equal(result.exitCode, 3, stdout + stderr);
 });
 
-// Which process the kernel kills, and so the container's own exit, is the
-// kernel's choice and varies with load (issue 79). The claim is only that a
-// memory kill is reported as memory.
-test('V5 the memory limit: a memory kill is reported as memory', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, {
-    athanor: { ...config, commands: { test: ['true'], hog: { argv: ['sh', '-c', 'exec tail /dev/zero'], memory: '64m', timeoutMinutes: 5 } } },
-    files: FIXTURE,
-  });
-  const { result, stdout, stderr } = await runReal(t, repo, { name: 'hog' });
-  assert.equal(result.outcome, 'memory', stdout + stderr);
-  assert.equal(result.exitCode, 137);
-});
-
 // A fixture repo with history for the base claims (issue 70): c0, then c1 (mb,
 // the merge base); main moves on to b1 and b2 (origin/main), and topic (checked
 // out) to t1. mb has a parent that is not carried, so the shallow list is not

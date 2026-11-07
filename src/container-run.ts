@@ -12,10 +12,6 @@ import { start, feed } from './proc.js';
 import { MARKER, WORK_PREFIX } from './container-settings.js';
 import type { Container } from './container-settings.js';
 
-// The window for a late OOMKilled flag: this many more reads, this far apart.
-const OOM_RECHECKS = 5;
-const OOM_RECHECK_MS = 200;
-
 export type Outcome = 'pass' | 'fail' | 'timeout' | 'memory' | 'interrupted' | 'error';
 
 // Where the test command's output goes, such as process.stdout.
@@ -127,14 +123,7 @@ export async function runContainer(o: ContainerRun): Promise<Handed> {
   o.signal?.removeEventListener('abort', onAbort);
   filter.flush();
   const ranMs = Date.now() - started;
-  let state = interrupted || timedOut ? null : await readExit(o.docker, name, o.env);
-  // Docker can record OOMKilled a moment after the container's exit (issue 79).
-  // A 137 without the flag is read again a few times over a fixed window before
-  // it counts as a plain failure.
-  for (let i = 0; state && a.code === 0 && filter.seen && state.exitCode === 137 && !state.oom && i < OOM_RECHECKS; i++) {
-    await new Promise((resolve) => setTimeout(resolve, OOM_RECHECK_MS));
-    state = (await readExit(o.docker, name, o.env)) ?? state;
-  }
+  const state = interrupted || timedOut ? null : await readExit(o.docker, name, o.env);
 
   const base = { ranMs };
   const handed = (ran: Ran): Handed => ({ ran, workLines: filter.workLines, ...(state?.id !== undefined ? { id: state.id } : {}) });

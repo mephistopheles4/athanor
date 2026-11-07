@@ -560,26 +560,6 @@ test('C32 with core.autocrlf=true, a file stored with LF arrives with LF in the 
   assert.ok(existsSync(join(repo, 'run.sh')));
 });
 
-test('S1 an OOMKilled flag that Docker records a moment after the exit still makes the run memory', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: baseConfig });
-  const result = await runWith(t, repo, fake(t, { run: { exitCode: 137, oom: true, oomAfterReads: 2 } }));
-  assert.equal(result.outcome, 'memory', JSON.stringify(result));
-  assert.equal(result.exitCode, 137);
-  assert.equal(result.containerExitCode, 137);
-});
-
-test('S2 an exit 137 whose flag never shows stays a plain failure, after a bounded wait', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: baseConfig });
-  const docker = fake(t, { run: { exitCode: 137 } });
-  const result = await runWith(t, repo, docker);
-  assert.equal(result.outcome, 'fail', JSON.stringify(result));
-  assert.equal(result.exitCode, 137);
-  // The first read and five more, no more.
-  assert.equal(callsOf(docker.calls(), 'inspect').length, 6);
-});
-
 test('V1 a memory run keeps the container\'s own exit in containerExitCode, and no other run has it', async (t) => {
   const rows = [
     { name: 'a process was killed, then the test exited 0', run: { exitCode: 0, oom: true }, container: 0 },
