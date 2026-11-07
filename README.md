@@ -374,9 +374,11 @@ or says it is out of scope; the threat model holds the full class.
   another local program. Know where your Docker endpoint leads. Accepted class
   "A shared or remote engine, and the network"; a local program holding it is
   the class "A compromised machine or sandbox".
-- **The slot pipe on the network.** On Windows, a user elsewhere on the
-  network may be able to read what `status` shows about slot holders: pid,
-  start time, repo folder name and limit. Accepted class "The Windows slot
+- **The Windows slot pipe on the network.** On Windows, a user elsewhere on
+  the network may be able to read what `status` shows about slot holders:
+  pid, start time, repo folder name and limit. On a network whose signed-in
+  users you don't trust with those details, keep repo folder names you'd
+  rather not show off the machine's runs. Accepted class "The Windows slot
   pipe on the network".
 - **A compromised machine or sandbox.** Any program on the machine can block
   runs, read or fake what `status` shows about slot holders, and, with the

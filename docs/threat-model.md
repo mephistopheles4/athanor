@@ -36,7 +36,7 @@ on it: it is trusted, and out of scope (see Scope).
 | Class | Risk | L | I | What stops it | What is left open |
 | --- | --- | --- | --- | --- | --- |
 | [The Windows slot pipe on the network](#the-windows-slot-pipe-on-the-network) | A user elsewhere on the network reads what slot holders report | 0.15 | 0.20 | Windows' own sign-in for the pipe | The pipe does not refuse remote clients |
-| [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner, a local program that takes the slot names or swaps files among it | 0.08 | 0.97 | Nothing inside athanor | All of it |
+| [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner, a local program that takes the slot names or swaps a file a run reads | 0.08 | 0.97 | Nothing inside athanor | All of it |
 | [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs; a local address can lead elsewhere |
 | [The machine's load](#the-machines-load) | A run or a leftover container holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal | No default CPU limit; a full process table can block removal |
 | [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | Only the hashed set reaches the build; names checked as text; no container log; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
@@ -128,7 +128,9 @@ leaves behind".
 
 Each control below ends with its reason under the scope above (ADR 0033):
 `collision` (parallel runs, or a run and the owner's working tree, stay
-apart), `machine load`, or the boundary in scope it holds. A control with
+apart), `machine load`, or the boundary in scope it holds, named short as
+`shared or remote engine`, `network exposure`, `records and leaves behind`
+or `release and CI` for the four in-scope boundaries above. A control with
 none says `none under this scope`: it is a candidate to loosen, on issue 84,
 and stays until the owner decides its own spec. A value outside those, such as
 correctness, is named where a control keeps one, but is not a reason.
@@ -166,14 +168,19 @@ flowchart LR
   carries the base's history: the commit, tree and file objects from the merge
   base onward, a list of the commits whose parents were left out, two refs and
   the snapshot's tree id; never a git setting, hook or remote (ADR 0032;
-  accepted class "What athanor records, shows and leaves behind").
+  accepted class "What athanor records, shows and leaves behind"). Reason,
+  for leaving out the settings, hooks and remotes: records and leaves behind.
+  Each control below gives its own.
   - **No host folder and no Docker socket:** no `-v` and no `--mount` (ADR
     0016, C6). Reason: collision; a run can't write the owner's working tree,
     another run's files or another run's container.
   - **No network for the test run:** `--network none` (C19; the image build
     has the network, see Out of scope). Reason: none under this scope; it
     keeps tests from touching real services by accident, and keeps a run's
-    ports off the host's.
+    ports off the host's, though a bridge network would do that too. The
+    class "What athanor records, shows and leaves behind" gives "the test
+    container has no network" as part of why it is accepted: loosening this
+    control reopens that class.
   - **No host environment value, and the ten proxy names blocked:** the only
     `-e` are `ATHANOR_GRACE_LIMIT` and, with empty values, the ten proxy names
     the Docker CLI fills from the five proxy settings it reads today (ADR
@@ -271,6 +278,12 @@ flowchart LR
   none`, so the engine keeps no copy of the test output. The state folder is
   mode 0700 on Linux, and the stale-run sweep removes a hard-killed run's
   folder a day later. Reason: records and leaves behind.
+- **Temporary names are random.** Temporary names use Node's crypto random
+  source. Reason: collision; parallel runs never pick the same name.
+- **The `--output` parent is checked.** On Linux, athanor refuses a parent
+  that other accounts can write unless it has the sticky bit, and every path
+  is built from the parent's real path recorded at the start. Reason: records
+  and leaves behind.
 - **Machine configuration is data.** It is validated key by key and holds no
   paths or commands, and only it can set `allowRemoteDocker` and
   `allowPlainTcp`. Reason: shared or remote engine; where a run's work goes is
@@ -280,16 +293,21 @@ flowchart LR
   control characters. Reason: none under this scope; a local program faking
   an answer is the class "A compromised machine or sandbox". It keeps
   correctness, `status` not breaking on a garbled answer.
-- **Values are validated before use.** Repo configuration, machine
+- **The ceilings are checked before use.** A repo's or a command's limits
+  above the machine configuration's ceilings exit 125 with a plain message
+  (C31, M4, N3, N4). Reason: machine load.
+- **Other values are validated before use.** Repo configuration, machine
   configuration, environment values, CLI arguments, command names and
   configured paths are each checked, and a bad value exits 125 with a plain
-  message (the Input validation item below). Reason: machine load for the
-  ceilings; for the rest none under this scope. It keeps correctness.
+  message (the Input validation item below). Reason: none under this scope.
+  It keeps correctness.
 - **A named base is checked and resolved apart from the repo's settings.** The
   name is checked before git sees it (a command's `base` only to a
-  remote-tracking branch or a tag), resolved to one ref with replace refs,
-  grafts and lazy fetching off, and a shallow or partial clone is refused (the
-  Input validation item below, ADR 0032). Reason: none under this scope; a
+  remote-tracking branch or a tag), resolved to one ref with replace refs and
+  grafts off (on git 2.32 to 2.41 the repo's own config may turn replace refs
+  back on, issue 72) and lazy fetching off on git 2.45 and later, and a
+  shallow or partial clone is refused (the Input validation item below, ADR
+  0032). Reason: none under this scope; a
   planted git setting or ref is the repo's own code or the class "A
   compromised machine or sandbox". The shallow and partial refusals keep
   correctness, a base that carries all its history.
@@ -318,6 +336,10 @@ flowchart LR
     Publishing access disallows tokens, once the owner has set it before the
     merge (`docs/releasing.md` step 2, recorded in step 9).
   - See ADR 0018, A1 to A6, and ADR 0019.
+  - The package has no runtime dependencies (ADR 0001).
+  - The GitHub release has two tag rulesets on every tag and immutable
+    releases, and the owner reads each release as a draft before it is
+    published (ADR 0031).
 
   Reason: release and CI.
 
@@ -444,7 +466,7 @@ doesn't protect you from"; the release and CI class stays here alone.
   session would; athanor does not defend against it. That covers local prompt
   injection and planted files: a rogue agent in the system can change what a
   session reads and runs, and athanor cannot tell it from the owner. It adds
-  to the machine "already compromised as the owner's user" under Out of scope.
+  to "a compromised machine" under Out of scope.
   It also takes over the paths of the former class "Other local programs",
   which ADR 0033 folds in here:
   - Any local program can take the slot names to block runs, or answer

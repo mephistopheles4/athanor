@@ -21,10 +21,15 @@ put in scope.
   shared or remote engine, what athanor exposes on the network, what it
   records and leaves behind, and the release and CI supply chain, since other
   people install athanor.
+- **The classes.** "A repo you build" leaves the accepted classes: a repo's
+  own code is out of scope. "Other local programs" is folded into "A
+  compromised machine or sandbox", apart from what a network user can do
+  through the Windows slot pipe, which becomes "The Windows slot pipe on the
+  network". "Resource limits" becomes "The machine's load".
 - **Every control stays.** This record changes no control, flag, key, exit
-  code or message. Each control the threat model or AGENTS.md names now gives
-  its reason under this scope: collision, the machine's load, or a boundary
-  in scope. A control with none is a candidate to loosen, listed on issue 84.
+  code or message. Each control the threat model or AGENTS.md names now has
+  a `Reason:` line in the threat model's "Boundaries and how each holds":
+  collision, the machine's load, or a boundary in scope. A control with none is a candidate to loosen, listed on issue 84.
   Each loosening is its own spec, decided by the owner.
 - **The extended records.** ADR 0016 (which carries ADR 0005's rule that the
   container gets nothing from the host) and ADR 0020 (the archive step's clean
