@@ -22,8 +22,10 @@ this machine used without `allowRemoteDocker`, or plain tcp used without
 `allowPlainTcp`; something athanor exposes on
 the network beyond what the threat model says; what athanor records or leaves
 behind going further than it says, such as a host environment value reaching
-a shared engine's record of a container; or a gap in the release path. If in
-doubt, report it privately here anyway.
+a shared engine's record of a container; or a gap in the release path. A
+control the threat model keeps only so that runs don't collide, such as no
+host folder reaching the test container, is reported privately too if it
+fails. If in doubt, report it privately here anyway.
 
 athanor is for repos you trust to build; a repo's own code is out of scope.
 The image build runs the repo's own Dockerfile with network access. athanor sends the build context and snapshot

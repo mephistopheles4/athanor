@@ -25,7 +25,12 @@ put in scope.
   own code is out of scope. "Other local programs" is folded into "A
   compromised machine or sandbox", apart from what a network user can do
   through the Windows slot pipe, which becomes "The Windows slot pipe on the
-  network". "Resource limits" becomes "The machine's load".
+  network". "Resource limits" becomes "The machine's load". "A shared or
+  remote engine, and the network" takes a local address that leads to
+  another machine and the file names a copy skips, since both are the
+  engine end's choice, and names what the build leaves in the image as
+  readable there. A local program under any account working against the
+  owner is out of scope, in the compromised-machine class.
 - **Every control stays.** This record changes no control, flag, key, exit
   code or message. Each control the threat model or AGENTS.md names now has
   a `Reason:` line in the threat model's "Boundaries and how each holds":

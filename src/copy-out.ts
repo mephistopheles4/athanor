@@ -180,7 +180,7 @@ export interface Copied {
   missing: string[];
 }
 
-// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted class "A repo you build").
+// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted class "A shared or remote engine, and the network").
 const ACT_ON_VIEW = /(^desktop\.ini$)|(\.(lnk|url|scf|library-ms|searchConnector-ms|theme|themepack)$)/i;
 const MISSING = /no such container:path|could not find the file/i;
 const RETRY = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY']);
@@ -329,7 +329,7 @@ class Job {
 
   // git treats a folder holding HEAD with objects, refs or a commondir file (which points at
   // them elsewhere) as a bare repository, wherever the
-  // folder sits and in whatever order the files come (accepted class "A repo you build").
+  // folder sits and in whatever order the files come (accepted class "A shared or remote engine, and the network").
   private beside(parts: string[]): void {
     const parent = parts.slice(0, -1).join('/');
     const names = this.children.get(parent) ?? new Set<string>();

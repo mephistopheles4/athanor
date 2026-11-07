@@ -77,9 +77,7 @@ a hostile repo or protect a compromised machine (ADR 0033).
   build arguments, and a proxy setting can hold a password: a build step can
   send it out or print it into the build output, and a Dockerfile can leave it
   in the image or the build cache, which `prune` does not clear. Files added
-  with `git add -N` under `context` reach the build too. A proxy setting that a
-  later Docker client adds reaches the container until athanor's list of ten
-  blocked names is updated. The test runs as the image's user, root unless the
+  with `git add -N` under `context` reach the build too. The test runs as the image's user, root unless the
   Dockerfile names another, with six Linux capabilities that a flaw in Docker
   or the kernel could use. What a copied file holds is the test code's choice:
   athanor checks names and types, never content, so a report lands as written
@@ -89,7 +87,8 @@ a hostile repo or protect a compromised machine (ADR 0033).
   session. A host run of the same tool writes the same files and prints the
   same text.
 - **A compromised machine,** already working against the owner as the
-  owner's user (see the accepted class "A compromised machine or sandbox").
+  owner's user, and a local program under any account working against the
+  owner (see the accepted class "A compromised machine or sandbox").
 - **Flaws in Docker, Docker Desktop and its VM, git, Node and the operating
   system themselves.** The operator of a remote engine or builder is in scope
   as an actor below; the software they run is not.
@@ -186,9 +185,12 @@ flowchart LR
     the Docker CLI fills from the five proxy settings it reads today (ADR
     0016). Reason: records and leaves behind, and shared or remote engine; the
     engine keeps a container's environment in its record of it, where a
-    shared engine's users and a remote engine's operator can read it. A value
-    the build writes into the image or its cache is out of scope (a repo's
-    own code).
+    shared engine's users and a remote engine's operator can read it. A
+    known gap: a proxy setting that a later Docker client adds reaches the
+    container until athanor's list of ten blocked names is updated. A value
+    the build writes into the image or its cache is the build's own (out of
+    scope, a repo's own code), and the engine end can read it (accepted class
+    "A shared or remote engine, and the network").
   - **No privileged mode, and six capabilities:** `--cap-drop ALL`, then
     `--cap-add` for `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and
     `SETGID` only, an allow-list (ADR 0016, K1, K2, P1). Reason: none under
@@ -346,7 +348,10 @@ flowchart LR
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.
-  The slot locks are open to any local program (out of scope: a local program working against the owner is the class "A compromised machine or sandbox"; the pipe's reach from the network is the class "The Windows slot pipe on the network"). It
+  The slot locks are open to any local program (accepted class "A compromised
+  machine or sandbox", for a local program under any account; and accepted
+  class "The Windows slot pipe on the network", for the pipe's reach from the
+  network). It
   relies on the operating system's user separation for the state folder
   (mode 0700 on Linux; on Windows, the home folder's own access rules). The
   `--output` folder is mode 0700 on Linux, and on Windows inherits its parent's
@@ -504,7 +509,10 @@ doesn't protect you from"; the release and CI class stays here alone.
   user has configured, including one on another machine or a cloud builder.
   Whoever runs it receives the build context and the snapshot, uncommitted
   changes, files added with `git add -N` and any committed secret included,
-  and keeps copies in its image layers and build cache. It decides the result
+  and keeps copies in its image layers and build cache. The build arguments,
+  a proxy password among them, and whatever the build leaves in the image's
+  files, metadata or history or in the build cache, are readable there by its
+  operator and, on a shared engine, by its other users. It decides the result
   athanor reports, whether "no network" and the limits are enforced, the text
   streamed back into the session and the files a copy writes to the host; as a
   builder it can ask this machine for the owner's registry credentials; and
