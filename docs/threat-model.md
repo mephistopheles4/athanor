@@ -286,7 +286,8 @@ flowchart LR
   message (the Input validation item below). Reason: machine load for the
   ceilings; for the rest none under this scope. It keeps correctness.
 - **A named base is checked and resolved apart from the repo's settings.** The
-  name is checked before git sees it, resolved to one ref with replace refs,
+  name is checked before git sees it (a command's `base` only to a
+  remote-tracking branch or a tag), resolved to one ref with replace refs,
   grafts and lazy fetching off, and a shallow or partial clone is refused (the
   Input validation item below, ADR 0032). Reason: none under this scope; a
   planted git setting or ref is the repo's own code or the class "A
