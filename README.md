@@ -333,7 +333,7 @@ password in your Docker client configuration does not reach the test code. That
 also blanks a value the image's own `ENV` gives them; the test container has
 no network, so a proxy in it does nothing. The image build still gets the proxy
 settings as build arguments, so a Dockerfile can read them, and a value the
-build writes into the image can reach the test run (accepted risk 1 in
+build writes into the image can reach the test run (accepted class "A repo you build" in
 [the threat model](docs/threat-model.md)).
 
 ## Secrets
@@ -347,16 +347,16 @@ files a copy to `--output` brings back.
 
 ## What athanor doesn't protect you from
 
-Each line names the accepted risks in
-[the threat model](docs/threat-model.md#accepted-risks) it comes from; the
-threat model holds the full entries.
+Each line names the accepted threat class in
+[the threat model](docs/threat-model.md#accepted-threat-classes) it comes from;
+the threat model holds the full class.
 
 - **A repo you don't trust.** The image build runs the repo's Dockerfile with
   the network and gets your Docker client's proxy settings, passwords
   included. The tests run as root unless the Dockerfile names another user,
   and keep six Linux capabilities. Everything tracked under `context`, a
   file added with `git add -N` included, reaches that build. Use athanor only
-  on repos you trust to build. Accepted risks 1 and 5.
+  on repos you trust to build. Accepted class "A repo you build".
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
   builder's operator receives your work, decides the result and chooses the
@@ -364,26 +364,30 @@ threat model holds the full entries.
   can ask this machine for your registry login. Don't share an engine with
   people you don't trust, and set `allowRemoteDocker` only for an engine and
   builder whose operator you trust with your work and your registry login.
-  Accepted risks 7 and 8.
+  Accepted class "A shared or remote engine, and the network".
 - **Plain tcp.** With `allowPlainTcp`, your work, the test output and copied
-  outputs cross the network unencrypted. Set it only on a network you trust. Accepted risk 10.
+  outputs cross the network unencrypted. Set it only on a network you trust. Accepted class "A shared or remote engine, and the network".
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
   that athanor counts as local can be forwarded to another machine, or held by
-  another local program. Know where your Docker endpoint leads. Accepted risk
-  24.
+  another local program. Know where your Docker endpoint leads. Accepted class "Other local programs".
 - **Other local programs.** Any program on the machine can block runs, and
   read or fake what `status` shows about slot holders. On Windows, a user
   elsewhere on the network may also be able to read those details, and a
   program with the privilege to impersonate clients can act as you on a slot
   connection.
   Don't run athanor on a machine where you don't trust the other programs.
-  Accepted risks 2, 3 and 9.
+  Accepted class "Other local programs".
+- **A compromised machine or sandbox.** Once a program, process or agent on
+  your machine or in your sandbox works against you, it can plant programs a
+  bare command name runs, change files a session or a hook reads, and act as a
+  session would. athanor does not defend against it. Keep the machine and the
+  sandbox free of what you don't trust. Accepted class "A compromised machine or sandbox".
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
   the slot is next used, and it keeps the run's snapshot, uncommitted files
   included, until it is removed. Set `maxCpus` for a bound. Accepted
-  risks 4 and 17.
+  class "Resource limits".
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,
   the whole host's on Linux. Filling it stops the engine and other programs
@@ -395,12 +399,12 @@ threat model holds the full entries.
   yourself (`athanor status` lists it). Keep `maxProcesses`
   times your largest run limit well below your
   engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
-  it). Accepted risks 4 and 36.
+  it). Accepted class "Resource limits".
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
   (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
-  work before a run, or know that the filter sees it. Accepted risk 23.
+  work before a run, or know that the filter sees it. Accepted class "What athanor records, shows and leaves behind".
 - **What a copied file holds.** With `--output`, a report the test code wrote
   lands on your machine as written, and athanor checks names and types, never
   content. Opening it, or a viewer previewing it, does what it holds. athanor
@@ -410,32 +414,32 @@ threat model holds the full entries.
   git repository, but not every layout git might read as one: set
   `safe.bareRepository=explicit` in your git configuration so git does not
   treat a copied folder as a repository. Open
-  outputs from a repo you trust to build. Accepted risk 28.
+  outputs from a repo you trust to build. Accepted class "A repo you build".
 - **Plain files in the `--output` folder.** Copied outputs are ordinary files,
   with nothing encrypting them. They rely on your disk encryption and the
   folder's access rules; keep the folder where only you can read it. Accepted
-  risk 31.
+  class "What athanor records, shows and leaves behind".
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
-  engine's operator. Don't pass secrets as command arguments. Accepted risk 32.
+  engine's operator. Don't pass secrets as command arguments. Accepted class "What athanor records, shows and leaves behind".
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
   parent under your user profile. On Linux, athanor refuses a parent that other
-  accounts can write unless it has the sticky bit. Accepted risk 30.
+  accounts can write unless it has the sticky bit. Accepted class "What athanor records, shows and leaves behind".
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a
   ceiling) names it by its full path, and a git error from a named base's
   steps can name a path in the state folder or the repo's own path;
   both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
-  places your account name shouldn't go. Accepted risk 25.
+  places your account name shouldn't go. Accepted class "What athanor records, shows and leaves behind".
 - **A named base.** With `--base` or a command's `base`, a run also sends the
   history from the merge base onward: files deleted since, and commit
   messages, authors' names, emails and dates. The test code can read it, and
   it goes wherever your snapshot goes, a remote or shared engine and plain tcp
   included. Name a base only for checks that need it, and remove a leaked
-  secret from the history, not only from the tree. Accepted risk 39.
+  secret from the history, not only from the tree. Accepted class "What athanor records, shows and leaves behind".
 
 ## More
 
