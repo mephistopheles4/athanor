@@ -233,7 +233,14 @@ async function main() {
     const path = fileFor(containersDir, nameOf(args.at(-1)));
     if (scenario.inspectFails || !existsSync(path)) { console.error(`Error: No such object: ${args.at(-1)}`); return 1; }
     const state = readJson(path);
-    console.log(`${state.exitCode ?? 0} ${state.oom ? 'true' : 'false'} ${idOf(state.name)}`);
+    // plan.oomAfterReads: the flag shows only on the read after that many
+    // earlier ones, as when the daemon records it a moment after the exit.
+    let oom = state.oom;
+    if (state.oom && state.oomAfterReads !== undefined) {
+      oom = (state.reads ?? 0) >= state.oomAfterReads;
+      writeFileSync(path, JSON.stringify({ ...state, reads: (state.reads ?? 0) + 1 }));
+    }
+    console.log(`${state.exitCode ?? 0} ${oom ? 'true' : 'false'} ${idOf(state.name)}`);
     return 0;
   }
   if (a === 'cp') {
@@ -326,6 +333,7 @@ async function main() {
     }
     if (!existsSync(path)) return 137;
     finish(path, plan.exitCode, plan.oom === true);
+    if (plan.oomAfterReads !== undefined) writeFileSync(path, JSON.stringify({ ...readJson(path), oomAfterReads: plan.oomAfterReads }));
     return plan.exitCode;
   }
   record();

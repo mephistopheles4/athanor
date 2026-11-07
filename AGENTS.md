@@ -138,6 +138,8 @@ review; W9 is a manual check at the next release recorded on issue 63; and
 W10 rests on the diff's file list; on a docs-only diff the source check,
 which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
 check of its own. No test carries their names.
+`S1` and `S2`, from issue 79, are fast-tier tests (a late OOMKilled flag, and
+a 137 whose flag never shows).
 `B1` to `B15`, from the spec on issue 70: B1 to B9 are fast-tier tests and
 B10 to B12 docker-tier tests. B13 is checked by reading at review. B14 is a
 manual check after the next release, recorded on issue 70. The docker tier on
