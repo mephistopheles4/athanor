@@ -180,6 +180,58 @@ above; the software they run is not.
     merge (`docs/releasing.md` step 2, recorded in step 9).
   - See ADR 0018, A1 to A6, and ADR 0019.
 
+## Two charts
+
+These draw what the page already says; they add no risk, control or scope.
+The owner asked for them in chat. Numbers are accepted risks. Where a point
+sits is a reading aid for the risk as accepted, not a measurement.
+
+**Residual risk.** Likelihood runs left to right, impact bottom to top, both
+after the controls above.
+
+```mermaid
+quadrantChart
+    title Residual risk of the accepted risks
+    x-axis Unlikely --> Likely
+    y-axis Low impact --> High impact
+    quadrant-1 Watch
+    quadrant-2 Rare but costly
+    quadrant-3 Minor
+    quadrant-4 Common but small
+    "1 build has network": [0.35, 0.75]
+    "7 remote engine operator": [0.15, 0.85]
+    "8 shared engine users": [0.2, 0.7]
+    "18 hijacked compiler": [0.1, 0.9]
+    "40 compromised machine": [0.1, 0.95]
+    "2 slot names open": [0.6, 0.2]
+    "17 no CPU limit": [0.55, 0.3]
+    "25 full path in messages": [0.8, 0.15]
+    "36 raised maxProcesses": [0.2, 0.45]
+    "39 base carries history": [0.5, 0.5]
+```
+
+**Trust boundaries.** What crosses from the owner's machine into the engine
+and back.
+
+```mermaid
+flowchart LR
+    subgraph Host["Owner's machine (accepted risk 40: if compromised, out of reach)"]
+        Repo["Repo and its configuration"]
+        Athanor["athanor (no shell, git and docker by full path)"]
+        State["State folder and slot locks"]
+    end
+    subgraph Engine["Docker engine and builder (accepted risks 7 and 8)"]
+        Build["Image build (has the network)"]
+        Run["Test container (no network, six capabilities, limits)"]
+    end
+    Repo --> Athanor
+    Athanor --- State
+    Athanor -- "build context" --> Build
+    Build --> Run
+    Athanor -- "snapshot on stdin" --> Run
+    Run -- "output, and --output files" --> Athanor
+```
+
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.
