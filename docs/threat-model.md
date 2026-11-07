@@ -21,27 +21,25 @@ quadrantChart
   quadrant-2 Guard closely
   quadrant-3 Accept
   quadrant-4 Watch
-  A repo you build: [0.35, 0.75]
-  Other local programs: [0.55, 0.30]
+  Windows slot pipe on the network: [0.15, 0.20]
   A compromised machine: [0.08, 0.97]
   Shared or remote engine: [0.15, 0.82]
-  Resource limits: [0.50, 0.38]
+  The machine's load: [0.50, 0.38]
   Recorded, shown, left behind: [0.72, 0.25]
   Release and CI supply chain: [0.25, 0.92]
 ```
 
-The chart places each class by what is left after today's guards: a repo you
-build is the likeliest of the severe ones, most of the rest is rare but severe,
-and the common ones are small.
+The chart places each class by what is left after today's guards: most of the
+severe ones are rare, and the common ones are small. A repo's own code is not
+on it: it is trusted, and out of scope (see Scope).
 
 | Class | Risk | L | I | What stops it | What is left open |
 | --- | --- | --- | --- | --- | --- |
-| [A repo you build](#a-repo-you-build) | The repo's Dockerfile and tests run with the network at build time and the snapshot at run time | 0.35 | 0.75 | No shell on the host; nothing from the host reaches the test container; six capabilities, fixed limits | The build has the network and the proxy settings; the repo's code is trusted |
-| [Other local programs](#other-local-programs) | A program on the machine blocks runs, reads or fakes holder details, or plants what a run reads | 0.55 | 0.30 | The OS lock; configured paths stay in the repo; the open handle is checked | Slot names are open to any local program; point-in-time checks cannot tell a swapped path |
-| [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner | 0.08 | 0.97 | Nothing inside athanor | All of it |
-| [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs |
-| [Resource limits](#resource-limits) | A run or a leftover container holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal | No default CPU limit; a full process table can block removal |
-| [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | The archive step's clean environment; names checked as text; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
+| [The Windows slot pipe on the network](#the-windows-slot-pipe-on-the-network) | A user elsewhere on the network reads what slot holders report | 0.15 | 0.20 | Windows' own sign-in for the pipe | The pipe does not refuse remote clients |
+| [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner, a local program that takes the slot names or swaps files among it | 0.08 | 0.97 | Nothing inside athanor | All of it |
+| [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs; a local address can lead elsewhere |
+| [The machine's load](#the-machines-load) | A run or a leftover container holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal | No default CPU limit; a full process table can block removal |
+| [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | Only the hashed set reaches the build; names checked as text; no container log; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
 | [The release and CI supply chain](#the-release-and-ci-supply-chain) | A hijacked dev package, action or account shapes what is built, staged or tagged | 0.25 | 0.92 | SHA pins, a 7-day wait, signatures, stage-only publishing, the owner's look and 2FA | A merged hijacked compiler; the release's `check` and `publish` jobs; any tag can be released |
 
 ## Scale
@@ -53,26 +51,53 @@ and the common ones are small.
 
 ## Scope
 
-**In scope:** anything that crosses a real boundary into or out of an athanor
-run: a repo's configuration, Dockerfile and tests, another local program that
-can reach the slot names or the state folder, the Docker engine and builder the
-user configured, and whoever runs them or sits on their network path, what a
-run copies back or prints, and this repo's dev packages, actions, CI and
-release path.
+athanor is a queue and an isolation tool for test runs. It isolates so that
+parallel runs don't collide (ports, files, the machine's load), not to contain
+a hostile repo or protect a compromised machine (ADR 0033).
 
-**Out of scope:** flaws in Docker, Docker Desktop and its VM, git, Node and the
-operating system themselves. A machine already compromised as the owner's user
-(see the accepted class "A compromised machine or sandbox"). The operator of a
-remote engine or builder is in scope as an actor below; the software they run
-is not.
+**In scope:** the boundaries athanor itself creates or exposes:
+
+- a shared or remote engine: the Docker engine and builder the user
+  configured, whoever runs them, their other users, and whoever sits on their
+  network path;
+- what athanor exposes on the network, such as the Windows slot pipe;
+- what athanor records, shows and leaves behind: what a run prints, copies
+  back, or leaves in the state folder, the repo or the engine;
+- the release and CI supply chain, since other people install athanor: this
+  repo's dev packages, actions, CI and release path.
+
+**Out of scope:**
+
+- **A repo's own code.** Its configuration, Dockerfile and tests are trusted,
+  like the machine. athanor is not a sandbox for a repo you don't trust. The
+  image build runs the repo's Dockerfile with the network, so a repo from
+  someone else can run code that reaches the internet, and a `FROM` line can
+  pull the owner's private images with the owner's registry login and send
+  their content out. The build gets the Docker client's proxy settings as
+  build arguments, and a proxy setting can hold a password: a build step can
+  send it out or print it into the build output, and a Dockerfile can leave it
+  in the image or the build cache, which `prune` does not clear. Files added
+  with `git add -N` under `context` reach the build too. A proxy setting that a
+  later Docker client adds reaches the container until athanor's list of ten
+  blocked names is updated. The test runs as the image's user, root unless the
+  Dockerfile names another, with six Linux capabilities that a flaw in Docker
+  or the kernel could use. What a copied file holds is the test code's choice:
+  athanor checks names and types, never content, so a report lands as written
+  and opening it, or a viewer previewing it, does what it holds, and copied
+  files carry no Mark-of-the-Web. Git's error text is printed as git wrote it,
+  so a name in the repo can carry terminal escape codes to the caller or
+  session. A host run of the same tool writes the same files and prints the
+  same text.
+- **A compromised machine,** already working against the owner as the
+  owner's user (see the accepted class "A compromised machine or sandbox").
+- **Flaws in Docker, Docker Desktop and its VM, git, Node and the operating
+  system themselves.** The operator of a remote engine or builder is in scope
+  as an actor below; the software they run is not.
 
 ## Who is in scope
 
 | Actor | Reaches athanor through |
 | --- | --- |
-| The repo's own code | The Dockerfile's `RUN` lines at build time and the test suite in the container; athanor is for repos the owner trusts to build |
-| Another local program, as any user | The slot names and the state folder |
-| A process that can write the owner's home folder | The machine configuration or the Docker configuration, as it could the environment |
 | Whoever runs the configured engine or builder, other users of a shared engine, someone on the network path | The build context, the snapshot, the result and the limits, when the machine configuration allows a remote engine |
 | An authenticated network user | The Windows slot pipe |
 | Whoever can publish a release of a dev package or an action CI uses, or take over the account or repository that does | CI on the bot's pull request before any merge; once merged, the compiler in every test run and the build before a publish, and the actions the release workflow uses |
@@ -87,7 +112,9 @@ runs athanor on Linux. athanor uses the Docker engine and builder the user has
 configured, on this machine, or on another one when the machine configuration
 allows it (ADR 0012, ADR 0021).
 
-**What athanor does.** It reads the repo configuration (`athanor.json`, or the
+**What athanor does.** It queues test runs and keeps a set number running at
+once, each in its own container, so that parallel runs don't collide (ADR
+0033). It reads the repo configuration (`athanor.json`, or the
 `athanor` key in `package.json`) and an optional machine configuration, builds
 the repo's Dockerfile into an image, takes a snapshot of the work with git,
 holds one of N slot locks, and pipes the snapshot into a fresh container that
@@ -98,6 +125,13 @@ folder; with `--output`, it also writes into the new folder the caller names
 leaves behind".
 
 ## Boundaries and how each holds
+
+Each control below ends with its reason under the scope above (ADR 0033):
+`collision` (parallel runs, or a run and the owner's working tree, stay
+apart), `machine load`, or the boundary in scope it holds. A control with
+none says `none under this scope`: it is a candidate to loosen, on issue 84,
+and stays until the owner decides its own spec. A value outside those, such as
+correctness, is named where a control keeps one, but is not a reason.
 
 ```mermaid
 flowchart LR
@@ -122,35 +156,59 @@ flowchart LR
   with `shell: false` (ADR 0002). The source check fails the build on any
   shell use. A test command with `;`, `&&`, `$(...)`, quotes or spaces reaches
   the container as the same literal arguments (C16).
+  Reason: none under this scope; it keeps correctness, a command's words
+  reaching the container as written.
 - **Nothing from the host reaches the test container** but the snapshot on
-  stdin and `ATHANOR_GRACE_LIMIT`: no network for the test run (the image
-  build has it, accepted class "A repo you build"), no host folder, no host environment
-  value, no Docker socket, no privileged mode, and only six Linux capabilities: `CHOWN`,
-  `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`, every other one
-  dropped by an allow-list (ADR 0016, C6, C19, K1, K2, P1). The run
-  blocks, with empty values, the ten proxy names the Docker CLI fills from the
-  five proxy settings it reads today (accepted class "A repo you build"). A value the build
-  writes into the image or its cache is accepted class "A repo you build". With a base, the
-  snapshot's stream also carries the base's history: the commit, tree and file
-  objects from the merge base onward, a list of the commits whose parents were
-  left out, two refs and the snapshot's tree id; never a git setting, hook or
-  remote (ADR 0032; accepted class "What athanor records, shows and leaves behind"). This, and
-  the limits below, hold only as far as the engine enforces them: on an
-  engine the owner runs, they hold; on someone else's engine, the operator
-  decides (accepted class "A shared or remote engine, and the network").
-- **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), `no-new-privileges`, a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted class "Resource limits"). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
+  stdin and `ATHANOR_GRACE_LIMIT`. This, and the limits below, hold only as
+  far as the engine enforces them: on an engine the owner runs, they hold; on
+  someone else's engine, the operator decides (accepted class "A shared or
+  remote engine, and the network"). With a base, the snapshot's stream also
+  carries the base's history: the commit, tree and file objects from the merge
+  base onward, a list of the commits whose parents were left out, two refs and
+  the snapshot's tree id; never a git setting, hook or remote (ADR 0032;
+  accepted class "What athanor records, shows and leaves behind").
+  - **No host folder and no Docker socket:** no `-v` and no `--mount` (ADR
+    0016, C6). Reason: collision; a run can't write the owner's working tree,
+    another run's files or another run's container.
+  - **No network for the test run:** `--network none` (C19; the image build
+    has the network, see Out of scope). Reason: none under this scope; it
+    keeps tests from touching real services by accident, and keeps a run's
+    ports off the host's.
+  - **No host environment value, and the ten proxy names blocked:** the only
+    `-e` are `ATHANOR_GRACE_LIMIT` and, with empty values, the ten proxy names
+    the Docker CLI fills from the five proxy settings it reads today (ADR
+    0016). Reason: records and leaves behind, and shared or remote engine; the
+    engine keeps a container's environment in its record of it, where a
+    shared engine's users and a remote engine's operator can read it. A value
+    the build writes into the image or its cache is out of scope (a repo's
+    own code).
+  - **No privileged mode, and six capabilities:** `--cap-drop ALL`, then
+    `--cap-add` for `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and
+    `SETGID` only, an allow-list (ADR 0016, K1, K2, P1). Reason: none under
+    this scope.
+- **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted class "The machine's load"). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
+  Reason: machine load.
+- **`no-new-privileges`** on each run. Reason: none under this scope.
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
-  before any Docker call (C17). The configuration files themselves, `athanor.json`
-  and `package.json`, must each be a regular file whose real path is inside the
+  before any Docker call (C17). Reason: collision; the image's tag keys on
+  files in the repo, so a run never gets an image built from files outside
+  what the tag covers.
+- **The configuration files are checked as they are opened.** `athanor.json`
+  and `package.json` must each be a regular file whose real path is inside the
   repo, and must have no second hard link. The file is opened once, and the
   open handle must be the regular file that was checked, before any of its
-  content is read (J6).
+  content is read (J6). Reason: none under this scope; it held against a
+  local program swapping the file, now the class "A compromised machine or
+  sandbox".
 - **Only the hashed set reaches the build.** The build context is exactly the
   tracked files under `context`, and files added with `git add -N` under
   `context`, plus the listed `inputs`, each of which must be tracked: no
-  untracked or ignored file and no git folder (ADR 0006, C28).
+  untracked or ignored file and no git folder (ADR 0006, C28). Reason:
+  collision, and records and leaves behind; parallel runs never share an image
+  built from other files, and an ignored file, such as a `.env`, never reaches
+  the build or a remote builder.
 - **The archive step carries the tree as committed.** Every `git archive`, and
   the `git init` of athanor's archive folder, run with every inherited `GIT_*`
   variable removed, no global or system git config or attributes (on git 2.32
@@ -159,20 +217,25 @@ flowchart LR
   host git setting changes a file in that step. This keeps host git settings
   out of the archive step; it is not a control against a process that can
   write the environment or the home folder, which already chooses the git that
-  runs. git and docker start by a full path from PATH's absolute entries, so a
-  program of that name in the working folder, or one found through a relative
-  or empty PATH entry, never runs in their place, which on Windows was the
-  repo's own folder (ADR 0020, G8). A full PATH entry into the repo, such as
-  the one npm adds for its scripts, or another spelling of the working folder,
-  is the environment's choice, as above. The line endings and file modes are
+  runs. The line endings and file modes are
   pinned, and the tree's own `text`, `eol`, `ident` and
   `working-tree-encoding` attributes still apply (ADR 0020, C32, G1–G6). The
   git calls that make the snapshot's and the build context's trees still run
   with the host's git config and environment (accepted class "What athanor records, shows and leaves behind", issue 42).
+  Reason: none under this scope; it keeps the same bytes on every machine.
+- **git and docker by full path.** git and docker start by a full path from
+  PATH's absolute entries, so a program of that name in the working folder, or
+  one found through a relative or empty PATH entry, never runs in their place,
+  which on Windows was the repo's own folder (ADR 0020, G8). A full PATH entry
+  into the repo, such as the one npm adds for its scripts, or another spelling
+  of the working folder, is the environment's choice, as above. Reason: none
+  under this scope; a program planted there is the repo's own code or the
+  class "A compromised machine or sandbox".
 - **athanor's own git calls never write the repo.** Snapshots use a copy of the index and a
   per-run object folder (ADR 0007, C21, C30), except as accepted class "What athanor records, shows and leaves behind" says:
   a clean filter the host defines, such as Git LFS's, can write the repo's git
-  folder (issue 42).
+  folder (issue 42). Reason: collision; parallel runs and the owner's own work
+  in the repo never touch each other's index, stash or working tree.
 - **Docker on this machine, unless the machine allows otherwise, and never in
   clear.** A run refuses an engine or builder that is not local (a unix
   socket, the local pipe in its exact form, or tcp to loopback) unless the
@@ -181,7 +244,7 @@ flowchart LR
   to every builder node, and any builder whose transport it could not read,
   unless `allowPlainTcp` is set (ADR 0013, ADR 0021). What was checked is
   pinned by name for the whole run and checked again once the slot is held
-  (ADR 0021; L2, L5, L6, L8, L10, L11).
+  (ADR 0021; L2, L5, L6, L8, L10, L11). Reason: shared or remote engine.
 - **What comes back from the container.** The test's stdout and stderr stream
   to the caller. With `--output`, the paths a named command declares are
   copied from the stopped container, addressed by its ID with the pinned
@@ -193,14 +256,42 @@ flowchart LR
   - Every create is exclusive.
   - Size, entry count and time are capped.
   - On error, what was made is removed from a list (M10–M17).
+  - The file names Windows acts on when it shows a folder are skipped, and a
+    folder laid out as a bare git repository athanor recognises is refused.
+
+  Reason: records and leaves behind, and shared or remote engine; a copy
+  writes only into the folder the caller named, and a remote engine's
+  operator, who chooses what the copy holds, can't write past it. The caps
+  also serve machine load.
 - **The run limit holds through a hard kill.** The slot is an OS lock that the
   OS frees when the process ends, and a run removes its slot's labelled
-  container before starting its own (ADR 0004, C8, C10).
+  container before starting its own (ADR 0004, C8, C10). Reason: machine
+  load, and collision; this is the queue itself.
+- **What athanor keeps of a run.** The container runs with `--log-driver
+  none`, so the engine keeps no copy of the test output. The state folder is
+  mode 0700 on Linux, and the stale-run sweep removes a hard-killed run's
+  folder a day later. Reason: records and leaves behind.
 - **Machine configuration is data.** It is validated key by key and holds no
-  paths or commands.
+  paths or commands, and only it can set `allowRemoteDocker` and
+  `allowPlainTcp`. Reason: shared or remote engine; where a run's work goes is
+  the machine owner's choice, and never comes in with a repo.
 - **Holder answers are shown, not trusted.** `status` skips an answer that is
   not one well-formed JSON line of the expected shape, or whose repo name holds
-  control characters.
+  control characters. Reason: none under this scope; a local program faking
+  an answer is the class "A compromised machine or sandbox". It keeps
+  correctness, `status` not breaking on a garbled answer.
+- **Values are validated before use.** Repo configuration, machine
+  configuration, environment values, CLI arguments, command names and
+  configured paths are each checked, and a bad value exits 125 with a plain
+  message (the Input validation item below). Reason: machine load for the
+  ceilings; for the rest none under this scope. It keeps correctness.
+- **A named base is checked and resolved apart from the repo's settings.** The
+  name is checked before git sees it, resolved to one ref with replace refs,
+  grafts and lazy fetching off, and a shallow or partial clone is refused (the
+  Input validation item below, ADR 0032). Reason: none under this scope; a
+  planted git setting or ref is the repo's own code or the class "A
+  compromised machine or sandbox". The shallow and partial refusals keep
+  correctness, a base that carries all its history.
 - **The build's own supply chain.**
   - Install scripts are off in the repo (`.npmrc`) and on CI's `npm ci`.
   - The lockfile pins each dev package by integrity hash, and every package
@@ -227,10 +318,12 @@ flowchart LR
     merge (`docs/releasing.md` step 2, recorded in step 9).
   - See ADR 0018, A1 to A6, and ADR 0019.
 
+  Reason: release and CI.
+
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.
-  The slot locks are open to any local program (accepted class "Other local programs"). It
+  The slot locks are open to any local program (out of scope: a local program working against the owner is the class "A compromised machine or sandbox"; the pipe's reach from the network is the class "The Windows slot pipe on the network"). It
   relies on the operating system's user separation for the state folder
   (mode 0700 on Linux; on Windows, the home folder's own access rules). The
   `--output` folder is mode 0700 on Linux, and on Windows inherits its parent's
@@ -247,7 +340,7 @@ flowchart LR
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
-  (accepted class "A repo you build"). With `--untracked`, the untracked files git doesn't
+  (out of scope: a repo's own code). With `--untracked`, the untracked files git doesn't
   ignore go into the container too, so a secret in one the ignore list misses
   goes with them; they never reach the build. With a remote engine or builder, those copies go to that
   machine when the machine configuration allows it (accepted class "A shared or remote engine, and the network"), and a
@@ -262,7 +355,7 @@ flowchart LR
   up. A named command's arguments show in the host's process list and the
   engine's record of the container (accepted class "What athanor records, shows and leaves behind"). The Docker client's proxy
   settings can hold a password: the run blocks it (ADR 0016), and the build
-  receives it (accepted class "A repo you build"). Plain tcp transport is refused
+  receives it (out of scope: a repo's own code). Plain tcp transport is refused
   by default (ADR 0013; accepted class "A shared or remote engine, and the network" for the opt-out). Test output can hold
   secrets: athanor streams it to the caller, keeps no copy, and runs the
   container with `--log-driver none`. When the caller is an agent session, the
@@ -337,67 +430,12 @@ adds or widens one. A class says what it covers, never the steps. A class a
 user has to act on or know about has a line in the README's "What athanor
 doesn't protect you from"; the release and CI class stays here alone.
 
-- **A repo you build.** The image build runs the repo's own Dockerfile with
-  the network, so a repo from someone else can run code that reaches the
-  internet, and a `FROM` line can pull the owner's private images with the
-  owner's registry login and send their content out. The build also gets the
-  Docker client's proxy settings as build arguments, and a proxy setting can
-  hold a password: a build step can send it out or print it into the build
-  output, which reaches the caller and, from an agent session, the model
-  provider; a Dockerfile can leave it in the image's files, metadata or
-  history, or in the build cache, which `prune` does not clear, where the test
-  run, the engine's operator and a shared engine's other users can read it.
-  Files added with `git add -N` under `context` reach the build too. A proxy
-  setting that a later Docker client adds reaches the container until
-  athanor's list of ten blocked names is updated. The test runs as the image's
-  user, root unless the Dockerfile names another, with six Linux capabilities
-  that a flaw in Docker or the kernel could use to read or change what root
-  can reach on the engine's machine, and the run limit is the owner's own
-  setting. What a copied file holds is the test code's choice: athanor checks
-  names and types, never content, so a report lands as written and opening it,
-  or a viewer previewing it, does what it holds; copied files carry no
-  Mark-of-the-Web; and what the test read inside the sealed container leaves
-  this way. athanor skips the file names Windows acts on when it shows a
-  folder (`desktop.ini`, `.lnk`, `.url`, `.scf`, `.library-ms`,
-  `.searchConnector-ms`, theme files), and refuses a folder laid out as a bare
-  git repository it recognises; a spelling or layout it does not know is
-  written, so the README advises `safe.bareRepository=explicit`. Git's error
-  text is printed as git wrote it, so a name in the repo can carry terminal
-  escape codes to the caller or session. Accepted because athanor is for repos
-  the owner trusts to build, most Dockerfiles need the network, blocking the
-  proxy would mean athanor choosing the build's Docker configuration (ADR
-  0012), the other five capabilities are what a root-run test can plausibly
-  need and `KILL` is what the in-container time limit needs, and a host run of
-  the same tool writes the same files and prints the same text.
-
-- **Other local programs.** Any local program can take the slot names to
-  block runs, or answer `status` with false holder details, and can read the
-  details a holder reports (pid, start time, repo folder name, limit); on
-  Windows possibly an authenticated network user can too, since the pipe does
-  not refuse remote clients. A program that owns a slot name and holds the
-  Windows privilege to impersonate clients can act with the owner's identity
-  for that connection. A program that can write the repo or the folders around
-  it can swap a folder under an in-repo link to a configuration file while a
-  run reads it, give an outside file its only name in the repo for the moment
-  of the read, or mount a file over a configuration name on Linux (root), so
-  that at most a key name or path value from it appears in a message; a
-  dangling link named `athanor.json` counts as absent, so the `athanor` key in
-  `package.json` is used with no conflict message; and on Windows a link at the
-  repo root to a network location is followed before athanor tests whether it
-  is inside the repo, so the machine can start a sign-in there, with no content
-  read. An endpoint athanor counts as local, a `unix://` socket, the local pipe
-  or a loopback port, can lead elsewhere: forwarded to another machine, or
-  held by another local program while the engine does not (Docker Desktop
-  stopped, say); `localhost` is trusted as loopback. The agent test hook (ADR
-  0024) is a nudge, not a control: it fails open on any error, stays silent
-  when it cannot find athanor, and reads only a command's plain forms. Accepted
-  because limiting the Windows pipe needs a native package, which "no
-  dependencies" rules out; a process with the impersonation privilege can
-  usually reach SYSTEM anyway; each file path needs write access the owner's
-  own programs already have, or mount privilege, with a gain limited to what a
-  message shows; athanor cannot tell where a local address leads without
-  trusting the machine, and Docker offers no check of the engine's identity;
-  and the hook exists to make a skipped rule visible.
+- **The Windows slot pipe on the network.** On Windows, a slot is a named
+  pipe, and the pipe does not refuse remote clients, so an authenticated user
+  elsewhere on the network can possibly read the details a holder reports
+  (pid, start time, repo folder name, limit). Accepted because limiting the
+  pipe needs a native package, which "no dependencies" rules out, and the
+  details are small.
 
 - **A compromised machine or sandbox.** Once a program, process or agent on
   the machine or in the sandbox works against you, it can plant programs a
@@ -405,14 +443,38 @@ doesn't protect you from"; the release and CI class stays here alone.
   session would; athanor does not defend against it. That covers local prompt
   injection and planted files: a rogue agent in the system can change what a
   session reads and runs, and athanor cannot tell it from the owner. It adds
-  to the actors this page lists and to the machine "already compromised as the
-  owner's user" under Out of scope. It takes over none of the paths the class
-  "Other local programs" names, and no control named here is removed or eased:
-  the argument-array starts, the full-path git and docker lookup, the clean
-  archive environment and the container's limits keep holding against what they
-  hold against. Accepted because a program that already acts as the owner or as
-  a session reaches everything athanor reads and starts, so no control inside
-  athanor can stop it.
+  to the machine "already compromised as the owner's user" under Out of scope.
+  It also takes over the paths of the former class "Other local programs",
+  which ADR 0033 folds in here:
+  - Any local program can take the slot names to block runs, or answer
+    `status` with false holder details, and can read the details a holder
+    reports. A program that owns a slot name and holds the Windows privilege
+    to impersonate clients can act with the owner's identity for that
+    connection.
+  - A program that can write the repo or the folders around it can swap a
+    folder under an in-repo link to a configuration file while a run reads
+    it, give an outside file its only name in the repo for the moment of the
+    read, or mount a file over a configuration name on Linux (root), so that
+    at most a key name or path value from it appears in a message; a dangling
+    link named `athanor.json` counts as absent, so the `athanor` key in
+    `package.json` is used with no conflict message; and on Windows a link at
+    the repo root to a network location is followed before athanor tests
+    whether it is inside the repo, so the machine can start a sign-in there,
+    with no content read.
+  - A local program can hold an endpoint athanor counts as local while the
+    engine does not (Docker Desktop stopped, say).
+  - The agent test hook (ADR 0024) is a nudge, not a control: it fails open
+    on any error, stays silent when it cannot find athanor, and reads only a
+    command's plain forms.
+
+  No control named here is removed or eased by the fold: the argument-array
+  starts, the full-path git and docker lookup, the clean archive environment,
+  the configuration file checks and the container's limits keep holding
+  against what they hold against. Accepted because a program that already
+  acts as the owner or as a session reaches everything athanor reads and
+  starts, so no control inside athanor can stop it; a process with the
+  impersonation privilege can usually reach SYSTEM anyway; and the hook exists
+  to make a skipped rule visible.
 
 - **A shared or remote engine, and the network.** With `"allowRemoteDocker":
   true` in the machine configuration, athanor uses the engine and builder the
@@ -433,13 +495,25 @@ doesn't protect you from"; the release and CI class stays here alone.
   build arguments, the test output and copied files cross the network
   unencrypted, readable and changeable by anyone on the path; plain tcp to
   another host also needs `allowRemoteDocker`, and the opt-in covers builder
-  nodes and builders whose transport athanor could not read (ADR 0021).
+  nodes and builders whose transport athanor could not read (ADR 0021). An
+  endpoint athanor counts as local, a `unix://` socket, the local pipe or a
+  loopback port, can lead elsewhere when it is forwarded to another machine;
+  `localhost` is trusted as loopback. The files a copy writes are the engine's
+  choice: athanor skips the file names Windows acts on when it shows a folder
+  (`desktop.ini`, `.lnk`, `.url`, `.scf`, `.library-ms`,
+  `.searchConnector-ms`, theme files), and refuses a folder laid out as a bare
+  git repository it recognises, but a spelling or layout it does not know is
+  written, so the README advises `safe.bareRepository=explicit`.
   Accepted because the owner chose to let athanor run against any Docker the
   user sets up and the user chooses whom to trust with that; the README and
-  SECURITY.md say not to share an engine with people you don't trust; and the
-  opt-ins can be set only in the machine configuration, never by a repo.
+  SECURITY.md say not to share an engine with people you don't trust; the
+  opt-ins can be set only in the machine configuration, never by a repo; and
+  athanor cannot tell where a local address leads without trusting the
+  machine, and Docker offers no check of the engine's identity.
 
-- **Resource limits.** A test that kills the in-container timer, together with
+- **The machine's load.** athanor exists to keep parallel runs from
+  overloading the machine (ADR 0033); this class names the limits it leaves
+  open. A test that kills the in-container timer, together with
   a hard-killed caller, leaves one container running until its slot is next
   used, when the next run removes it; until then it keeps the run's snapshot,
   uncommitted files included. With no CPU limit configured (`maxCpus` unset), a

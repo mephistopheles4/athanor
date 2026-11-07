@@ -33,3 +33,4 @@ changed one gets a new record that names the one it replaces.
 | [0030](0030-oomkilled-means-some-process-was-killed-not-the-test.md) | OOMKilled means some process was killed, not the test (extends 0003, 0016 and 0023) |
 | [0031](0031-every-tag-is-fixed-and-a-release-is-read-as-a-draft.md) | Every tag is fixed, and a release is read as a draft (extends 0029) |
 | [0032](0032-a-named-base-rides-in-the-snapshot.md) | A named base rides in the snapshot (extends 0007, 0016, 0020 and 0023) |
+| [0033](0033-athanor-isolates-parallel-runs-not-a-hostile-repo.md) | athanor isolates parallel test runs; it does not contain a hostile repo (extends 0016 and 0020) |

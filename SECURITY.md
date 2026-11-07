@@ -14,13 +14,17 @@ report; say where they are instead.
 ## What counts
 
 [The threat model](docs/threat-model.md) says what athanor defends and which
-risks it accepts. Read it before you report. A hole is a boundary that
-doesn't hold: for example, a host folder, host environment value or network
-reaching the test container, a configured path escaping the repo, or a
-command reaching a shell on the host.
+risks it accepts. Read it before you report. athanor isolates parallel test
+runs so they don't collide; it does not contain a hostile repo (ADR 0033). A
+hole is a boundary in scope that doesn't hold: for example, an engine off this
+machine, or plain tcp, used without its opt-in; something athanor exposes on
+the network beyond what the threat model says; what athanor records or leaves
+behind going further than it says, such as a host environment value reaching
+a shared engine's record of a container; or a gap in the release path. If in
+doubt, report it privately here anyway.
 
-athanor is for repos you trust to build: the image build runs the repo's own
-Dockerfile with network access. athanor sends the build context and snapshot
+athanor is for repos you trust to build, and a repo's own code is out of
+scope: the image build runs the repo's own Dockerfile with network access. athanor sends the build context and snapshot
 to the Docker engine and buildx builder you have configured. It refuses one on
 another machine unless the machine configuration sets `allowRemoteDocker`, and
 refuses plain tcp without TLS verification unless it sets `allowPlainTcp`.
