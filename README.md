@@ -378,6 +378,11 @@ threat model holds the full entries.
   connection.
   Don't run athanor on a machine where you don't trust the other programs.
   Accepted risks 2, 3 and 9.
+- **A compromised machine or sandbox.** Once a program, process or agent on
+  your machine or in your sandbox works against you, it can plant programs a
+  bare command name runs, change files a session or a hook reads, and act as a
+  session would. athanor does not defend against it. Keep the machine and the
+  sandbox free of what you don't trust. Accepted risk 40.
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until

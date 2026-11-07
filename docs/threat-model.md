@@ -66,7 +66,7 @@ fresh container that runs the test command. It writes only to its state folder (
 
 **Out of scope.** Flaws in Docker, Docker Desktop and its VM, git, Node and
 the operating system themselves. A machine already compromised as the owner's
-user. The operator of a remote engine or builder is in scope as an actor
+user (accepted risk 40). The operator of a remote engine or builder is in scope as an actor
 above; the software they run is not.
 
 ## Boundaries and how each holds
@@ -293,7 +293,7 @@ from"; a maintainer-only risk stays here alone.
 
 | Who | Accepted risks |
 | --- | --- |
-| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36, 39 |
+| User-facing | 1, 2, 3, 4, 5, 7, 8, 9, 10, 17, 23, 24, 25, 28, 30, 31, 32, 36, 39, 40 |
 | Maintainer-only | 6, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 26, 29, 33, 34, 38 |
 
 Risks 21, 22, 26 and 29 placed 2026-10-24. How the word arrived: the owner, in
@@ -725,3 +725,20 @@ the lead session's chat, relayed by head-chef-field-test.
     container has no network.
     Accepted 2026-10-27. From: the Plan round of issue 70 (q4), widened at the Design review of its spec (data-lens D1, D3, D4; adversarial-lens F1, F2). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
     The sentence on the pack sitting unencrypted added 2026-10-27. From: the Test review of issue 70, round 1 (data-lens D3, q21). How the word arrived: the owner, in the lead session's chat, relayed by Oracle Head Chef.
+40. **A compromised machine or sandbox.** Once a program, process or agent on
+    the machine or in the sandbox works against you, it can plant programs a
+    bare command name runs, change files a session or a hook reads, and act as
+    a session would; athanor does not defend against it. That covers local
+    prompt injection and planted files: a rogue agent in the system can change
+    what a session reads and runs, and athanor cannot tell it from the owner.
+    It adds to the actors this page already lists (the home-folder writer, the
+    other local program) and to the machine "already compromised as the owner's
+    user" under Out of scope, and it sits beside accepted risks 2, 13, 15, 24,
+    26 and 29, which name single paths of it. It takes none of them over, and
+    no control named here is removed or eased: the argument-array starts, the
+    full-path git and docker lookup, the clean archive environment and the
+    container's limits keep holding against what they hold against.
+    Accepted because a program that already acts as the owner or as a session
+    reaches everything athanor reads and starts, so no control inside athanor
+    can stop it.
+    Accepted 2026-11-07. From: issue 77, matching the pact's threat model (the-pact#482). How the word arrived: the owner, in chat, relayed by backlog-head-chef.
