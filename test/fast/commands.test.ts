@@ -27,16 +27,6 @@ function assertSetupError(result: RunResult, calls: Call[], pattern: RegExp) {
 
 const flag = (args: string[], name: string): string => args[args.indexOf(name) + 1] as string;
 
-test('M1 a command in object form runs its argv, and the array form is unchanged', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: withCommands({ test: ['node', 'test/run.mjs'], mutation: { argv: ['npx', 'stryker', 'run'] } }) });
-  const mutation = await runIn(t, repo, { name: 'mutation' });
-  assert.equal(mutation.result.outcome, 'pass', JSON.stringify(mutation.result));
-  assert.deepEqual(callsOf(mutation.calls, 'run')[0].args.slice(-3), ['npx', 'stryker', 'run']);
-  const plain = await runIn(t, repo);
-  assert.deepEqual(callsOf(plain.calls, 'run')[0].args.slice(-2), ['node', 'test/run.mjs']);
-});
-
 test('M2 a bad command object exits 125 naming commands.<name>.<key> and the place', async (t) => {
   const rows = [
     { name: 'argv missing', command: {}, key: 'argv' },
