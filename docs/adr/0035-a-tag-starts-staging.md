@@ -30,8 +30,13 @@ keep that, the one with fewer paths to a live version wins.
 - **The dist-tag comes from the tarball.** In `publish`, a marked block of
   plain `sh` reads only the `package/package.json` member of the tarball, to
   standard output, requires its version to equal the file name's and the
-  tag's, and derives `--tag` from it. `npm stage publish` is always passed
-  `--tag`.
+  tag's, and derives `--tag` from it. The block lists the tarball by name
+  first and accepts only entries under `package/` with exactly one
+  `package/package.json`, because npm drops the first folder of every entry
+  and reads the manifest that is left. `npm stage publish` is always passed
+  `--tag`. What binds the dist-tag to the version npm stages is the owner's
+  step 15: one staged entry for this version, and the entry list and every file
+  compared with a local pack.
 - **The `npm` environment admits `v*` tags, not `main`.** The owner changes it
   after this workflow merges and before the first tag, and checks it before
   each release (`docs/releasing.md`).
@@ -61,7 +66,10 @@ keep that, the one with fewer paths to a live version wins.
    trusted publisher names, which is unconfirmed (claim R10 of the spec on
    issue 6). Until it is confirmed, the actor stays "whoever controls the
    owner's GitHub account, or can push a branch", and the tag policy counts as
-   a control only under that caveat.
+   a control only under that caveat. Against whoever holds the owner's GitHub
+   account or gh login, who can also create tags and change the rulesets and
+   the environment, only stage-only publishing and the owner's npm two-factor
+   approval hold, as before this change.
 2. **ADR 0031's "a version unpublished or deprecated in step 17 gets no tag"
    is replaced.** The tag is pushed before the version is checked, and a pushed
    tag never moves, so a rejected, failed or unpublished version, and every
@@ -82,9 +90,9 @@ and stage-only publishing.
 ## Residual the owner accepts
 
 An action in `publish`, or the npm it provides, could stage the owner's
-reviewed rc under `latest`. `check` cannot set the dist-tag, and the marked
-block fixes it from the tarball's version, but whether `npm stage view --json`
-shows the dist-tag is undocumented. The owner records it at the first rc
+reviewed rc under `latest`. `check` shapes the dist-tag only through the
+tarball's version, which the marked block reads, but whether
+`npm stage view --json` shows the dist-tag is undocumented. The owner records it at the first rc
 (claim F9) and holds that rc's approval until then. If the view shows none, the
 owner compares the publish summary's dist-tag line with the version, and the
 way back is in `docs/releasing.md`, "Stop conditions and rollback": move

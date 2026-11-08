@@ -271,12 +271,21 @@ jobs:
           esac
           tag_version=${REF_NAME#v}
           dist_tag_of "$name_version" > /dev/null || fail "The version in the tarball's file name is not X.Y.Z or X.Y.Z-rc.N."
-          listing=$(tar -tzvf "$TARBALL" 2> /dev/null) || fail "Could not list the tarball."
-          members=$(printf '%s\n' "$listing" | grep -E ' [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? package/package\.json( -> .*| link to .*)?$') || fail "The tarball holds no package/package.json member."
-          count=$(printf '%s\n' "$members" | grep -c '^')
+          # npm drops the first folder of every entry and reads the manifest that
+          # is left, so the names alone decide which package.json that is: every
+          # entry sits under package/, none has an odd path, and exactly one is
+          # package/package.json.
+          names=$(tar -tzf "$TARBALL" 2> /dev/null) || fail "Could not list the tarball."
+          count=$(printf '%s\n' "$names" | grep -cx 'package/package\.json' || true)
+          test "$count" != 0 || fail "The tarball holds no package/package.json member."
           test "$count" = 1 || fail "The tarball must hold exactly one package/package.json member."
+          outside=$(printf '%s\n' "$names" | grep -Ecv '^package/' || true)
+          test "$outside" = 0 || fail "The tarball holds an entry outside package/."
+          odd=$(printf '%s\n' "$names" | grep -Ec '//|(^|/)\.\.?(/|$)' || true)
+          test "$odd" = 0 || fail "The tarball holds an entry with an odd path (a .., . or empty segment)."
           # A regular file: its mode starts with -, and no -> or link to follows the name.
-          printf '%s\n' "$members" | grep -Eq '^-.* package/package\.json$' || fail "The tarball's package/package.json is not a regular file."
+          listing=$(tar -tzvf "$TARBALL" 2> /dev/null) || fail "Could not list the tarball."
+          printf '%s\n' "$listing" | grep -E ' [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? package/package\.json( -> .*| link to .*)?$' | grep -Eq '^-.* package/package\.json$' || fail "The tarball's package/package.json is not a regular file."
           manifest=$(tar -xzOf "$TARBALL" package/package.json 2> /dev/null) || fail "Could not read package/package.json from the tarball."
           package_version=$(printf '%s' "$manifest" | node -e '
             let text = "";

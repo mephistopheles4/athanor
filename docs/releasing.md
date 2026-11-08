@@ -24,7 +24,9 @@ numbers without leading zeros and N is at least 1. Any other form
 The tag is `v` plus the version: `v0.3.0` or `v0.3.0-rc.1`. The workflow
 takes the dist-tag from the version inside the tarball it stages, not from
 the tag name, and stops if the two differ (ADR 0035). npm fixes the dist-tag
-when a version is staged: `npm stage approve` takes no tag.
+when a version is staged: `npm stage approve` takes no tag. Your check in step
+15, that the one staged entry is for this version and matches your local pack
+file for file, is what ties the dist-tag to the version npm stages.
 
 ## The first publish, by hand
 
@@ -147,8 +149,8 @@ new, empty folder outside any checkout.
 6. Try the guards with the checks and tests, not with a real tag, because
    every tag you push is permanent (ADR 0031):
    - Run `node scripts/check-workflows.mjs` in a checkout of the dry run's
-     commit: it prints "every rule kept". The fast tier's `F1` to `F8` tests
-     (`test/fast/release.test.ts`) show each rule failing on a bad case: the
+     commit: it prints "every rule kept". The fast tier's `F1`, `F2` and `F5` to
+     `F8` tests (`test/fast/release.test.ts`) show each rule failing on a bad case: the
      version and tag forms, the dist-tag rule, the trigger, the checkout and
      the staging commands.
    - Read `check`'s first four steps in `release.yml`: the ref must be a
@@ -213,7 +215,9 @@ npm config get registry
    authorization and writes.
 10. Run steps 12 to 17 for the version from the dry run, whose tag step 5
     already pushed: in step 12, check the commit but push no tag, and instead
-    re-run the dry run's `release` on its tag (Re-run all jobs). In step 13,
+    re-run the dry run's `release` on its tag (Re-run all jobs; the dry run
+    staged nothing, because `publish` failed on authentication, so "If a run
+    fails" does not forbid it). In step 13,
     diff against the hand-published version's tag, `v<hand-published
     version>`. If the trusted publisher expires, or the first stage fails:
     - follow "If a run fails" for any entry the run left;
@@ -475,8 +479,10 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     the next release bumps it (step 12). A version you unpublished or
     deprecated keeps its tag (step 12 pushed it) and gets no release.
 
-    Then check the dist-tags, from the folder you logged in from (or log in
-    again as above and log out after):
+    Then check the dist-tags, logged out: `npm view` is a public read and
+    needs no login, so no new session token goes on disk. Run it from a new,
+    empty folder outside any checkout, checked as in step 15, so that no
+    project `.npmrc` picks the registry:
 
     ```powershell
     npm view @mephistopheles4/athanor dist-tags --json
@@ -607,8 +613,11 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
   page) after fixing what the failed step names, as long as the tagged commit
   is still `main`'s head or behind it. Two tags pushed close together can
   replace the older waiting run (the `release` concurrency group): re-run the
-  older one on its tag. The actor check passes only for you, so a re-run from
-  another account fails at its second step.
+  older one on its tag. The actor check passes only for you, so a Re-run all
+  jobs from another account fails at its second step. A Re-run failed jobs on a
+  failed `publish` re-runs `publish` alone and skips `check`, so it skips the
+  actor check too; the `npm` environment's approval, which only you can give,
+  is what stops it.
 - **Don't re-run a run once `publish` has reached its stage step.** If its
   summary shows a stage id, or `npm stage list` shows an entry, re-running
   could stage a second entry for the version. Check for the entry as below,
@@ -791,7 +800,10 @@ print the same number. Cautions:
   file's guards cannot be what stops it. The admin-only tag ruleset, the `npm`
   environment's tag policy, npm's binding to `release.yml` and `npm`, your
   look in step 13 and stage-only publishing with your two-factor approval do
-  (ADR 0035). Check the environment and the rulesets before each release.
+  (ADR 0035). Against whoever holds your GitHub account or your gh login, who
+  can also create tags and change the rulesets and the environment, only
+  stage-only publishing and your npm two-factor approval hold. Check the
+  environment and the rulesets before each release.
 - **If a bad version goes live,** deprecate it with `npm deprecate` and
   publish a fixed one, or unpublish it where npm's unpublish policy allows.
   To stop releases altogether, delete `release.yml` and revoke the trusted

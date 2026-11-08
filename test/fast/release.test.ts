@@ -204,8 +204,8 @@ test('F1 the release ref check accepts X.Y.Z and X.Y.Z-rc.N and refuses every ot
       const r = checkRef(t, `refs/tags/v${version}`, version);
       assert.equal(r.status, 1, `${JSON.stringify(version)} should be refused: ${r.stdout}`);
       assert.ok(r.stderr.includes(JSON.stringify(version)), `${JSON.stringify(version)} should be named: ${r.stderr}`);
-      assert.match(r.stderr, /X\.Y\.Z\b/);
-      assert.match(r.stderr, /X\.Y\.Z-rc\.N/);
+      assert.match(r.stderr, /X\.Y\.Z \(a stable release/);
+      assert.match(r.stderr, /X\.Y\.Z-rc\.N \(a release candidate/);
     }
   });
   await t.test('a version that is not text is refused', () => {
@@ -233,11 +233,15 @@ test('F2 the release ref check refuses a tag name that is not v plus the version
     assert.equal(checkRef(t, 'refs/tags/vv0.2.0', '0.2.0').status, 1);
   });
   await t.test('a ref that is not a tag is refused and named', () => {
-    for (const ref of ['refs/heads/main', 'refs/heads/v0.2.0', 'refs/pull/5/merge', 'v0.2.0', 'refs/tags/', 'refs/tags', '', 'refs/tags/v0.2.0/extra']) {
+    for (const ref of ['refs/heads/main', 'refs/heads/v0.2.0', 'refs/pull/v0.2.0', 'refs/pull/5/merge', 'v0.2.0', 'refs/tags/', 'refs/tags', '']) {
       const r = checkRef(t, ref, '0.2.0');
       assert.equal(r.status, 1, `${JSON.stringify(ref)}: ${r.stdout}`);
-      assert.match(r.stderr, /tag/);
+      assert.match(r.stderr, /not a tag of that form/);
     }
+    // A tag that passes the prefix but has more after the version fails on the name.
+    const extra = checkRef(t, 'refs/tags/v0.2.0/extra', '0.2.0');
+    assert.equal(extra.status, 1, extra.stdout);
+    assert.match(extra.stderr, /the tag must be "v0\.2\.0"/);
   });
   await t.test('a missing, unreadable or odd package file is refused with a plain message', () => {
     const missing = checkRef(t, 'refs/tags/v0.2.0', null);
@@ -286,8 +290,7 @@ const releaseFails = (t: TestContext, yaml: string, line: number, what: RegExp) 
 };
 
 // F5 runs the marked block of release.yml's publish job with sh. A host with
-// no sh (the Windows fast tier) skips it by name; Linux proves it, in athanor's
-// run and in CI.
+// no sh skips it by name; Linux proves it, in athanor's run and in CI.
 const hasSh = spawnSync('sh', ['-c', 'exit 0'], { shell: false }).status === 0;
 
 function tagRuleBlock(): string {
@@ -300,7 +303,19 @@ function tagRuleBlock(): string {
   return lines.slice(begins[0] + 1, ends[0]).map((l) => l.slice(pad)).join('\n') + '\n';
 }
 
-test('F5 publish stops unless the tarball\'s package.json version equals the file-name version and the tag\'s, and takes the dist-tag from it alone', { skip: hasSh ? false : 'no sh on this host (the Windows fast tier); the block is proven on Linux, in athanor\'s run and in CI' }, async (t) => {
+// The `run:` lines of the named step of release.yml, as the shell gets them.
+function stepRun(name: string): string {
+  const lines = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8').split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
+  assert.notEqual(at, -1, `release.yml has a step named ${name}`);
+  const runAt = lines.findIndex((l, i) => i > at && /^\s+run: \|$/.test(l));
+  const pad = lines[runAt].match(/^ */)![0].length + 2;
+  const body: string[] = [];
+  for (let i = runAt + 1; i < lines.length && (lines[i].trim() === '' || lines[i].match(/^ */)![0].length >= pad); i++) body.push(lines[i].slice(pad));
+  return body.join('\n') + '\n';
+}
+
+test('F5 publish stops unless the tarball\'s package.json version equals the file-name version and the tag\'s, and takes the dist-tag from it alone', { skip: hasSh ? false : 'no sh on this host; the block is proven on Linux, in athanor\'s run and in CI' }, async (t) => {
   const block = tagRuleBlock();
   const manifest = (version: unknown) => JSON.stringify({ name: '@mephistopheles4/athanor', version, description: 'CANARYTEXT' });
   const member = (content: string) => ({ name: 'package/package.json', content });
@@ -376,6 +391,19 @@ test('F5 publish stops unless the tarball\'s package.json version equals the fil
   await t.test('a tarball with two package/package.json members stops it, whatever they hold', () => {
     stops([member(manifest('0.2.0')), member(manifest('0.2.0'))], /exactly one/);
     stops([member(manifest('9.9.9')), member(manifest('0.2.0'))], /exactly one/);
+    stops([member(manifest('0.2.0')), { name: 'package/package.json', type: '2', linkname: 'README.md' }], /exactly one/);
+  });
+  await t.test('an entry outside package/ stops it, so the manifest npm reads is the one the block read', () => {
+    // npm drops the first folder of every entry, so another folder's package.json would be its manifest.
+    stops([member(manifest('0.2.0')), { name: 'other/package.json', content: manifest('0.2.0-rc.1') }], /outside package\//);
+    stops([member(manifest('0.2.0')), { name: 'package', content: 'x' }], /outside package\//);
+    stops([member(manifest('0.2.0')), { name: 'packages/x.txt', content: 'x' }], /outside package\//);
+  });
+  await t.test('an entry whose path has a .. or . or empty segment stops it', () => {
+    for (const name of ['package/../package/package.json', 'package/./package.json', 'package//package.json', 'package/x/..']) {
+      // busybox lists package/./package.json as package/package.json, so it stops as a second member.
+      stops([member(manifest('0.2.0')), { name, content: manifest('0.2.0-rc.1') }], /odd path|exactly one/);
+    }
   });
   await t.test('a package/package.json that is a link or a folder stops it', () => {
     stops([readme, { name: 'package/package.json', type: '2', linkname: 'README.md' }], /not a regular file/);
@@ -385,6 +413,33 @@ test('F5 publish stops unless the tarball\'s package.json version equals the fil
   await t.test('a file that is not a gzip tar stops it', () => {
     stops(Buffer.from('not a tarball CANARYTEXT\n'), /Could not list/);
     stops(gzipSync(Buffer.from('plain text, not a tar stream CANARYTEXT\n')), /Could not list|no package\/package\.json member/);
+  });
+  await t.test('the stage step gives npm the dist-tag the block chose, and stops before npm for anything else', () => {
+    const stage = stepRun('Stage the tarball');
+    // The step runs in the release folder, as on the runner; the paths are relative to it.
+    const attempt = (distTag: string | null) => {
+      const dir = tempDir(t);
+      mkdirSync(join(dir, 'release'));
+      mkdirSync(join(dir, 'bin'));
+      writeFileSync(join(dir, 'release', 'mephistopheles4-athanor-0.2.0.tgz'), 'x');
+      writeFileSync(join(dir, 'bin', 'npm'), '#!/bin/sh\nprintf \'%s\\n\' "$*" > "$RUNNER_TEMP/npm-args"\nprintf \'{"@x/y":{"stageId":"stage-1"}}\\n\'\n', { mode: 0o755 });
+      if (distTag !== null) writeFileSync(join(dir, 'dist-tag'), distTag);
+      const env = { PATH: `${join(dir, 'bin')}${delimiter}${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`, RUNNER_TEMP: '..', GITHUB_STEP_SUMMARY: '../summary', DIST_TAG_FILE: '../dist-tag' };
+      const r = spawnSync('sh', ['-c', stage], { cwd: join(dir, 'release'), env, encoding: 'utf8', shell: false });
+      const read = (name: string) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : null);
+      return { r, args: read('npm-args'), summary: read('summary') };
+    };
+    for (const tag of ['next', 'latest']) {
+      const { r, args, summary } = attempt(`${tag}\n`);
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(args ?? '', new RegExp(`^stage publish \\./mephistopheles4-athanor-0\\.2\\.0\\.tgz --tag ${tag} `));
+      assert.match(summary ?? '', new RegExp(`dist-tag: ${tag}\\n`));
+    }
+    for (const bad of ['beta\n', '', '\n', 'next latest\n', 'latest\nnext\n', 'NEXT\n', null]) {
+      const { r, args } = attempt(bad);
+      assert.notEqual(r.status, 0, `${JSON.stringify(bad)} should stop the step`);
+      assert.equal(args, null, `${JSON.stringify(bad)}: npm must not run`);
+    }
   });
 });
 
@@ -462,13 +517,12 @@ test('F8 every workflow that names id-token write starts only on a push of tags 
     releaseFails(t, tokenWorkflow([...onTags, "      - 'x*'"]), 6, /v\*/);
     releaseFails(t, tokenWorkflow(['on:', '  push:', "    tags: ['v*', 'x*']"]), 4, /v\*/);
     releaseFails(t, tokenWorkflow(['on:', '  push:']), 3, /v\*/);
+    releaseFails(t, tokenWorkflow(['on:', '  push:', '    tags:']), 3, /v\*/);
+    releaseFails(t, tokenWorkflow(['on:', '  push:', '    tags:', "      - 'v**'"]), 5, /v\*/);
   });
   await t.test('a workflow with id-token write and no on: fails', () => {
     const r = releaseChecker(t, ['name: planted', 'jobs:', '  one:', '    permissions:', '      id-token: write', '    steps:', '      - run: node --version', ''].join('\n'));
     assert.equal(r.status, 1, r.stdout);
     assert.match(r.stderr, /on:/);
-  });
-  await t.test('a workflow with no id-token write may start on anything', () => {
-    assert.equal(releaseChecker(t, workflow('      - run: node --version')).status, 0);
   });
 });

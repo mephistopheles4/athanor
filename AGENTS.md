@@ -170,7 +170,8 @@ carries the names E13 and E14.
 
 `F1` to `F12`, from the spec on issue 88: F1, F2 and F5 to F8 are fast-tier
 tests (F5 runs the marked block of `release.yml` with `sh`, and is skipped by
-name on a host with no `sh`, such as the Windows fast tier, T14). F3 and F4
+name on a host with no `sh`, as on the Windows fast tier when Git's `sh` is
+not in PATH, T14). F3 and F4
 are checks by reading at review: the compare step and its order, and the
 actor check. F9 is a manual check by the owner at the first release
 candidate, recorded on issue 88. F10 and F11 are checks by reading at review

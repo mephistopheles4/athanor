@@ -448,8 +448,8 @@ flowchart LR
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token (accepted class "The release and CI supply chain"), and the owner's npm login
-  around an approval, around a step 17 unpublish or deprecate, and around an
-  S11 rollback (accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
+  around an approval, around a step 17 unpublish or deprecate, and around a
+  rollback (`docs/releasing.md`, "Stop conditions and rollback"; accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
   release uses a third, long-lived one: the owner's gh login, kept in the
   system keyring, which can publish releases, create tags, change the tag
   rulesets and immutable releases, push branches, edit workflows and read
@@ -707,16 +707,23 @@ doesn't protect you from"; the release and CI class stays here alone.
   gates the identity token is the `npm` environment's approval (the owner,
   with the owner's two-factor approval at npm for anything that goes live) and
   the admin-only tag ruleset, only as far as npm enforces the environment the
-  trusted publisher names (R10, unconfirmed). Any tag already pushed can start
+  trusted publisher names (R10, unconfirmed). Against whoever holds the owner's
+  GitHub account or gh login, who can also create tags and change the rulesets
+  and the environment, only stage-only publishing and the owner's npm
+  two-factor approval hold, as before this change. Any tag already pushed can start
   a run, the tags of rejected and unpublished versions and of release
   candidates among them, and a pushed tag never moves. An action in `publish`,
   or the npm it provides, could stage the owner's reviewed rc under `latest`
-  if `npm stage view` shows no dist-tag; the dist-tag is bound to the
-  tarball's own version, code in `check` cannot set it, and the owner's
-  compare of the summary's dist-tag with the version and the rollback in
-  `docs/releasing.md` ("Stop conditions and rollback") recover it. From
+  if `npm stage view` shows no dist-tag. The dist-tag is read from the
+  tarball's own version, by a block that lists the tarball by name and
+  accepts only entries under `package/` with exactly one `package/package.json`,
+  so code in `check` shapes it only through that version. What binds the
+  dist-tag to the version npm stages is the owner's step 15: one staged entry
+  for this version, the entry list and every file compared with a local pack,
+  and the summary's dist-tag compared with the version. The rollback in
+  `docs/releasing.md` ("Stop conditions and rollback") recovers it. From
   `npm login` to `npm logout`, around an approval, around a step 17 unpublish
-  or deprecate, and around an S11 rollback, the npm session token sits in the
+  or deprecate, and around a rollback, the npm session token sits in the
   user npm configuration
   unencrypted at file level, readable by any program running as the owner,
   including one left behind by the local build. Whoever can write to the repo,
