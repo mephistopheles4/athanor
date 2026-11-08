@@ -164,11 +164,14 @@ test('E2 Arguments: the docker run call is exactly the settings list, and the bo
       '--mount', 'type=volume,dst=/home/node/work/cache',
       '-w', '/home/node/work',
       ...limitsAndControls('1g'),
-      tag, 'sh', '-c', ['exec 3<&0', '( cat <&3 >/dev/null; kill -s TERM -1; sleep 5; kill -s KILL -1 ) &', 'echo athanor-boot-ok >&2', 'exec "$@" </dev/null 3<&-'].join('\n'),
+      tag, 'sh', '-c', ['exec 3<&0', '( cat <&3 >/dev/null; kill -TERM -1; sleep 5; kill -KILL -1 ) &', 'echo athanor-boot-ok >&2', 'exec "$@" </dev/null 3<&-'].join('\n'),
       'athanor', 'node', 'server.js',
     ];
     assert.deepEqual(call!.args, expected);
     assert.equal(call!.args[call!.args.indexOf('-c') + 1], SERVE_BOOT);
+    // dash refuses `kill -s TERM -1`; busybox and dash both take `kill -TERM -1`.
+    assert.doesNotMatch(SERVE_BOOT, /kill -s/);
+    assert.match(SERVE_BOOT, /kill -TERM -1; sleep 5; kill -KILL -1 \)/);
     if (hostPort !== undefined) assert.equal(run.serving()!.port, hostPort);
     run.abort();
     assert.equal((await run.result).outcome, 'stopped');

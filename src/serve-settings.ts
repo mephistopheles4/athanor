@@ -16,10 +16,11 @@ import { KEPT_CAPABILITIES, PROXY_NAMES } from './container-settings.js';
 // /dev/null as its stdin. The background line ends the server when that stdin
 // ends, which happens when the caller's docker process dies. The server runs
 // with /dev/null as stdin and no descriptor 3. The marker line is the same text
-// as run's MARKER.
+// as run's MARKER. The kill words are `kill -TERM -1`, not `kill -s TERM -1`:
+// dash (Debian and Ubuntu images) reads `-s TERM -1` as an option and refuses.
 export const SERVE_BOOT = [
   'exec 3<&0',
-  '( cat <&3 >/dev/null; kill -s TERM -1; sleep 5; kill -s KILL -1 ) &',
+  '( cat <&3 >/dev/null; kill -TERM -1; sleep 5; kill -KILL -1 ) &',
   'echo athanor-boot-ok >&2',
   'exec "$@" </dev/null 3<&-',
 ].join('\n');

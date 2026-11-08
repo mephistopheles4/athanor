@@ -6,7 +6,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run, status, serve, BOOT_BASE_SHA1 } from '#dist/index.js';
@@ -561,13 +561,17 @@ const SERVE_DOCKERFILE = readFileSync(join(dirname(fileURLToPath(import.meta.url
 const SERVE_SCRIPT = '( echo x > tree-probe ) 2>/dev/null && t=wrote || t=refused; ( echo y > cache/probe ) 2>/dev/null && c=wrote || c=refused; printf "tree=%s cache=%s" $t $c > cache/result; exec httpd -f -p 8080 -h .';
 
 function serveRepo(t: TestContext, { dockerfile = SERVE_DOCKERFILE, writable = ['cache'] }: { dockerfile?: string; writable?: string[] } = {}) {
-  return makeRepo(t, {
+  const repo = makeRepo(t, {
     athanor: {
       dockerfile: 'test/Dockerfile', commands: { test: ['true'] },
       servers: { site: { argv: ['sh', '-c', SERVE_SCRIPT], port: 8080, writable, memory: '256m' } },
     },
     files: { 'test/Dockerfile': dockerfile, 'page.txt': 'v1', 'cache/host.txt': 'host' },
   });
+  // mkdtemp makes the folder 0700 for this user. The bind mount keeps that, so the
+  // image's own user (uid 1000) could not enter it on Linux.
+  chmodSync(repo, 0o755);
+  return repo;
 }
 
 function serveReal(t: TestContext, repo: string, extra: Partial<ServeOptions> = {}) {
@@ -577,9 +581,16 @@ function serveReal(t: TestContext, repo: string, extra: Partial<ServeOptions> = 
   const result = serve({
     cwd: repo, name: 'site', prefix, signal: controller.signal, onServing: (s) => { serving = s; }, ...extra,
   });
-  void result.then((r) => { if (r.image?.tag) builtTags.add(r.image.tag); });
+  let ended: { outcome: string; message?: string } | undefined;
+  void result.then((r) => { ended = r; if (r.image?.tag) builtTags.add(r.image.tag); });
   t.after(async () => { controller.abort(); await result; });
-  return { result, prefix, stop: () => controller.abort(), serving: () => serving };
+  // Waits until the server is serving. If serve ends first, fails with its message.
+  const ready = async (what: string) => {
+    await until(() => serving || ended, 120_000, what);
+    if (!serving) throw new Error(`serve ended before ${what}: ${ended?.outcome}: ${ended?.message}`);
+    return serving;
+  };
+  return { result, prefix, stop: () => controller.abort(), serving: () => serving, ready };
 }
 
 // GET a url, trying again until it answers or the time is up.
@@ -605,9 +616,9 @@ test('E11 A real server: two at once on 127.0.0.1, a read-only tree, a writable 
   const volumesBefore = volumes();
   const prefix = uniquePrefix();
   const a = serveReal(t, repo, { prefix });
-  await until(() => a.serving(), 120_000, 'the first server');
+  await a.ready('the first server');
   const b = serveReal(t, repo, { prefix });
-  await until(() => b.serving(), 120_000, 'the second server');
+  await b.ready('the second server');
   const [sa, sb] = [a.serving()!, b.serving()!];
   assert.notEqual(sa.port, sb.port);
   assert.notEqual(sa.lock, sb.lock);
@@ -648,7 +659,7 @@ test('E11 --port publishes on the host port asked for', async (t) => {
   const port = (probe.address() as net.AddressInfo).port;
   await new Promise<void>((resolve) => probe.close(() => resolve()));
   const run = serveReal(t, repo, { port });
-  await until(() => run.serving(), 120_000, 'the server');
+  await run.ready('the server');
   assert.equal(run.serving()!.port, port);
   assert.equal((await get(`http://127.0.0.1:${port}/page.txt`)).text, 'v1');
   run.stop();
@@ -681,13 +692,15 @@ test('E12 After the caller dies: a hard-killed serve leaves nothing after the ne
   const serveDriver = join(dirname(fileURLToPath(import.meta.url)), 'serve-driver.ts');
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', serveDriver, JSON.stringify({ home, cwd: repo, name: 'site', prefix })], { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
   let out = '';
+  let err = '';
   child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (err += d));
   t.after(() => child.kill('SIGKILL'));
-  await until(() => out.includes('"url"'), 120_000, 'the first server');
+  await until(() => out.includes('"url"'), 120_000, 'the first server').catch((e) => { throw new Error(`${e.message}; driver stdout: ${out}; stderr: ${err}`); });
   child.kill('SIGKILL');
   await new Promise((resolve) => child.on('close', resolve));
   const next = serveReal(t, repo, { prefix });
-  await until(() => next.serving(), 120_000, 'the next server');
+  await next.ready('the next server');
   assert.equal(serverContainers(prefix).length, 1, 'only the new server is left');
   next.stop();
   await next.result;

@@ -75,6 +75,9 @@ What the spike found, on Docker Desktop 29.9.2 on Windows:
   user couldn't write it.
 - In `sh -c`, a background list reads `/dev/null` as its stdin, so the boot
   script saves the container's stdin on descriptor 3 first.
+- dash, the shell of Debian and Ubuntu images, refuses `kill -s TERM -1` as an
+  option, so the boot script says `kill -TERM -1` and `kill -KILL -1`, which
+  dash and busybox both take.
 - A hard kill of the node process that started `docker run -i` left the
   container running on Windows.
 
