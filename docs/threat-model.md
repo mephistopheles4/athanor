@@ -233,9 +233,14 @@ flowchart LR
     shared or remote engine.
   - **The kept capabilities and the proxy blanks:** `--cap-drop ALL` with the
     six `--cap-add` of ADR 0016, `--security-opt no-new-privileges`, the ten
-    `-e NAME=` proxy blanks and no other `-e`, as for `run` (E2). Reason: as
-    for `run`; the proxy blanks keep a proxy password out of the engine's record
-    (records and leaves behind, shared or remote engine).
+    `-e NAME=` proxy blanks and no other `-e`, as for `run` (E2). Reason: none
+    under this scope for the capabilities and `no-new-privileges`; for the proxy
+    blanks, records and leaves behind, and shared or remote engine (they keep a
+    proxy password out of the engine's record).
+  - **A fixed boot script, and a check container:** `SERVE_BOOT` is fixed text
+    with nothing interpolated into it, and the short-lived container that checks
+    each `writable` folder has no mount and `--network none`, with the same caps,
+    limits and proxy blanks (E2, E4). Reason: none under this scope.
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,

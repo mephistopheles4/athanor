@@ -32,7 +32,8 @@
 - **Orphan.** An athanor container whose slot is free, left by a caller that
   was killed hard. The next run on its slot removes it, or the in-container
   timer ends it. A server container whose server lock is free is an orphan too:
-  the next `serve` removes it, and `status` lists it and removes nothing.
+  the next `serve` removes it while its lock number is within `maxServers`, and
+  `status` lists it and removes nothing.
 - **Server.** An entry of `servers`: `argv`, a container `port`, and optionally
   `writable` folders and limits. `athanor serve <name>` runs it in a container
   with the working tree mounted read-only, a network, and its port published on

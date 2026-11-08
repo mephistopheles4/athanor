@@ -370,7 +370,7 @@ async function main() {
 
 // A server container (issue 35): prints the marker at once, without reading
 // stdin to its end, and stays up until it is removed, its stdin ends, or the
-// scenario's serve plan ends it: { exitCode, exitAfterMs, oom, runFails, stdout, stderr }.
+// scenario's serve plan ends it: { exitCode, exitAfterMs, startDelayMs, oom, runFails, runFailText, marker, stdout, stderr }.
 async function serveRun(options: Map<string, string>, image: string): Promise<number> {
   const name = options.get('--name');
   const labelArg = options.get('--label') as string;
@@ -384,14 +384,16 @@ async function serveRun(options: Map<string, string>, image: string): Promise<nu
   }
   const published = options.get('-p') ?? '';
   const hostPort = /^127\.0\.0\.1:(\d+):/.exec(published)?.[1];
-  writeFileSync(path, JSON.stringify({ name, labels, image, running: true, ...(hostPort ? { hostPort: Number(hostPort) } : {}) }));
   record({ at: Date.now() });
-  if (plan.marker) process.stderr.write('athanor-boot-ok\n');
-  if (plan.stdout) process.stdout.write(plan.stdout);
-  if (plan.stderr) process.stderr.write(plan.stderr);
   let stdinEnded = false;
   process.stdin.on('data', () => {});
   process.stdin.on('end', () => { stdinEnded = true; });
+  // Real Docker takes a while to make the container and seed its volumes.
+  if (plan.startDelayMs) await sleep(plan.startDelayMs);
+  writeFileSync(path, JSON.stringify({ name, labels, image, running: true, ...(hostPort ? { hostPort: Number(hostPort) } : {}) }));
+  if (plan.marker) process.stderr.write('athanor-boot-ok\n');
+  if (plan.stdout) process.stdout.write(plan.stdout);
+  if (plan.stderr) process.stderr.write(plan.stderr);
   const until = plan.exitAfterMs !== undefined ? Date.now() + plan.exitAfterMs : Infinity;
   while (Date.now() < until) {
     if (!existsSync(path)) return 137; // removed with rm -f

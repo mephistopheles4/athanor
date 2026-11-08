@@ -1,4 +1,4 @@
-// athanor serve (issue 35). One top-level test per acceptance claim, E1 to E10.
+// athanor serve (issue 35). The tests of the acceptance claims E1 to E10 (E5 has two).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, readdirSync, statSync, symlinkSync, mkdirSync, utimesSync, rmSync } from 'node:fs';
@@ -8,7 +8,8 @@ import { run, serve, status, prune, SERVE_BOOT } from '#dist/index.js';
 import type { ServeOptions, ServeResult, Serving } from '#dist/index.js';
 import { readMachineConfig, resolveServerConfig, resolveServerLimit } from '#dist/run-config.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.ts';
-import { collector, gitState, cli, tempDir } from '../helpers.ts';
+import { collector, gitState, cli } from '../helpers.ts';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { serveCommand } from '#dist/cli.js';
 import type { Fake, RepoOptions } from '../helpers.ts';
 import { askServer, tryServerLock } from '#dist/slots.js';
@@ -26,6 +27,7 @@ test('E1 Config: servers and maxServers are read and checked before any Docker c
     { name: 'port as a string', servers: { dev: { ...server, port: '4321' } }, says: /servers\.dev\.port/ },
     { name: 'no port', servers: { dev: { argv: ['x'] } }, says: /servers\.dev\.port/ },
     { name: 'absolute writable', servers: { dev: { ...server, writable: ['/etc'] } }, says: /servers\.dev\.writable/ },
+    { name: 'writable with a comma', servers: { dev: { ...server, writable: ['a,readonly'] } }, says: /servers\.dev\.writable must not hold a comma/ },
     { name: 'writable with ..', servers: { dev: { ...server, writable: ['a/../b'] } }, says: /servers\.dev\.writable/ },
     { name: 'writable with a control character', servers: { dev: { ...server, writable: ['a\nb'] } }, says: /servers\.dev\.writable/ },
     { name: 'repeated writable', servers: { dev: { ...server, writable: ['a', 'a'] } }, says: /servers\.dev\.writable/ },
@@ -152,7 +154,6 @@ test('E2 Arguments: the docker run call is exactly the settings list, and the bo
     await run.ready;
     const [call] = serverRuns(docker);
     const lock = run.serving()!.lock;
-    const image = call!.args[call!.args.indexOf('athanor.server=' + lock) + 0 - 0 ];
     const tag = call!.args.find((a) => /^athanor:[0-9a-f]{32}$/.test(a))!;
     const expected = [
       'run', '-i', '--init', '--pull', 'never', '--log-driver', 'none',
@@ -168,19 +169,20 @@ test('E2 Arguments: the docker run call is exactly the settings list, and the bo
     ];
     assert.deepEqual(call!.args, expected);
     assert.equal(call!.args[call!.args.indexOf('-c') + 1], SERVE_BOOT);
-    for (const bad of ['-v', '--privileged', '--network=host', '--net']) assert.ok(!call!.args.includes(bad), bad);
+    if (hostPort !== undefined) assert.equal(run.serving()!.port, hostPort);
     run.abort();
     assert.equal((await run.result).outcome, 'stopped');
   }
 });
 
 test('E4 Checks before the container: each exits 125 with its message and starts no server', async (t) => {
-  const rows: { name: string; says: RegExp; scenario?: Record<string, unknown>; servers?: unknown; machine?: unknown; files?: Record<string, string>; port?: number; remove?: string; link?: string; label?: string }[] = [
+  const rows: { name: string; says: RegExp; scenario?: Record<string, unknown>; servers?: unknown; machine?: unknown; files?: Record<string, string>; port?: number; remove?: string; link?: string; file?: string; label?: string }[] = [
     { name: 'WORKDIR empty', scenario: { workdir: '' }, says: /WORKDIR/ },
     { name: 'WORKDIR /', scenario: { workdir: '/' }, says: /WORKDIR/ },
     { name: 'WORKDIR relative', scenario: { workdir: 'work' }, says: /WORKDIR/ },
     { name: 'WORKDIR with a comma', scenario: { workdir: '/a,b' }, says: /WORKDIR holds a comma/ },
-    { name: 'a missing writable folder', servers: { dev: { ...devServer, writable: ['cache', 'gone/deep'] } }, says: /"gone\/deep" does not exist.*mkdir -p gone\/deep/ },
+    { name: 'a missing writable folder', servers: { dev: { ...devServer, writable: ['cache', 'gone/deep', 'gone2'] } }, says: /"gone\/deep", "gone2" do not exist.*mkdir -p gone\/deep gone2/ },
+    { name: 'a writable path that is a file', servers: { dev: { ...devServer, writable: ['afile'] } }, file: 'afile', says: /"afile" is a file, not a folder/ },
     { name: 'a writable folder the image cannot write', servers: { dev: { ...devServer, writable: ['cache'] } }, scenario: { missingWritable: ['cache'] }, says: /\/home\/node\/work\/cache.*RUN mkdir -p cache/ },
     { name: 'a writable folder that is a link', servers: { dev: { ...devServer, writable: ['linked'] } }, link: 'linked', says: /"linked" is a link/ },
     { name: 'a repo path with a comma', label: 'athanor,repo-', says: /repo folder's path holds a comma/ },
@@ -202,6 +204,7 @@ test('E4 Checks before the container: each exits 125 with its message and starts
           return;
         }
       }
+      if (row.file) writeFileSync(join(repo, row.file), 'x');
       const docker = fake(t, row.scenario);
       const run = serveIn(t, repo, docker, row.port === undefined ? {} : { port: row.port });
       const result = await run.result;
@@ -290,6 +293,7 @@ test('E7 The limit: a full machine refuses at once, two servers get two locks, a
     const began = Date.now();
     const second = await serveIn(t, repo, fake(t), { prefix }).result;
     assert.ok(Date.now() - began < 3000, 'within 3 seconds');
+    assert.ok(Date.now() - began >= 1000, 'after one retry');
     assert.deepEqual([second.outcome, second.exitCode], ['error', 125]);
     assert.match(second.message!, /all 1 servers are in use/);
     first.abort();
@@ -307,7 +311,6 @@ test('E7 The limit: a full machine refuses at once, two servers get two locks, a
     const b = serveIn(t, repo, dockerB, { prefix });
     await b.ready;
     assert.deepEqual([a.serving()!.lock, b.serving()!.lock].sort(), [1, 2]);
-    assert.notEqual(a.serving()!.port, undefined);
     const names = [...serverRuns(dockerA), ...serverRuns(dockerB)].map((c) => c.args[c.args.indexOf('--name') + 1]);
     assert.deepEqual(new Set(names).size, 2);
     const result = await run({ cwd: repo, docker: fake(t).docker, prefix });
@@ -427,25 +430,39 @@ test('E5 JSON: with --json, stdout holds one serving line then one ended line; e
     assert.deepEqual(lines, []);
     assert.match(out.text(), /hello/);
   });
-  const failures: { name: string; args: string[]; cwd?: 'plain' }[] = [
-    { name: 'a bad --port', args: ['serve', 'dev', '--json', '--port', 'x'] },
-    { name: 'a --port with no value', args: ['serve', 'dev', '--json', '--port'] },
-    { name: 'no server name', args: ['serve', '--json'] },
-    { name: 'a configuration error', args: ['serve', 'dev', '--json'], cwd: 'plain' },
+  const failures: { name: string; args: string[]; servers?: unknown; says: RegExp }[] = [
+    { name: 'a bad --port', args: ['serve', 'dev', '--json', '--port', 'x'], says: /--port must be a whole number/ },
+    { name: 'a --port with no value', args: ['serve', 'dev', '--json', '--port'], says: /--port must be a whole number/ },
+    { name: 'no server name', args: ['serve', '--json'], says: /needs the name of one server/ },
+    { name: 'a configuration error', args: ['serve', 'dev', '--json'], servers: { dev: { ...devServer, args: true } }, says: /servers\.dev\.args/ },
   ];
   for (const row of failures) {
     await t.test(row.name, async (t) => {
       const home = isolate(t);
-      const r = await cli(row.args, { cwd: tempDir(t), env: { ATHANOR_HOME: home } });
+      const repo = serverRepo(t, row.servers);
+      const r = await cli(row.args, { cwd: repo, env: { ATHANOR_HOME: home } });
       assert.equal(r.code, 125);
       const lines = r.stdout.trim().split('\n');
       assert.equal(lines.length, 1, r.stdout);
       const ended = JSON.parse(lines[0]!);
       assert.deepEqual([ended.schema, ended.event, ended.outcome, ended.exitCode], [1, 'ended', 'error', 125]);
-      assert.equal(typeof ended.message, 'string');
+      assert.match(ended.message, row.says);
       assert.equal(ended.ranMs, undefined);
     });
   }
+  await t.test('a signal before Docker has made the container ends serve, and ranMs is left out', async (t) => {
+    isolate(t);
+    const repo = serverRepo(t);
+    const docker = fake(t, { serve: { startDelayMs: 600 } });
+    const run = serveIn(t, repo, docker);
+    await until(() => serverRuns(docker).length === 1, 5000, 'docker run to start');
+    run.abort();
+    const result = await Promise.race([run.result, sleep(10_000).then(() => 'hung' as const)]);
+    assert.notEqual(result, 'hung', 'serve ended after the signal');
+    const ended = result as Awaited<typeof run.result>;
+    assert.deepEqual([ended.outcome, ended.exitCode, ended.ranMs], ['stopped', 130, undefined]);
+    assert.deepEqual(containerFiles(docker), [], 'the container went with it');
+  });
 });
 
 test('E9 status and prune: a server shows in status, an unheld container is an orphan, and prune keeps its image', async (t) => {
@@ -494,3 +511,11 @@ test('E9 status and prune: a server shows in status, an unheld container is an o
     assert.deepEqual((await prune({ docker: docker.docker, days: 1, dryRun: true })).removed, [tag]);
   });
 });
+
+async function until(check: () => boolean, withinMs: number, what: string): Promise<void> {
+  const end = Date.now() + withinMs;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('timed out waiting for ' + what);
+    await sleep(20);
+  }
+}

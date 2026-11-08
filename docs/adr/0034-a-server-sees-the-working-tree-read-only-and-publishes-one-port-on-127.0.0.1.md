@@ -37,7 +37,7 @@ tree, a network, and a published port.
   `<prefix>-server-<n>`, by the same OS lock as a run slot. A server holds no
   run slot. `maxServers` (default 2) limits them, and a `serve` with every lock
   held exits 125 at once, after one retry a second later.
-- **The sweep and the stdin line.** On Linux and macOS a server's caller dying
+- **The sweep and the stdin line.** On Linux a server's caller dying
   closes the container's stdin, and the boot script ends the server. On
   Windows a hard kill of the caller leaves the container, and the next `serve`
   removes a leftover container whose lock is free. `status` lists one as an
@@ -47,10 +47,11 @@ tree, a network, and a published port.
   the engine's machine, and 127.0.0.1 is that machine's.
 - **The container rule's mark.** AGENTS.md's container rule is scoped to
   `athanor run`'s container, a rule is added for `athanor serve`'s, and the
-  sentence calling a change there security-sensitive work is removed (q1: "almost
-  everything in athanor is a container change"). ADR 0033 listed that mark as a
-  candidate to loosen; this record is the owner's decision. The archive-step and
-  release marks stay.
+  two sentences that called a change there, and a change to what reaches the
+  image build, security-sensitive work are removed (q1: "almost everything in
+  athanor is a container change"). ADR 0033 listed that mark as a candidate to
+  loosen; this record is the owner's decision. The archive-step and release
+  marks stay.
 - **No security pair.** The owner ruled out a security review of the spec and
   of the change (q1).
 - **A Linux engine before 28.0.** Docker before 28.0 lets other hosts on the

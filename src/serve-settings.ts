@@ -5,8 +5,8 @@
 // dropped and six added back, no-new-privileges, the limits, and the ten proxy
 // names set empty with `-e NAME=`. It gets no other -e, no -v and no
 // --privileged. The arguments live only here, and nothing is put into the boot
-// script. src/container-settings.ts, which makes run's arguments, does not
-// change.
+// script. A second, short-lived container (checkSettings) checks the writable
+// folders in the image; src/container-settings.ts makes run's arguments.
 import type { Limits } from './run-config.js';
 import { KEPT_CAPABILITIES, PROXY_NAMES } from './container-settings.js';
 

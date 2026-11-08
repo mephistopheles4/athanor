@@ -1,4 +1,4 @@
-// athanor's core API: run, status and prune (ADR 0003). It never prints,
+// athanor's core API: run, serve, status and prune (ADR 0003). It never prints,
 // exits or registers signal handlers: it reports progress through onProgress,
 // stops on an AbortSignal, and returns a result.
 import { existsSync, statSync } from 'node:fs';

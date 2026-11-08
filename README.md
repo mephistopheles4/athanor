@@ -201,8 +201,9 @@ athanor prune --days 7
 athanor serve dev           # run a server from "servers"; see "Serving a dev server"
 ```
 
-Every command but `serve` takes `--json` as one JSON object (`serve` writes two lines, below): stdout then holds exactly one JSON object, and
-everything else goes to stderr. With a base, the run's result has a `base`
+Every command takes `--json`. With `run`, `status` and `prune`, stdout then holds exactly one JSON object, and
+everything else goes to stderr; `serve` writes one JSON line for each event (see
+"Serving a dev server"). With a base, the run's result has a `base`
 field: the full ref name (`ref`), its tip (`tip`) and the merge base
 (`mergeBase`), as full ids.
 
@@ -312,8 +313,8 @@ athanor serve dev --json
 - `port`: the port the server listens on in the container, 1 to 65535.
   Required.
 - `writable`: optional, repo-relative folders the server may write (see
-  below). Written as `inputs` are: inside the repo, forward slashes, no `..`,
-  no repeats, none inside another.
+  below). Each path is inside the repo, with forward slashes, no `..`, no
+  comma, no repeats, and none inside another.
 - `memory`, `cpus` and `processes`: optional limits, checked against the
   machine ceilings as a command's are. The repo-level values apply to a server
   that sets none.
@@ -333,8 +334,10 @@ What the container gets:
   content, not the host's, and is new on every start. It must exist on the
   host as a folder, not a link (athanor never creates it; `mkdir` it), and
   the image must have it as a folder the image's user can write: add
-  `RUN mkdir -p <path>` after `USER`, or `COPY --chown`. `serve` checks both
-  before it starts the container and says which path and what to do.
+  `RUN mkdir -p <path>` after `USER` and `WORKDIR`, or `COPY --chown`; a folder
+  an earlier line made as root needs that line moved after `USER`, or a
+  `chown`. `serve` checks both before it starts the container and says which
+  path and what to do.
 - **A network, with outbound access.** The container is on Docker's default
   bridge network. The server must listen on `0.0.0.0` inside the container
   (for Astro and Vite, `--host 0.0.0.0`), or the published port can't reach it.
@@ -370,11 +373,12 @@ kill ends the container's input, and the server stops within a few seconds.
 | 137 | `memory` | Docker reports the memory limit killed a process |
 | 125 | `error` | athanor could not serve: configuration, build, Docker, a port in use, or a published port Docker did not report |
 
-With `--json`, stdout holds two lines, each one JSON object. The first is
+With `--json`, stdout holds one JSON object per line. The first is
 `{ "schema": 1, "event": "serving", "server", "url", "port", "lock" }`, written once the port is
-published. The last is `{ "schema": 1, "event": "ended", "outcome", "exitCode", "ranMs"?, "message"? }`.
+published. The last, always, is `{ "schema": 1, "event": "ended", "outcome", "exitCode", "ranMs"?, "message"? }`.
 `ranMs` is how long the container ran, and it is there only when the container
-started. A failure before `serving` writes only the `ended` line, with
+started. In `serving`, `server` is the server's name and `lock` its server lock
+number; in `athanor status --json`, `server` is the lock number. A failure before `serving` writes only the `ended` line, with
 `outcome: "error"`, a bad flag or a configuration error included. `serve` never
 writes `run`'s error object.
 

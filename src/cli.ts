@@ -111,7 +111,7 @@ export function parseArgs(argv: string[]): Parsed {
     if (names.length !== 1) {
       throw new AthanorError(names.length === 0
         ? 'athanor serve needs the name of one server from the repo configuration, such as athanor serve dev.'
-        : `athanor serve takes one server name, but got ${names.length}: ${names.join(', ')}.`);
+        : `athanor serve takes one server name, but got ${names.length}: ${names.join(', ')}. Give one name, such as athanor serve dev.`);
     }
   }
   if (names.length >= 1) options.name = names[0] as string;
@@ -171,8 +171,7 @@ export async function main(argv: string[]): Promise<number> {
 async function runCommand(options: CliOptions, onProgress: (line: string) => void): Promise<number> {
   const controller = new AbortController();
   const onSignal = (): void => controller.abort();
-  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
-  if (process.platform === 'win32') signals.push('SIGBREAK');
+  const signals = stopSignals();
   for (const s of signals) process.on(s, onSignal);
   try {
     const result = await run({

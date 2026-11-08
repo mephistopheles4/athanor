@@ -164,12 +164,13 @@ export async function prepareDocker(
 ): Promise<{ driver: string | null; notices: string[]; checked: Checked; local: boolean }> {
   const notices: string[] = [];
   const endpoint = await engineEndpoint(docker, env);
-  if (!allowPlainTcp && isPlainRemoteTcp(endpoint)) {
-    throw new AthanorError(`${endpoint.setting} is a plain tcp endpoint without TLS verification, so the snapshot, the build context and the test output would cross the network unencrypted. Use ssh://, tcp with TLS verification (DOCKER_TLS_VERIFY=1), or a local engine. On a network you trust, you can allow it with "allowPlainTcp": true in the machine configuration (${machineFile}).`);
-  }
   const local = isLocal(endpoint.host);
+  // Before the plain tcp advice, which would lead to this refusal anyway.
   if (localOnly && !local) {
     throw new AthanorError(`athanor serve needs a Docker engine on this machine: it mounts your working tree and opens a port on 127.0.0.1. ${endpoint.setting} is a Docker engine at ${shownValue(endpoint.host) || 'an address athanor cannot read'}. Use a Docker engine on this machine.`);
+  }
+  if (!allowPlainTcp && isPlainRemoteTcp(endpoint)) {
+    throw new AthanorError(`${endpoint.setting} is a plain tcp endpoint without TLS verification, so the snapshot, the build context and the test output would cross the network unencrypted. Use ssh://, tcp with TLS verification (DOCKER_TLS_VERIFY=1), or a local engine. On a network you trust, you can allow it with "allowPlainTcp": true in the machine configuration (${machineFile}).`);
   }
   if (!allowRemoteDocker && !local) {
     throw new AthanorError(`${endpoint.setting} is a Docker engine at ${shownValue(endpoint.host) || 'an address athanor cannot read'}, which is not on this machine, so your build context and snapshot, uncommitted changes included, would go to that machine. Use a Docker engine on this machine, or set "allowRemoteDocker": true in the machine configuration (${machineFile}).`);
@@ -466,7 +467,7 @@ export async function clearServerContainer(docker: DockerCommand, name: string, 
   const r = await call([...docker, 'container', 'inspect', '--format', '{{json .Config.Labels}}', name], { env });
   if (r.code !== 0) {
     if (noSuch(r.stderr)) return false;
-    throw new AthanorError(`athanor could not check for an old container named ${name}: ${firstLine(r.stderr)}.`);
+    throw new AthanorError(`athanor could not check for an old container named ${name}: ${firstLine(r.stderr)}. Check that Docker is running, then run again.`);
   }
   let labels: Record<string, string> = {};
   try {

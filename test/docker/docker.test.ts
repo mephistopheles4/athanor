@@ -659,7 +659,7 @@ test('E11 a writable folder the image lacks, or one root made before USER, is re
   isolate(t);
   const rows = [
     { name: 'the image lacks it', dockerfile: SERVE_DOCKERFILE, writable: ['cache', 'other'], mkdir: 'other' },
-    { name: 'root owns it', dockerfile: SERVE_DOCKERFILE.replace('USER app', 'RUN mkdir rootcache\nUSER app'), writable: ['rootcache'], mkdir: 'rootcache' },
+    { name: 'root owns it', dockerfile: SERVE_DOCKERFILE.replace('USER app', 'RUN mkdir -p /home/app/work/rootcache\nUSER app'), writable: ['rootcache'], mkdir: 'rootcache' },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {

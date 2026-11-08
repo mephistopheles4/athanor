@@ -523,6 +523,10 @@ function checkServer(rawName: string, server: unknown, place: string, lead: stri
   if (server.writable !== undefined) {
     const problem = checkOutputs(server.writable);
     if (problem) throw new AthanorError(`In ${place}, servers.${name}.writable ${problem.replaceAll('work folder', 'repo root')}.`);
+    // A comma would add options to the volume's --mount.
+    if ((server.writable as string[]).some((p) => p.includes(','))) {
+      throw new AthanorError(`In ${place}, servers.${name}.writable must not hold a comma: the mount cannot carry one. Rename the folder, or remove it from the list.`);
+    }
   }
   for (const k of ['memory', 'cpus', 'processes'] as const) {
     const check = checkOf(k);

@@ -61,7 +61,8 @@ export interface ServeResult {
   schema: 1;
   outcome: ServeOutcome;
   exitCode: number;
-  // Only when the container started (the lead's decision 112 on issue 35).
+  // Only when the container started: the ended line leaves it out on a failure
+  // before that.
   ranMs?: number;
   message?: string;
   server?: string;
@@ -93,7 +94,7 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
 
 // What the host's path to a writable folder is, and whether it is a folder and
 // not a link, on the way or at the end.
-function hostFolderProblem(root: string, path: string): 'missing' | 'link' | null {
+function hostFolderProblem(root: string, path: string): 'missing' | 'link' | 'file' | null {
   let current = root;
   for (const segment of path.split('/')) {
     current = join(current, segment);
@@ -104,7 +105,7 @@ function hostFolderProblem(root: string, path: string): 'missing' | 'link' | nul
       return 'missing';
     }
     if (stat.isSymbolicLink()) return 'link';
-    if (!stat.isDirectory()) return 'missing';
+    if (!stat.isDirectory()) return 'file';
   }
   return null;
 }
@@ -161,6 +162,9 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
       if (problem === 'link') {
         throw new AthanorError(`The writable folder "${showName(path)}" is a link, which athanor does not follow. Replace it with a real folder, or remove it from servers.${showName(name)}.writable.`);
       }
+      if (problem === 'file') {
+        throw new AthanorError(`The writable folder "${showName(path)}" is a file, not a folder. Rename or remove the file, make the folder, or remove it from servers.${showName(name)}.writable.`);
+      }
       if (problem === 'missing') missing.push(path);
     }
     if (missing.length > 0) {
@@ -176,7 +180,7 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
       const bad = await runWritableCheck(docker, check.args, pinned);
       const unwritable = config.writable.filter((p) => bad.includes(`${workdir}/${p}`));
       if (unwritable.length > 0) {
-        throw new AthanorError(`The image has no folder its user can write at ${unwritable.map((p) => `${workdir}/${showName(p)}`).join(', ')}, and a volume there would belong to root. In the Dockerfile, after USER, add RUN mkdir -p ${unwritable.map(showName).join(' ')} (or COPY --chown), then run again.`);
+        throw new AthanorError(`The image has no folder its user can write at ${unwritable.map((p) => `${workdir}/${showName(p)}`).join(', ')}, and a volume there would belong to root. In the Dockerfile, after USER and WORKDIR, add RUN mkdir -p ${unwritable.map(showName).join(' ')} (or COPY --chown); if an earlier line made the folder as root, move that line after USER or chown it. Then run again.`);
       }
     }
     if (signal?.aborted) return stopped(partial);
@@ -268,14 +272,20 @@ async function runServer(o: RunServer, partial: ServeResult): Promise<ServeResul
   const began = Date.now();
   o.started();
   // The container's stdin is a pipe that is kept open and never written: it ends
-  // only when athanor's own process ends, and the boot script's stdin line then
-  // ends the server (S2 point 5). Run's default of no stdin would end it at once.
+  // only when athanor's own process ends (on Linux the boot script's stdin line
+  // then ends the server; on Windows the next serve's sweep removes it, ADR 0034),
+  // or when a signal arrives. Run's default of no stdin would end it at once.
   const proc = start([...o.docker, ...o.container.args], {
     env: o.env, stdin: 'pipe', capture: false, onStdout: write(o.stdout), onStderr: (c) => filter.push(c),
   });
   let aborted = false;
   const onAbort = (): void => {
     aborted = true;
+    // A signal can come before Docker has made the container, when the remove
+    // below finds nothing. Ending the container's stdin ends the server (the boot
+    // script's stdin line) once the container does start, and the remove in
+    // `finally` then takes the container away.
+    proc.child.stdin?.destroy();
     void removeServerContainer(o.docker, o.container.name, o.env);
   };
   if (o.signal?.aborted) onAbort();
@@ -314,7 +324,7 @@ async function runServer(o: RunServer, partial: ServeResult): Promise<ServeResul
     filter.flush();
     const ranMs = Date.now() - began;
     // A signal wins over the server's own exit.
-    if (aborted) return stopped({ ...partial, ranMs });
+    if (aborted) return stopped(filter.seen ? { ...partial, ranMs } : partial);
     if (!filter.seen) {
       const why = ended.code === 125
         ? 'docker run failed before the server started. Its message is above.'

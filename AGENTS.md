@@ -44,7 +44,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
   blanks, and has no other `-e`, no `-v`, no `--privileged` and no host network.
   `SERVE_BOOT` is fixed text; nothing is interpolated into it. The published
   address must be 127.0.0.1, and `serve` refuses an engine off this machine, even
-  with `allowRemoteDocker`.
+  with `allowRemoteDocker`. A second, short-lived container checks that each
+  `writable` folder is a folder the image's user can write: no mount,
+  `--network none`, and the same caps, limits and proxy blanks.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and
@@ -154,7 +156,7 @@ the T14 check), the type checks, the source check and the docker tier passing
 on the final head, and CI. No test carries the names B13 to B15.
 
 `E1` to `E14`, from the spec on issue 35: E1 to E10 are fast-tier tests (E5 is
-two), and E11 and E12 are docker-tier tests (E12 on Linux only). E13 is a manual
+two), and E11 (three tests) and E12 are docker-tier tests (E12 on Linux only). E13 is a manual
 check on the owner's Windows machine with stacks, recorded on issue 35, with
 the docker tier on Docker Desktop (K5) and the fast tier on Windows (T14). E14 is
 checked by reading at review (`git diff main -- src/container-settings.ts` is
