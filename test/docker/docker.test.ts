@@ -284,7 +284,7 @@ test('C15 with --json, stdout holds exactly one JSON object and everything else 
 
   const s = await cli(['status', '--json'], { cwd: repo, env: { ATHANOR_HOME: home } });
   assert.equal(s.code, 0);
-  assert.deepEqual(Object.keys(JSON.parse(s.stdout)).sort(), ['containers', 'limit', 'limitSource', 'schema', 'slots']);
+  assert.deepEqual(Object.keys(JSON.parse(s.stdout)).sort(), ['containers', 'limit', 'limitSource', 'schema', 'serverContainers', 'serverLimit', 'serverLimitSource', 'servers', 'slots']);
   const p = await cli(['prune', '--json', '--dry-run'], { cwd: repo, env: { ATHANOR_HOME: home } });
   assert.equal(p.code, 0);
   assert.deepEqual(Object.keys(JSON.parse(p.stdout)).sort(), ['dryRun', 'kept', 'removed', 'schema']);
