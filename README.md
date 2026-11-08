@@ -376,8 +376,8 @@ kill ends the container's input, and the server stops within a few seconds.
 With `--json`, stdout holds one JSON object per line. The first is
 `{ "schema": 1, "event": "serving", "server", "url", "port", "lock" }`, written once the port is
 published. The last, always, is `{ "schema": 1, "event": "ended", "outcome", "exitCode", "ranMs"?, "message"? }`.
-`ranMs` is how long the container ran, and it is there only when the container
-started. In `serving`, `server` is the server's name and `lock` its server lock
+`ranMs` is how long the container ran, and it is there only when the server
+started (the container printed athanor's start marker). In `serving`, `server` is the server's name and `lock` its server lock
 number; in `athanor status --json`, `server` is the lock number. A failure before `serving` writes only the `ended` line, with
 `outcome: "error"`, a bad flag or a configuration error included. `serve` never
 writes `run`'s error object.

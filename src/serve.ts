@@ -61,8 +61,8 @@ export interface ServeResult {
   schema: 1;
   outcome: ServeOutcome;
   exitCode: number;
-  // Only when the container started: the ended line leaves it out on a failure
-  // before that.
+  // Only when the server started (the container printed athanor's start marker):
+  // the ended line leaves it out on a failure before that.
   ranMs?: number;
   message?: string;
   server?: string;
@@ -284,7 +284,7 @@ async function runServer(o: RunServer, partial: ServeResult): Promise<ServeResul
     // A signal can come before Docker has made the container, when the remove
     // below finds nothing. Ending the container's stdin ends the server (the boot
     // script's stdin line) once the container does start, and the remove in
-    // `finally` then takes the container away.
+    // `serveInner`'s `finally` then takes the container away.
     proc.child.stdin?.destroy();
     void removeServerContainer(o.docker, o.container.name, o.env);
   };

@@ -47,8 +47,8 @@ tree, a network, and a published port.
   the engine's machine, and 127.0.0.1 is that machine's.
 - **The container rule's mark.** AGENTS.md's container rule is scoped to
   `athanor run`'s container, a rule is added for `athanor serve`'s, and the
-  two sentences that called a change there, and a change to what reaches the
-  image build, security-sensitive work are removed (q1: "almost everything in
+  two sentences that called a change to that container, and a change to what
+  reaches its image build, security-sensitive work are removed (q1: "almost everything in
   athanor is a container change"). ADR 0033 listed that mark as a candidate to
   loosen; this record is the owner's decision. The archive-step and release
   marks stay.

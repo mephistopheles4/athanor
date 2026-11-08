@@ -240,7 +240,9 @@ flowchart LR
   - **A fixed boot script, and a check container:** `SERVE_BOOT` is fixed text
     with nothing interpolated into it, and the short-lived container that checks
     each `writable` folder has no mount and `--network none`, with the same caps,
-    limits and proxy blanks (E2, E4). Reason: none under this scope.
+    limits and proxy blanks (E2 pins the boot text and the server's call; E4
+    runs the check; the check container's own arguments are checked by
+    reading). Reason: none under this scope.
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,

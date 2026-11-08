@@ -258,6 +258,19 @@ test('E5 Ready: serving reports the published port on 127.0.0.1, and a stop ends
     const result = await run.result;
     assert.deepEqual([result.outcome, result.exitCode], ['stopped', 130]);
   });
+  for (const row of [{ name: 'the start marker still comes, so ranMs is reported', serve: { startDelayMs: 600 }, ranMs: true }, { name: 'with no start marker, ranMs is left out', serve: { startDelayMs: 600, marker: false }, ranMs: false }]) {
+    await t.test(`a signal before Docker has made the container ends serve: ${row.name}`, async (t) => {
+      const docker = fake(t, { serve: row.serve });
+      const run = serveIn(t, repo, docker);
+      await until(() => serverRuns(docker).length === 1, 5000, 'docker run to start');
+      run.abort();
+      const result = await Promise.race([run.result, sleep(10_000).then(() => 'hung' as const)]);
+      assert.notEqual(result, 'hung', 'serve ended after the signal');
+      const ended = result as Awaited<typeof run.result>;
+      assert.deepEqual([ended.outcome, ended.exitCode, typeof ended.ranMs === 'number'], ['stopped', 130, row.ranMs]);
+      assert.deepEqual(containerFiles(docker), [], 'the container went with it');
+    });
+  }
 });
 
 test('E6 End: each way a server ends has its outcome, and the container goes with -v', async (t) => {
@@ -451,21 +464,6 @@ test('E5 JSON: with --json, stdout holds one serving line then one ended line; e
       assert.deepEqual([ended.schema, ended.event, ended.outcome, ended.exitCode], [1, 'ended', 'error', 125]);
       assert.match(ended.message, row.says);
       assert.equal(ended.ranMs, undefined);
-    });
-  }
-  for (const row of [{ name: 'once the server started, ranMs is reported', serve: { startDelayMs: 600 }, ranMs: true }, { name: 'with no start marker, ranMs is left out', serve: { startDelayMs: 600, marker: false }, ranMs: false }]) {
-    await t.test(`a signal before Docker has made the container ends serve: ${row.name}`, async (t) => {
-      isolate(t);
-      const repo = serverRepo(t);
-      const docker = fake(t, { serve: row.serve });
-      const run = serveIn(t, repo, docker);
-      await until(() => serverRuns(docker).length === 1, 5000, 'docker run to start');
-      run.abort();
-      const result = await Promise.race([run.result, sleep(10_000).then(() => 'hung' as const)]);
-      assert.notEqual(result, 'hung', 'serve ended after the signal');
-      const ended = result as Awaited<typeof run.result>;
-      assert.deepEqual([ended.outcome, ended.exitCode, typeof ended.ranMs === 'number'], ['stopped', 130, row.ranMs]);
-      assert.deepEqual(containerFiles(docker), [], 'the container went with it');
     });
   }
 });
