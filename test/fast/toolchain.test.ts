@@ -61,6 +61,17 @@ test('T13 the boot script in the compiled output has no carriage return', async 
   assert.equal(readFileSync(join(dist, 'container-settings.js'), 'latin1').includes('\r'), false, 'dist/container-settings.js, which holds the boot script, has LF line endings');
 });
 
+test('D1 every boot script ends the container with kill words that dash and busybox both take', async (t) => {
+  isolate(t);
+  const { BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } = await import('#dist/index.js');
+  // dash (Debian, Ubuntu) reads the -1 after `kill -s KILL` as an option and
+  // signals nothing; the docker tier runs only Alpine and cannot catch it (issue 87).
+  for (const script of [BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256]) {
+    assert.doesNotMatch(script, /kill -s/);
+    assert.ok(script.split('\n').includes('( sleep "$ATHANOR_GRACE_LIMIT"; kill -KILL -1 ) &'), 'the timer line is the one dash takes');
+  }
+});
+
 test('T5 a shell use planted in a .ts file fails the source check', async (t) => {
   isolate(t);
   const bad = [

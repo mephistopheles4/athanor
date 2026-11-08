@@ -168,6 +168,12 @@ the docs say what the spec says) and by the fast tier, the type checks, the
 source check and the docker tier passing on the final head, and CI. No test
 carries the names E13 and E14.
 
+`D1` to `D3`, from the spec on issue 87: D1 is a fast-tier test. D2 is checked
+by reading at review (ADR 0016 quotes `kill -KILL -1`, and
+`git diff main -- src/container-settings.ts` is the one timer line and its
+comment). D3 is the fast tier, the type checks, the source check and the docker
+tier passing on the final head, and CI. No test carries the names D2 and D3.
+
 `F1` to `F12`, from the spec on issue 88: F1, F2 and F5 to F8 are fast-tier
 tests (F5 runs the marked block of `release.yml` with `sh`, and is skipped by
 name on a host with no `sh`, as on the Windows fast tier when Git's `sh` is

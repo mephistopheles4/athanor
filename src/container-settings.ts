@@ -44,8 +44,11 @@ const COMMIT = [
   '  git -c user.name=athanor -c user.email=athanor@localhost commit -qm athanor',
   'fi',
 ];
+// The timer says `kill -KILL -1`, not `kill -s KILL -1`: dash (Debian, Ubuntu)
+// reads the -1 after -s KILL as an option and signals nothing; busybox and dash
+// both take the first form (issue 87).
 const START = [
-  '( sleep "$ATHANOR_GRACE_LIMIT"; kill -s KILL -1 ) &',
+  '( sleep "$ATHANOR_GRACE_LIMIT"; kill -KILL -1 ) &',
   `echo "${WORK_PREFIX}$(pwd)" >&2`,
   `echo ${MARKER} >&2`,
   'exec "$@"',
