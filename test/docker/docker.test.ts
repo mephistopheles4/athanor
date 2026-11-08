@@ -5,11 +5,12 @@ import { test, after } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run, status, BOOT_BASE_SHA1 } from '#dist/index.js';
-import type { RunOptions } from '#dist/index.js';
+import { run, status, serve, BOOT_BASE_SHA1 } from '#dist/index.js';
+import type { RunOptions, ServeOptions, Serving } from '#dist/index.js';
 import { ask } from '#dist/slots.js';
 import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.ts';
 
@@ -550,4 +551,145 @@ test('B12 an image without git ends a run with a base as error, and runs without
   assert.match(withBase.result.message!, /A run with a base also needs git in the image, 2\.29 or later for a sha256 repo/);
   const without = await runReal(t, repo, { name: 'test' });
   assert.equal(without.result.outcome, 'pass', without.stderr);
+});
+
+// ---- athanor serve (issue 35) ------------------------------------------------
+
+const SERVE_DOCKERFILE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'serve', 'Dockerfile'), 'utf8');
+// The server tries to write a file in the tree and one in cache, records both
+// results in cache/result, then serves the working folder.
+const SERVE_SCRIPT = '( echo x > tree-probe ) 2>/dev/null && t=wrote || t=refused; ( echo y > cache/probe ) 2>/dev/null && c=wrote || c=refused; printf "tree=%s cache=%s" $t $c > cache/result; exec httpd -f -p 8080 -h .';
+
+function serveRepo(t: TestContext, { dockerfile = SERVE_DOCKERFILE, writable = ['cache'] }: { dockerfile?: string; writable?: string[] } = {}) {
+  return makeRepo(t, {
+    athanor: {
+      dockerfile: 'test/Dockerfile', commands: { test: ['true'] },
+      servers: { site: { argv: ['sh', '-c', SERVE_SCRIPT], port: 8080, writable, memory: '256m' } },
+    },
+    files: { 'test/Dockerfile': dockerfile, 'page.txt': 'v1', 'cache/host.txt': 'host' },
+  });
+}
+
+function serveReal(t: TestContext, repo: string, extra: Partial<ServeOptions> = {}) {
+  const controller = new AbortController();
+  const prefix = extra.prefix ?? uniquePrefix();
+  let serving: Serving | undefined;
+  const result = serve({
+    cwd: repo, name: 'site', prefix, signal: controller.signal, onServing: (s) => { serving = s; }, ...extra,
+  });
+  void result.then((r) => { if (r.image?.tag) builtTags.add(r.image.tag); });
+  t.after(async () => { controller.abort(); await result; });
+  return { result, prefix, stop: () => controller.abort(), serving: () => serving };
+}
+
+// GET a url, trying again until it answers or the time is up.
+async function get(url: string, withinMs = 10_000): Promise<{ status: number; text: string }> {
+  const end = Date.now() + withinMs;
+  for (;;) {
+    try {
+      const res = await fetch(url);
+      return { status: res.status, text: await res.text() };
+    } catch (error) {
+      if (Date.now() > end) throw error;
+      await sleep(200);
+    }
+  }
+}
+
+const serverContainers = (prefix: string) => docker(['ps', '-a', '--filter', `name=^${prefix}-server-`, '--format', '{{.Names}}']).stdout.split('\n').filter(Boolean);
+const volumes = () => new Set(docker(['volume', 'ls', '-q']).stdout.split('\n').filter(Boolean));
+
+test('E11 A real server: two at once on 127.0.0.1, a read-only tree, a writable volume from the image, cleaned up', async (t) => {
+  isolate(t);
+  const repo = serveRepo(t);
+  const volumesBefore = volumes();
+  const prefix = uniquePrefix();
+  const a = serveReal(t, repo, { prefix });
+  await until(() => a.serving(), 120_000, 'the first server');
+  const b = serveReal(t, repo, { prefix });
+  await until(() => b.serving(), 120_000, 'the second server');
+  const [sa, sb] = [a.serving()!, b.serving()!];
+  assert.notEqual(sa.port, sb.port);
+  assert.notEqual(sa.lock, sb.lock);
+  for (const s of [sa, sb]) {
+    assert.match(s.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+    assert.deepEqual(await get(`${s.url}page.txt`), { status: 200, text: 'v1' });
+  }
+
+  await t.test('the tree is read-only, the writable folder is a volume of the image\'s content', async () => {
+    assert.equal((await get(`${sa.url}cache/result`)).text, 'tree=refused cache=wrote');
+    assert.equal((await get(`${sa.url}cache/seed.txt`)).text.trim(), 'from-image');
+    assert.equal((await get(`${sa.url}cache/host.txt`)).status, 404);
+    assert.deepEqual(readdirSync(join(repo, 'cache')).sort(), ['host.txt']);
+    assert.equal(existsSync(join(repo, 'tree-probe')), false);
+  });
+  await t.test('a host edit shows in the next answer', async () => {
+    writeFileSync(join(repo, 'page.txt'), 'v2');
+    await until(async () => (await get(`${sa.url}page.txt`)).text === 'v2', 10_000, 'the edit');
+  });
+  await t.test('a server is still up and answering 10 seconds on', async () => {
+    await sleep(10_000);
+    assert.equal((await get(`${sb.url}page.txt`, 1000)).status, 200);
+  });
+
+  a.stop();
+  b.stop();
+  const [ra, rb] = await Promise.all([a.result, b.result]);
+  assert.deepEqual([ra.outcome, rb.outcome], ['stopped', 'stopped']);
+  assert.deepEqual(serverContainers(prefix), []);
+  assert.deepEqual([...volumes()].filter((v) => !volumesBefore.has(v)), []);
+});
+
+test('E11 --port publishes on the host port asked for', async (t) => {
+  isolate(t);
+  const repo = serveRepo(t);
+  const probe = net.createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const port = (probe.address() as net.AddressInfo).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  const run = serveReal(t, repo, { port });
+  await until(() => run.serving(), 120_000, 'the server');
+  assert.equal(run.serving()!.port, port);
+  assert.equal((await get(`http://127.0.0.1:${port}/page.txt`)).text, 'v1');
+  run.stop();
+  await run.result;
+});
+
+test('E11 a writable folder the image lacks, or one root made before USER, is refused before docker run', async (t) => {
+  isolate(t);
+  const rows = [
+    { name: 'the image lacks it', dockerfile: SERVE_DOCKERFILE, writable: ['cache', 'other'], mkdir: 'other' },
+    { name: 'root owns it', dockerfile: SERVE_DOCKERFILE.replace('USER app', 'RUN mkdir rootcache\nUSER app'), writable: ['rootcache'], mkdir: 'rootcache' },
+  ];
+  for (const row of rows) {
+    await t.test(row.name, async (t) => {
+      const repo = serveRepo(t, { dockerfile: row.dockerfile, writable: row.writable });
+      mkdirSync(join(repo, row.mkdir), { recursive: true });
+      const prefix = uniquePrefix();
+      const result = await serveReal(t, repo, { prefix }).result;
+      assert.equal(result.exitCode, 125, JSON.stringify(result));
+      assert.match(result.message!, new RegExp(`RUN mkdir -p ${row.mkdir}`));
+      assert.deepEqual(serverContainers(prefix), []);
+    });
+  }
+});
+
+test('E12 After the caller dies: a hard-killed serve leaves nothing after the next serve has started', { skip: process.platform !== 'linux' }, async (t) => {
+  const home = isolate(t);
+  const repo = serveRepo(t);
+  const prefix = uniquePrefix();
+  const serveDriver = join(dirname(fileURLToPath(import.meta.url)), 'serve-driver.ts');
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', serveDriver, JSON.stringify({ home, cwd: repo, name: 'site', prefix })], { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+  let out = '';
+  child.stdout.on('data', (d) => (out += d));
+  t.after(() => child.kill('SIGKILL'));
+  await until(() => out.includes('"url"'), 120_000, 'the first server');
+  child.kill('SIGKILL');
+  await new Promise((resolve) => child.on('close', resolve));
+  const next = serveReal(t, repo, { prefix });
+  await until(() => next.serving(), 120_000, 'the next server');
+  assert.equal(serverContainers(prefix).length, 1, 'only the new server is left');
+  next.stop();
+  await next.result;
+  assert.deepEqual(serverContainers(prefix), []);
 });
