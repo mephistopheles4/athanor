@@ -22,6 +22,7 @@ quadrantChart
   quadrant-3 Accept
   quadrant-4 Watch
   Windows slot pipe on the network: [0.15, 0.20]
+  A server's port on this machine: [0.30, 0.25]
   A compromised machine: [0.08, 0.97]
   Shared or remote engine: [0.15, 0.82]
   The machine's load: [0.50, 0.38]
@@ -36,9 +37,10 @@ on it: it is trusted, and out of scope (see Scope).
 | Class | Risk | L | I | What stops it | What is left open |
 | --- | --- | --- | --- | --- | --- |
 | [The Windows slot pipe on the network](#the-windows-slot-pipe-on-the-network) | A user elsewhere on the network reads what slot holders report | 0.15 | 0.20 | Windows' own sign-in for the pipe | The pipe does not refuse remote clients |
+| [A server's port on this machine](#a-servers-port-on-this-machine) | A program, another container or, on a Linux engine before 28.0, a host on the network reaches a dev server's published port | 0.30 | 0.25 | The port is published on 127.0.0.1 only; the tree is read-only | Every program and account here, and every container on Docker's default bridge network, can reach it; the engine's version is not checked |
 | [A compromised machine or sandbox](#a-compromised-machine-or-sandbox) | A program or agent already working against the owner, a local program that takes the slot names or swaps a file a run reads | 0.08 | 0.97 | Nothing inside athanor | All of it |
 | [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs; a local address can lead elsewhere |
-| [The machine's load](#the-machines-load) | A run or a leftover container holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal | No default CPU limit; a full process table can block removal |
+| [The machine's load](#the-machines-load) | A run, a leftover container or a server holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal, the next `serve`'s sweep | No default CPU limit; no time limit for a server; a full process table can block removal |
 | [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | Only the hashed set reaches the build; names checked as text; no container log; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
 | [The release and CI supply chain](#the-release-and-ci-supply-chain) | A hijacked dev package, action or account shapes what is built, staged or tagged | 0.25 | 0.92 | SHA pins, a 7-day wait, signatures, stage-only publishing, the owner's look and 2FA | A merged hijacked compiler; the release's `check` and `publish` jobs; any tag can be released |
 
@@ -123,6 +125,11 @@ folder; with `--output`, it also writes into the new folder the caller names
 (ADR 0023). Both are covered by the class "What athanor records, shows and
 leaves behind".
 
+**Serving.** `athanor serve <name>` runs a server declared under `servers` in
+one container, in the foreground, until a signal or until the server exits. The
+container sees the working tree read-only and has a network, and one port is
+published on 127.0.0.1 (ADR 0034). It holds a server lock, not a run slot.
+
 ## Boundaries and how each holds
 
 Each control below ends with its reason under the scope above (ADR 0033):
@@ -159,8 +166,10 @@ flowchart LR
   the container as the same literal arguments (C16).
   Reason: none under this scope; it keeps correctness, a command's words
   reaching the container as written.
-- **Nothing from the host reaches the test container** but the snapshot on
-  stdin and `ATHANOR_GRACE_LIMIT`. This, and the limits below, hold only as
+- **Nothing from the host reaches a run's test container** but the snapshot on
+  stdin and `ATHANOR_GRACE_LIMIT`. This is `athanor run`'s container; a
+  server's gets the tree, a network and a port by design (see "A server's container"
+  below, ADR 0034). This, and the limits below, hold only as
   far as the engine enforces them: on an engine the owner runs, they hold; on
   someone else's engine, the operator decides (accepted class "A shared or
   remote engine, and the network"). With a base, the snapshot's stream also
@@ -198,6 +207,35 @@ flowchart LR
 - **Fixed limits on each run:** memory and memory-swap, a process limit (1024 unless `processes` is configured or `maxProcesses` is lower, held to the machine's `maxProcesses`, default 1024; N2, N3, N4), a host-side time limit and an in-container timer (C7, C11, K4), and CPUs when `cpus` or `maxCpus` is configured (U1, U4, accepted class "The machine's load"). The ceilings that the machine configuration sets bound what any repo can ask for, including a command's own limits (M4, N3), and `maxProcesses` bounds the process limit; only `maxCpus` has no default (C31, U3).
   Reason: machine load.
 - **`no-new-privileges`** on each run. Reason: none under this scope.
+- **A server's container** (`athanor serve`, ADR 0034). It is not a run's
+  container: it gets the working tree read-only, a bridge network and one
+  published port, and it has no time limit.
+  - **One port, on 127.0.0.1 only:** `-p 127.0.0.1::<port>`, or
+    `-p 127.0.0.1:<host port>:<port>` with `--port`. If Docker reports the
+    port on any other address, athanor removes the container and exits 125
+    (E5). Reason: network exposure; what athanor exposes on the network is in
+    scope. Every program on the machine, and every other container on Docker's
+    default bridge network, can still reach it (accepted class "A server's port
+    on this machine").
+  - **The tree read-only, and a volume per writable folder:** the tree is a
+    read-only bind mount at the image's `WORKDIR`, each `writable` folder is an
+    anonymous volume that Docker seeds from the image, and nothing else is
+    mounted: no `-v` and no Docker socket (E2, E11). Reason: collision; two
+    servers of one tree never write the same files, and athanor never writes the
+    tree.
+  - **`maxServers` and the limits:** a server lock for each server, at most
+    `maxServers` (default 2), and the same memory, swap, process and CPU
+    limits as a command's (E7, E2). Reason: machine load. A server has no time
+    limit (accepted class "The machine's load").
+  - **The engine on this machine:** `serve` refuses an engine that is not on
+    this machine, even with `allowRemoteDocker`, since a bind mount takes its
+    path from the engine's machine and 127.0.0.1 is that machine's (E4). Reason:
+    shared or remote engine.
+  - **The kept capabilities and the proxy blanks:** `--cap-drop ALL` with the
+    six `--cap-add` of ADR 0016, `--security-opt no-new-privileges`, the ten
+    `-e NAME=` proxy blanks and no other `-e`, as for `run` (E2). Reason: as
+    for `run`; the proxy blanks keep a proxy password out of the engine's record
+    (records and leaves behind, shared or remote engine).
 - **Configured paths stay in the repo.** Every `dockerfile`, `context` and
   `inputs` path is resolved through symlinks with the same realpath function
   as the repo root and compared segment by segment, ignoring case on Windows,
@@ -461,9 +499,11 @@ doesn't protect you from"; the release and CI class stays here alone.
 - **The Windows slot pipe on the network.** On Windows, a slot is a named
   pipe, and the pipe does not refuse remote clients, so an authenticated user
   elsewhere on the network can possibly read the details a holder reports
-  (pid, start time, repo folder name, limit). Accepted because limiting the
+  (pid, start time, repo folder name, limit, and for a server lock also the server's name and host port). Accepted because limiting the
   pipe needs a native package, which "no dependencies" rules out, and the
   details are small.
+
+- **A server's port on this machine.** `athanor serve` publishes a server's port on 127.0.0.1 only, so other machines can't reach it on Docker 28.0 or later. Every program and account on this machine can reach it, and so can every other container on Docker's default bridge network, another server included, at the container's own port. On a Linux engine before 28.0, hosts on the same network segment can also reach a port published on 127.0.0.1, as Docker's documentation says; athanor does not check the engine's version (q2). Accepted because the server is the repo's own dev server, a local program working against the owner is in the class "A compromised machine or sandbox", and the owner chose a documented minimum over a check.
 
 - **A compromised machine or sandbox.** Once a program, process or agent on
   the machine or in the sandbox works against you, it can plant programs a
@@ -544,7 +584,7 @@ doesn't protect you from"; the release and CI class stays here alone.
 
 - **The machine's load.** athanor exists to keep parallel runs from
   overloading the machine (ADR 0033); this class names the limits it leaves
-  open. A test that kills the in-container timer, together with
+  open. A server has no time limit. A server whose caller was killed hard on Windows keeps running, with its memory, CPU and the tree's mount, until the next `athanor serve` on the machine sweeps it; `athanor status` lists it as an orphan until then. A test that kills the in-container timer, together with
   a hard-killed caller, leaves one container running until its slot is next
   used, when the next run removes it; until then it keeps the run's snapshot,
   uncommitted files included. With no CPU limit configured (`maxCpus` unset), a
@@ -561,7 +601,7 @@ doesn't protect you from"; the release and CI class stays here alone.
   container can fail too, so recovery may need an engine restart (on Linux,
   the host's own recovery). A ceiling near the top (4194304) is in effect no
   limit. Memory, swap and the default of 1024 processes stay bounded. Accepted
-  because the next run on the slot removes a leftover container, the owner
+  because the next run on the slot removes a leftover container, the next `serve` removes a leftover server and `status` shows one, the owner
   chose speed by default and `maxCpus` bounds it, the repo is code the owner
   trusts to build, raising the ceiling is the machine owner's act, and the
   README advises keeping `maxProcesses` times the largest run limit, plus the
