@@ -450,19 +450,21 @@ test('E5 JSON: with --json, stdout holds one serving line then one ended line; e
       assert.equal(ended.ranMs, undefined);
     });
   }
-  await t.test('a signal before Docker has made the container ends serve, and ranMs is left out', async (t) => {
-    isolate(t);
-    const repo = serverRepo(t);
-    const docker = fake(t, { serve: { startDelayMs: 600 } });
-    const run = serveIn(t, repo, docker);
-    await until(() => serverRuns(docker).length === 1, 5000, 'docker run to start');
-    run.abort();
-    const result = await Promise.race([run.result, sleep(10_000).then(() => 'hung' as const)]);
-    assert.notEqual(result, 'hung', 'serve ended after the signal');
-    const ended = result as Awaited<typeof run.result>;
-    assert.deepEqual([ended.outcome, ended.exitCode, ended.ranMs], ['stopped', 130, undefined]);
-    assert.deepEqual(containerFiles(docker), [], 'the container went with it');
-  });
+  for (const row of [{ name: 'once the server started, ranMs is reported', serve: { startDelayMs: 600 }, ranMs: true }, { name: 'with no start marker, ranMs is left out', serve: { startDelayMs: 600, marker: false }, ranMs: false }]) {
+    await t.test(`a signal before Docker has made the container ends serve: ${row.name}`, async (t) => {
+      isolate(t);
+      const repo = serverRepo(t);
+      const docker = fake(t, { serve: row.serve });
+      const run = serveIn(t, repo, docker);
+      await until(() => serverRuns(docker).length === 1, 5000, 'docker run to start');
+      run.abort();
+      const result = await Promise.race([run.result, sleep(10_000).then(() => 'hung' as const)]);
+      assert.notEqual(result, 'hung', 'serve ended after the signal');
+      const ended = result as Awaited<typeof run.result>;
+      assert.deepEqual([ended.outcome, ended.exitCode, typeof ended.ranMs === 'number'], ['stopped', 130, row.ranMs]);
+      assert.deepEqual(containerFiles(docker), [], 'the container went with it');
+    });
+  }
 });
 
 test('E9 status and prune: a server shows in status, an unheld container is an orphan, and prune keeps its image', async (t) => {
