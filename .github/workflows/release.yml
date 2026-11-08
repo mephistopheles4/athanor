@@ -1,18 +1,24 @@
 # Stages a release of @mephistopheles4/athanor on npm through the trusted
 # publisher, with provenance, behind the owner's two approvals (spec on issue 6,
-# ADR 0019). The owner starts it by hand on main. The check job builds, tests and
+# ADR 0019). The owner's push of a tag named v plus the version starts it (spec
+# on issue 88, ADR 0035): X.Y.Z stages for the dist-tag latest, X.Y.Z-rc.N for
+# next. A failed run is re-run on the same tag. The check job builds, tests and
 # packs once, with no identity token. The publish job waits for the owner's
 # approval of the npm environment, then stages exactly that tarball. It never
 # checks out the repo and runs no repo code. The trusted publisher allows
 # staging only, so a version goes live only when the owner approves it on npm
 # with two-factor authentication (docs/releasing.md).
+# A tag run uses this file as it is at the tagged commit, so the guards in check
+# are mistake guards; the controls that hold are outside the file (ADR 0035).
 # Locked down: no permissions by default, each action pinned to a full commit
 # SHA with a release at least 7 days old, an exact Node, no Actions cache, no
 # registry .npmrc, and the checkout's token not left in the clone.
 name: release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions: {}
 
@@ -31,9 +37,33 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Refuse any ref but main
+      # The guards before the checkout use the API alone, so no repo code runs
+      # at a commit not yet known to be main's head or an ancestor of it. The
+      # ref and the actor reach the shell through env:, never inline.
+      - name: Refuse any ref but a release tag
+        env:
+          REF: ${{ github.ref }}
         run: |
-          test "$GITHUB_REF" = "refs/heads/main" || { echo "The release runs only from main. This run is on $GITHUB_REF. Start it again on main."; exit 1; }
+          case "$REF" in
+            refs/tags/v*) ;;
+            *) echo "The release runs only on a tag named v plus the version. This run is on $REF. Push the tag, or re-run the release on one."; exit 1 ;;
+          esac
+      - name: Refuse any actor but the owner
+        env:
+          ACTOR: ${{ github.triggering_actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          test "$ACTOR" = "$OWNER" || { echo "Only the repository owner runs the release. This run was started or re-run by $ACTOR. The owner re-runs it on the tag."; exit 1; }
+      - name: Check that the tagged commit is main's head or behind it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          status=$(gh api --method GET "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" -f per_page=1 --jq .status)
+          case "$status" in
+            identical|behind) echo "The tagged commit $GITHUB_SHA is main's head or behind it ($status)." ;;
+            *) echo "The tagged commit is not main's head or an ancestor of it. The tag stays: merge the commit first or bump the version, and tag anew."; exit 1 ;;
+          esac
       # Stands in for everything only CI runs: the docker tier, the install
       # scripts and registry check, and the install, version and typed-import
       # half of CI's pack check.
@@ -45,7 +75,7 @@ jobs:
           url=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
             -f head_sha="$GITHUB_SHA" -f event=push -f branch=main -f status=success \
             --jq '.workflow_runs[0].html_url // ""')
-          test -n "$url" || { echo "CI has not passed on this commit. Wait for the ci run on main to finish green, then start the release again."; exit 1; }
+          test -n "$url" || { echo "CI has not passed on this commit. Wait for main's ci run for this commit to finish green, then re-run the release on its tag."; exit 1; }
           echo "CI passed on $GITHUB_SHA: $url"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,6 +84,12 @@ jobs:
         with:
           node-version: '24.22.0'
           package-manager-cache: false
+      # The first step that reads the repo: the tag is v plus package.json's
+      # version, and the version is X.Y.Z or X.Y.Z-rc.N (S1, S3).
+      - name: Check the tag against the version
+        env:
+          REF: ${{ github.ref }}
+        run: node scripts/check-release-ref.mjs --ref "$REF" --package package.json
       # The same check runs in both jobs; publish has no checkout to share a
       # script from, so change the two together.
       - name: Check the npm version
@@ -92,23 +128,23 @@ jobs:
                 process.exit(1);
               }
               if (res.status !== 200) {
-                console.error("Could not read the package from npm (HTTP " + res.status + "). Start the release again later.");
+                console.error("Could not read the package from npm (HTTP " + res.status + "). Re-run the release on its tag later.");
                 process.exit(1);
               }
               let doc;
               try {
                 doc = await res.json();
               } catch (err) {
-                console.error("Could not read the package from npm (" + err.message + "). Start the release again later.");
+                console.error("Could not read the package from npm (" + err.message + "). Re-run the release on its tag later.");
                 process.exit(1);
               }
               if (doc.versions && Object.hasOwn(doc.versions, version)) {
-                console.error("Version " + version + " is already on npm. Bump the version in package.json, merge, and start the release again.");
+                console.error("Version " + version + " is already on npm. The tag stays: bump the version in package.json, merge, and tag anew.");
                 process.exit(1);
               }
               console.log("Version " + version + " is new on npm.");
             }, (err) => {
-              console.error("Could not read the package from npm (" + err.message + "). Start the release again later.");
+              console.error("Could not read the package from npm (" + err.message + "). Re-run the release on its tag later.");
               process.exit(1);
             });
           '
@@ -181,27 +217,105 @@ jobs:
         run: |
           set -e
           names=$(ls -A)
-          test -n "$names" || { echo "The artifact holds no file. Start the release again."; exit 1; }
-          test "$(printf '%s\n' "$names" | wc -l)" -eq 1 || { echo "The artifact holds more than one file: $names. Start the release again."; exit 1; }
-          printf '%s\n' "$names" | grep -Eqx 'mephistopheles4-athanor-[0-9]+\.[0-9]+\.[0-9]+\.tgz' || { echo "The artifact's file is not a release tarball: $names. Start the release again."; exit 1; }
+          test -n "$names" || { echo "The artifact holds no file. Nothing was staged: re-run the release on its tag."; exit 1; }
+          test "$(printf '%s\n' "$names" | wc -l)" -eq 1 || { echo "The artifact holds more than one file: $names. Nothing was staged: re-run the release on its tag."; exit 1; }
+          # Exactly the two file-name forms (S1): X.Y.Z and X.Y.Z-rc.N, whole
+          # numbers without leading zeros, N at least 1.
+          printf '%s\n' "$names" | grep -Eqx 'mephistopheles4-athanor-(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?\.tgz' || { echo "The artifact's file is not a release tarball: $names. Nothing was staged: re-run the release on its tag."; exit 1; }
           # The same integrity line runs in both jobs, and the owner compares the
           # two summaries; change the two together.
           integrity=$(node -e 'const fs = require("node:fs"); const crypto = require("node:crypto"); console.log("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$names")
           echo "integrity of the tarball to stage: $integrity" >> "$GITHUB_STEP_SUMMARY"
+      # The dist-tag comes from the tarball's own version and nothing else
+      # (S5). The block between the markers is plain POSIX sh with no
+      # expression in it, and test/fast/release.test.ts (F5) runs it as it
+      # stands. It reads only the package/package.json member, as a regular
+      # file, to standard output, and never unpacks the tarball. Only the
+      # literal latest or next leaves it, in the file named by DIST_TAG_FILE,
+      # and no tarball text is printed or written anywhere else.
+      - name: Bind the dist-tag to the tarball's own version
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/release
+          REF_NAME: ${{ github.ref_name }}
+          DIST_TAG_FILE: ${{ runner.temp }}/dist-tag
+        run: |
+          set -e
+          TARBALL="$RELEASE_DIR/$(ls -A "$RELEASE_DIR")"
+          export TARBALL
+          # release-tag-rule begin
+          export LC_ALL=C
+          fail() { echo "$1 Nothing was staged: see \"If a run fails\" in docs/releasing.md." >&2; exit 1; }
+          # Prints latest for X.Y.Z and next for X.Y.Z-rc.N, else fails.
+          dist_tag_of() {
+            case $1 in
+              ''|*[!0-9.rc-]*) return 1 ;;
+            esac
+            if printf '%s\n' "$1" | grep -Eqx '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'; then
+              echo latest
+            elif printf '%s\n' "$1" | grep -Eqx '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.[1-9][0-9]*'; then
+              echo next
+            else
+              return 1
+            fi
+          }
+          file=${TARBALL##*/}
+          case $file in
+            mephistopheles4-athanor-*.tgz) ;;
+            *) fail "The tarball's file name is not a release tarball name." ;;
+          esac
+          name_version=${file#mephistopheles4-athanor-}
+          name_version=${name_version%.tgz}
+          case $REF_NAME in
+            v*) ;;
+            *) fail "The tag is not named v plus the version." ;;
+          esac
+          tag_version=${REF_NAME#v}
+          dist_tag_of "$name_version" > /dev/null || fail "The version in the tarball's file name is not X.Y.Z or X.Y.Z-rc.N."
+          listing=$(tar -tzvf "$TARBALL" 2> /dev/null) || fail "Could not list the tarball."
+          members=$(printf '%s\n' "$listing" | grep -E ' [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})? package/package\.json( -> .*| link to .*)?$') || fail "The tarball holds no package/package.json member."
+          count=$(printf '%s\n' "$members" | grep -c '^')
+          test "$count" = 1 || fail "The tarball must hold exactly one package/package.json member."
+          # A regular file: its mode starts with -, and no -> or link to follows the name.
+          printf '%s\n' "$members" | grep -Eq '^-.* package/package\.json$' || fail "The tarball's package/package.json is not a regular file."
+          manifest=$(tar -xzOf "$TARBALL" package/package.json 2> /dev/null) || fail "Could not read package/package.json from the tarball."
+          package_version=$(printf '%s' "$manifest" | node -e '
+            let text = "";
+            process.stdin.setEncoding("utf8");
+            process.stdin.on("data", (chunk) => { text += chunk; });
+            process.stdin.on("end", () => {
+              let version;
+              try { version = JSON.parse(text).version; } catch { process.exit(1); }
+              if (typeof version !== "string" || !/^[0-9.rc-]{1,64}$/.test(version)) process.exit(1);
+              process.stdout.write(version);
+            });
+          ') || fail "package/package.json in the tarball holds no readable version."
+          test "$package_version" = "$name_version" || fail "The version inside the tarball is not the version in its file name."
+          test "$package_version" = "$tag_version" || fail "The version inside the tarball is not the version of the tag."
+          dist_tag=$(dist_tag_of "$package_version") || fail "The version inside the tarball is not X.Y.Z or X.Y.Z-rc.N."
+          printf '%s\n' "$dist_tag" > "$DIST_TAG_FILE"
+          # release-tag-rule end
       # Runs outside any checkout, so no project .npmrc applies. --provenance
       # makes the stage fail rather than go out without provenance.
       - name: Stage the tarball
         working-directory: ${{ runner.temp }}/release
+        env:
+          DIST_TAG_FILE: ${{ runner.temp }}/dist-tag
         run: |
           set -e
           tgz=$(ls mephistopheles4-athanor-*.tgz)
-          npm stage publish "./$tgz" --provenance --access public --ignore-scripts --json > "$RUNNER_TEMP/stage.json"
+          dist_tag=$(cat "$DIST_TAG_FILE")
+          case "$dist_tag" in
+            latest|next) ;;
+            *) echo "The dist-tag step left no valid dist-tag. Nothing was staged: re-run the release on its tag."; exit 1 ;;
+          esac
+          npm stage publish "./$tgz" --tag "$dist_tag" --provenance --access public --ignore-scripts --json > "$RUNNER_TEMP/stage.json"
           # npm 11.19.1 writes { "<package name>": { ..., "stageId": "..." } }; a
           # top-level stageId is read too, in case a later npm flattens it.
-          stage_id=$(node -e 'const out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const id = out.stageId ?? Object.values(out)[0]?.stageId; if (!id) process.exit(1); console.log(id)' "$RUNNER_TEMP/stage.json") || { echo "npm staged the tarball but printed no stage id. Do not re-run this job: follow \"If a run fails\" in docs/releasing.md."; exit 1; }
+          stage_id=$(node -e 'const out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const id = out.stageId ?? Object.values(out)[0]?.stageId; if (!id) process.exit(1); console.log(id)' "$RUNNER_TEMP/stage.json") || { echo "npm staged the tarball but printed no stage id. Do not re-run this run: follow \"If a run fails\" in docs/releasing.md."; exit 1; }
           {
             echo "staged: $tgz"
             echo "stage id: $stage_id"
+            echo "dist-tag: $dist_tag"
             echo ""
-            echo "Next, the owner's steps in docs/releasing.md: build and pack locally, log in, check that exactly one entry is staged and that its integrity matches the check job's, compare every file, then approve with npm stage approve $stage_id or reject."
+            echo "Next, the owner's steps in docs/releasing.md: build and pack locally, log in, check that exactly one entry is staged, with the dist-tag above, and that its integrity matches the check job's, compare every file, then approve with npm stage approve $stage_id or reject."
           } >> "$GITHUB_STEP_SUMMARY"
