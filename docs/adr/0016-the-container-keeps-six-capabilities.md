@@ -41,7 +41,7 @@ The test container has no network, so a proxy in it does nothing.
 **Why these six.** `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID` and `SETGID`
 are what a root-run test can plausibly need: changing owners, writing another
 user's folder, and switching user. `KILL` is what the in-container time limit
-(`kill -s KILL -1`) needs to end a test that switched to another user; without
+(`kill -KILL -1`) needs to end a test that switched to another user; without
 it, root cannot signal that user's process, and the test outlives the time
 limit (test K4). The eight dropped are `NET_RAW`, `MKNOD`, `AUDIT_WRITE`,
 `SETFCAP`, `SETPCAP`, `SYS_CHROOT`, `FSETID` and `NET_BIND_SERVICE`. A test
