@@ -273,9 +273,11 @@ jobs:
           tag_version=${REF_NAME#v}
           dist_tag_of "$name_version" > /dev/null || fail "The version in the tarball's file name is not X.Y.Z or X.Y.Z-rc.N."
           # npm drops the first folder of every entry and reads the manifest that
-          # is left, so the names alone decide which package.json that is: every
-          # entry sits under package/, none has an odd path, and exactly one is
-          # package/package.json.
+          # is left. This listing refuses what tar shows: an entry outside
+          # package/, an odd path, and a count of package/package.json other
+          # than one. A crafted archive can make npm's reader see a different
+          # one, so the owner's step 15 (the staged version, and the npm install
+          # compare) is what binds the version npm stages.
           names=$(tar -tzf "$TARBALL" 2> /dev/null) || fail "Could not list the tarball."
           count=$(printf '%s\n' "$names" | grep -cx 'package/package\.json' || true)
           test "$count" != 0 || fail "The tarball holds no package/package.json member."

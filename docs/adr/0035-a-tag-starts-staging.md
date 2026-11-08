@@ -32,11 +32,15 @@ keep that, the one with fewer paths to a live version wins.
   standard output, requires its version to equal the file name's and the
   tag's, and derives `--tag` from it. The block lists the tarball by name
   first and accepts only entries under `package/` with exactly one
-  `package/package.json`, because npm drops the first folder of every entry
-  and reads the manifest that is left. `npm stage publish` is always passed
-  `--tag`. What binds the dist-tag to the version npm stages is the owner's
-  step 15: one staged entry for this version, and the entry list and every file
-  compared with a local pack.
+  `package/package.json`, as tar lists them, because npm drops the first
+  folder of every entry and reads the manifest that is left. npm's reader can
+  see a different archive from tar's (a lone zero block, a pax global path),
+  so the listing is a mistake guard. `npm stage publish` is always passed
+  `--tag`. What binds the version npm stages is the owner's step 15: one
+  staged entry for this version, the `npm install` compare that unpacks as npm
+  does, and the entry list and every file compared with a local pack. Against
+  code in `check` that also binds the dist-tag; against an action in
+  `publish`, see the residual below.
 - **The `npm` environment admits `v*` tags, not `main`.** The owner changes it
   after this workflow merges and before the first tag, and checks it before
   each release (`docs/releasing.md`).

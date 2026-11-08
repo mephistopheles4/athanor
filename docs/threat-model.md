@@ -717,10 +717,15 @@ doesn't protect you from"; the release and CI class stays here alone.
   if `npm stage view` shows no dist-tag. The dist-tag is read from the
   tarball's own version, by a block that lists the tarball by name and
   accepts only entries under `package/` with exactly one `package/package.json`,
-  so code in `check` shapes it only through that version. What binds the
-  dist-tag to the version npm stages is the owner's step 15: one staged entry
-  for this version, the entry list and every file compared with a local pack,
-  and the summary's dist-tag compared with the version. The rollback in
+  as tar lists them. npm's own reader can see a different archive from tar's
+  (a lone zero block, a pax global path), so a crafted tarball from code in
+  `check` could pass the block with one version while npm reads another. What
+  binds the version npm stages is the owner's step 15: one staged entry for
+  this version, the `npm install` compare that unpacks as npm does, the entry
+  list and every file compared with a local pack. Against code in `check`
+  that also binds the dist-tag, because the staged version then shows the
+  rc; against an action in `publish`, the summary's dist-tag line is that
+  attacker's to write, and only the residual above applies. The rollback in
   `docs/releasing.md` ("Stop conditions and rollback") recovers it. From
   `npm login` to `npm logout`, around an approval, around a step 17 unpublish
   or deprecate, around a check or reject after a failed run, and around a

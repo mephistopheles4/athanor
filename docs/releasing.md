@@ -25,8 +25,12 @@ The tag is `v` plus the version: `v0.3.0` or `v0.3.0-rc.1`. The workflow
 takes the dist-tag from the version inside the tarball it stages, not from
 the tag name, and stops if the two differ (ADR 0035). npm fixes the dist-tag
 when a version is staged: `npm stage approve` takes no tag. Your check in step
-15, that the one staged entry is for this version and matches your local pack
-file for file, is what ties the dist-tag to the version npm stages.
+15, that the one staged entry is for this version and that the `npm install`
+compare matches your local pack, is what binds the version npm stages, and
+against code in `check` the dist-tag with it. The workflow's tarball listing
+reads the archive as `tar` does, and a crafted archive can read differently to
+npm. Against an action in `publish`, the summary's dist-tag line is not
+evidence: see "Stop conditions and rollback".
 
 ## The first publish, by hand
 

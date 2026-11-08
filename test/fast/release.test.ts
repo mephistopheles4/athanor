@@ -315,6 +315,18 @@ function stepRun(name: string): string {
   return body.join('\n') + '\n';
 }
 
+// The value of one `env:` key of the named step of release.yml, as written.
+function stepEnv(name: string, key: string): string {
+  const lines = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8').split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
+  assert.notEqual(at, -1, `release.yml has a step named ${name}`);
+  for (let i = at + 1; i < lines.length && !/^\s+- name:/.test(lines[i]); i++) {
+    const m = lines[i].match(new RegExp(`^\\s+${key}: (.*)$`));
+    if (m) return m[1].trim();
+  }
+  assert.fail(`step ${name} has no ${key} in its env`);
+}
+
 test('F5 publish stops unless the tarball\'s package.json version equals the file-name version and the tag\'s, and takes the dist-tag from it alone', { skip: hasSh ? false : 'no sh on this host; the block is proven on Linux, in athanor\'s run and in CI' }, async (t) => {
   const block = tagRuleBlock();
   const manifest = (version: unknown) => JSON.stringify({ name: '@mephistopheles4/athanor', version, description: 'CANARYTEXT' });
@@ -418,6 +430,10 @@ test('F5 publish stops unless the tarball\'s package.json version equals the fil
   });
   await t.test('the stage step gives npm the dist-tag the block chose, and stops before npm for anything else', () => {
     const stage = stepRun('Stage the tarball');
+    // Both steps name one dist-tag file, and it is not in the folder `check` produces.
+    const bindFile = stepEnv('Bind the dist-tag to the tarball\'s own version', 'DIST_TAG_FILE');
+    assert.equal(stepEnv('Stage the tarball', 'DIST_TAG_FILE'), bindFile, 'both steps use the same dist-tag file');
+    assert.ok(bindFile.startsWith('${{ runner.temp }}/') && !bindFile.startsWith(stepEnv('Bind the dist-tag to the tarball\'s own version', 'RELEASE_DIR')), 'the dist-tag file is outside the release folder');
     // The step runs in the release folder, as on the runner; the paths are relative to it.
     const attempt = (distTag: string | null) => {
       const dir = tempDir(t);
