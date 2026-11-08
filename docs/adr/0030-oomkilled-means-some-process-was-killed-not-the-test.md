@@ -47,5 +47,8 @@ the container's own exit away.
   shipped declarations.
 
 q1, q4 and q5 are the lead's picks under the owner's standing instruction for
-2026-10-25. What was killed in the 8g run itself is left to a manual check on
-issue 60 (V7), with the oom events' times and the kernel's kill lines.
+2026-10-25. What was killed in the 8g run itself was left to a manual check on
+issue 60 (V7), with the oom events' times and the kernel's kill lines. The
+owner dropped that check and it was not run (recorded on issue 60), so which
+process the limit killed in that run, and whether it was before or after
+"Done", stays unmeasured.
