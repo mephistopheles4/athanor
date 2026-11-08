@@ -48,6 +48,21 @@ npm install --save-dev @mephistopheles4/athanor
 
 The command is `athanor`.
 
+### Release candidates
+
+Before a stable version ships, a release candidate may be published as
+`X.Y.Z-rc.N`, such as `0.3.0-rc.1`, under the npm dist-tag `next`. A plain
+`npm install @mephistopheles4/athanor` and `@latest` never receive one. To try
+one, install `@mephistopheles4/athanor@next`, or pin the exact version,
+`@mephistopheles4/athanor@0.3.0-rc.1`.
+
+A repo opts in by pinning the exact rc in mise, for example
+`mise use npm:@mephistopheles4/athanor@0.3.0-rc.1`. A mise pin that names no
+rc (`latest`, or a prefix such as `0.3`) resolves to a stable release. A
+published rc never changes, and the stable version may differ from it, so move
+the pin to the stable version when it ships. `@next` keeps pointing at the last
+rc until a newer one is published.
+
 ## Set up a repo
 
 Put the repo configuration in one of two places: an `athanor.json` file at the

@@ -105,7 +105,10 @@ syntax only, which Node runs directly. They import the core as `#dist/...`
 
 CI runs zizmor on the workflows, the workflows' own rules
 (`scripts/check-workflows.mjs`: every checkout's `persist-credentials: false`,
-no Actions cache, no registry `.npmrc`, no npm token, no secret), a check that install scripts are off and
+no Actions cache, no registry `.npmrc`, no npm token, no secret, a workflow
+with `id-token: write` starting only on a push of tags `v*`, no checkout in the
+job that names `environment: npm`, `--tag` on every `npm stage publish`, and
+no `npm publish`, `npm dist-tag` or `npm stage approve`), a check that install scripts are off and
 every package resolves from the public registry, `npm ci`, `npm audit
 signatures` (the registry's signatures over the installed packages' metadata;
 `npm ci` enforces the lockfile hashes), a strict `tsc` check of `src/` and of
@@ -165,13 +168,25 @@ the docs say what the spec says) and by the fast tier, the type checks, the
 source check and the docker tier passing on the final head, and CI. No test
 carries the names E13 and E14.
 
+`F1` to `F12`, from the spec on issue 88: F1, F2 and F5 to F8 are fast-tier
+tests (F5 runs the marked block of `release.yml` with `sh`, and is skipped by
+name on a host with no `sh`, such as the Windows fast tier, T14). F3 and F4
+are checks by reading at review: the compare step and its order, and the
+actor check. F9 is a manual check by the owner at the first release
+candidate, recorded on issue 88. F10 and F11 are checks by reading at review
+(F11 with `git diff main -- src` empty). F12 is the fast tier, the type
+checks and the source check passing on the final head, and CI. No test carries
+the names F3, F4 and F9 to F12.
+
 ## Releases
 
-Releases after the first are staged by `.github/workflows/release.yml` and
-made live by the owner ([ADR 0019](docs/adr/0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md),
-[the release steps](docs/releasing.md)). A change to `release.yml`, or to any
+Releases after the first are staged by `.github/workflows/release.yml`, which
+the owner's push of a `v*` tag starts, and made live by the owner ([ADR 0019](docs/adr/0019-releases-are-staged-by-a-trusted-publisher-and-approved-twice.md),
+[ADR 0035](docs/adr/0035-a-tag-starts-staging.md), [the release steps](docs/releasing.md)).
+A change to `release.yml`, or to any
 script, test or dev package it runs, is security-sensitive work: among them
-`scripts/check-pack.mjs`, `scripts/check-workflows.mjs`, `scripts/build.mjs`,
+`scripts/check-pack.mjs`, `scripts/check-release-ref.mjs`,
+`scripts/check-workflows.mjs`, `scripts/build.mjs`,
 `scripts/check-source.mjs`, `test/run.mjs` with the fast tier, and the
 compiler in `package-lock.json`. So is a bot pull request
 that moves an action SHA in `release.yml`, and a hand change to its

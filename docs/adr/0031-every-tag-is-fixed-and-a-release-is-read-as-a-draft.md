@@ -2,6 +2,9 @@
 
 Date: 2026-10-25 · Status: accepted · Extends: 0029 · Source: spec revision 3 on issue 63, for issues 53 and 63 (W1 to W10)
 
+Amended in part by 0035: a version unpublished or deprecated keeps its tag, which
+is pushed before the version is checked; it still gets no release.
+
 Zenodo archives the repo at a release's tag when a GitHub release is
 published, on any tag, and the record can't be deleted. So every tag is fixed
 once pushed, only an admin creates one, and each release is read before it
@@ -40,7 +43,8 @@ becomes public.
 - ADR 0029 says nothing of `v*`. The `v*` rulesets were in
   `docs/releasing.md`, which now describes the rulesets on every tag. 0029
   is not edited.
-- A version unpublished or deprecated in step 17 gets no tag and no release.
+- A version unpublished or deprecated in step 17 gets no release. (It once got
+  no tag either; 0035 replaces that, because the tag is pushed first.)
 - v0.1.0 and v0.1.1 keep their tags and get no release: steps 13 and 17 diff
   from the last release tag.
 - A release on the tag by anyone else stops releasing until accepted risk 38

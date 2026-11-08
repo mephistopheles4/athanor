@@ -42,7 +42,7 @@ on it: it is trusted, and out of scope (see Scope).
 | [A shared or remote engine, and the network](#a-shared-or-remote-engine-and-the-network) | Whoever runs the engine or builder, or sits on its path, sees and decides the run | 0.15 | 0.82 | Local engines only unless the machine file allows more; no plain tcp unless it opts in | The operator decides the result and the limits; a shared engine's users can read runs; a local address can lead elsewhere |
 | [The machine's load](#the-machines-load) | A run, a leftover container or a server holds every CPU, or a raised `maxProcesses` fills the engine's process table | 0.50 | 0.38 | Memory, swap, a default process limit, the time limits, the next run's removal, the next `serve`'s sweep | No default CPU limit; no time limit for a server; a full process table can block removal |
 | [What athanor records, shows and leaves behind](#what-athanor-records-shows-and-leaves-behind) | Paths, history, copied files and arguments reach places the owner did not expect | 0.72 | 0.25 | Only the hashed set reaches the build; names checked as text; no container log; the README's advice | Host git filters run; messages carry paths; the history of a base goes wherever the snapshot goes |
-| [The release and CI supply chain](#the-release-and-ci-supply-chain) | A hijacked dev package, action or account shapes what is built, staged or tagged | 0.25 | 0.92 | SHA pins, a 7-day wait, signatures, stage-only publishing, the owner's look and 2FA | A merged hijacked compiler; the release's `check` and `publish` jobs; any tag can be released |
+| [The release and CI supply chain](#the-release-and-ci-supply-chain) | A hijacked dev package, action or account shapes what is built, staged or tagged | 0.25 | 0.92 | SHA pins, a 7-day wait, signatures, stage-only publishing, the owner's look and 2FA, the admin-only tag ruleset and the `npm` environment's tag policy | A merged hijacked compiler; the release's `check` and `publish` jobs; any tag already pushed can be released; a tag run uses the workflow file at its commit |
 
 ## Scale
 
@@ -102,7 +102,7 @@ a hostile repo or protect a compromised machine (ADR 0033).
 | Whoever runs the configured engine or builder, other users of a shared engine, someone on the network path | The build context, the snapshot, the result and the limits, when the machine configuration allows a remote engine |
 | An authenticated network user | The Windows slot pipe |
 | Whoever can publish a release of a dev package or an action CI uses, or take over the account or repository that does | CI on the bot's pull request before any merge; once merged, the compiler in every test run and the build before a publish, and the actions the release workflow uses |
-| Whoever controls the owner's GitHub account, or can push a branch to this repo | The release workflow: they can stage a version, but cannot make one live without the owner's npm two-factor approval. The GitHub approval guards the token only as far as npm enforces the environment the trusted publisher names, which is unconfirmed (claim R10 of the spec on issue 6); the actor stays "can push a branch" until npm's docs say it is enforced |
+| Whoever controls the owner's GitHub account, or can push a branch to this repo | The release workflow: a tag starts it, and a tag run uses the file at the tagged commit (ADR 0035). Only an admin creates a `v*` tag, and the `npm` environment admits `v*` tags, with the owner as its reviewer. They can stage a version, but cannot make one live without the owner's npm two-factor approval. The environment's approval and its tag policy guard the token only as far as npm enforces the environment the trusted publisher names, which is unconfirmed (claim R10 of the spec on issue 6); the actor stays "can push a branch" until npm's docs say it is enforced, and the tag policy counts as a control only under that caveat |
 
 ## How athanor works
 
@@ -371,6 +371,19 @@ flowchart LR
     safe: the wait and the owner's merge are the controls.
   - CI holds no secrets. Its token is read-only (accepted class "The release and CI supply chain").
   - The first publish is by hand, as before (`docs/releasing.md`).
+  - The owner's push of a tag `v<version>` starts the release workflow
+    (ADR 0035). `X.Y.Z` stages for the dist-tag `latest`, `X.Y.Z-rc.N` for
+    `next`. A tag run uses the `release.yml` at the tagged commit, so the
+    guards in `check` (the owner as actor, the commit `main`'s head or behind
+    it, CI green, the tag matching `package.json`) and the workflow check's
+    rules (a tag-only trigger, no checkout where the token is minted,
+    `--tag` always set, no `npm publish`, `npm dist-tag` or
+    `npm stage approve`) guard against honest mistakes only. The controls that
+    hold are the admin-only tag ruleset, the `npm` environment's tag policy
+    with the owner as reviewer (under the R10 caveat), npm's binding to
+    `release.yml` and `npm`, the owner's look in step 13 and stage-only
+    publishing with two-factor approval. The dist-tag is read from the
+    tarball's own `package.json`, by a block that never unpacks the tarball.
   - Later versions are staged from the release workflow's `publish` job.
     GitHub issues an identity token there only after the owner approves the
     `npm` environment. That token proves the job's identity to any service
@@ -404,9 +417,9 @@ flowchart LR
   local engine is the owner's; when the machine configuration allows a remote
   engine, its access control is its operator's (accepted class "A shared or remote engine, and the network"). The
   release path has its own: npm's trusted-publisher binding to this repo,
-  workflow and environment, the `npm` environment's required reviewer, and
-  the owner's npm two-factor approval (the supply-chain bullet above;
-  ADR 0019). The GitHub release has two tag rulesets on every tag, which
+  workflow and environment, the `npm` environment's required reviewer and
+  tag policy, the admin-only tag ruleset, and the owner's npm two-factor
+  approval (the supply-chain bullet above; ADR 0019, ADR 0035). The GitHub release has two tag rulesets on every tag, which
   keep each tag on its commit and let only an admin create one, immutable
   releases, and the owner's read of each release as a draft before it is
   published (ADR 0031; accepted class "The release and CI supply chain").
@@ -435,7 +448,8 @@ flowchart LR
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token (accepted class "The release and CI supply chain"), and the owner's npm login
-  around an approval, and around a step 17 unpublish or deprecate (accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
+  around an approval, around a step 17 unpublish or deprecate, and around an
+  S11 rollback (accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
   release uses a third, long-lived one: the owner's gh login, kept in the
   system keyring, which can publish releases, create tags, change the tag
   rulesets and immutable releases, push branches, edit workflows and read
@@ -484,8 +498,10 @@ flowchart LR
   shallow or partial clone, and a snapshot holding the reserved path, are
   refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
   against a fetch (ADR 0032; B1, B5, B7).
-  The release path's untrusted inputs are the artifact `publish` takes from
-  `check`, the staged tarball the owner downloads, the registry's manifest,
+  The release path's untrusted inputs are the pushed tag's name, the artifact
+  `publish` takes from `check` (its `package/package.json` is read by one
+  fixed block and nothing else of it is unpacked there), the staged tarball
+  the owner downloads, the registry's manifest,
   which is checked once the version is live, and the
   registry's answer to the version check. They are covered by the owner's
   look before approval (`docs/releasing.md`), accepted class "The release and CI supply chain", and
@@ -682,9 +698,26 @@ doesn't protect you from"; the release and CI class stays here alone.
   sends apart from the tarball, is first seen in step 17's `npm view`, after
   the version is live, so whoever installs before then gets that manifest's
   dependencies; a bad one is unpublished while npm's policy allows, else
-  deprecated, and a deprecated version still installs. From `npm login` to
-  `npm logout`, around an approval and around a step 17 unpublish or
-  deprecate, the npm session token sits in the user npm configuration
+  deprecated, and a deprecated version still installs. A tag starts the
+  release workflow (ADR 0035), and a run started by a tag uses the
+  `release.yml` at the tagged commit: a tag on a commit off `main`, with an
+  edited workflow, runs the edited file. The workflow's guards (the owner as
+  actor, the commit `main`'s head or behind it, CI green, the tag matching the
+  version, the four workflow rules) guard against honest mistakes only. What
+  gates the identity token is the `npm` environment's approval (the owner,
+  with the owner's two-factor approval at npm for anything that goes live) and
+  the admin-only tag ruleset, only as far as npm enforces the environment the
+  trusted publisher names (R10, unconfirmed). Any tag already pushed can start
+  a run, the tags of rejected and unpublished versions and of release
+  candidates among them, and a pushed tag never moves. An action in `publish`,
+  or the npm it provides, could stage the owner's reviewed rc under `latest`
+  if `npm stage view` shows no dist-tag; the dist-tag is bound to the
+  tarball's own version, code in `check` cannot set it, and the owner's
+  compare of the summary's dist-tag with the version and the rollback in
+  `docs/releasing.md` ("Stop conditions and rollback") recover it. From
+  `npm login` to `npm logout`, around an approval, around a step 17 unpublish
+  or deprecate, and around an S11 rollback, the npm session token sits in the
+  user npm configuration
   unencrypted at file level, readable by any program running as the owner,
   including one left behind by the local build. Whoever can write to the repo,
   or act as the owner's account, can publish a GitHub release on any tag
@@ -692,13 +725,15 @@ doesn't protect you from"; the release and CI class stays here alone.
   DOI; the tag rulesets keep each tag on its commit and let only an admin
   create one, but no repository setting limits who publishes a release.
   Accepted because the wait before the update bot's pull requests, the
-  registry's signatures, the SHA pins, the owner's merge, stage-only
+  registry's signatures, the SHA pins, the owner's merge, the admin-only tag
+  ruleset, the `npm` environment's approval, stage-only
   publishing, the owner's look at the staged version and the owner's npm
   two-factor approval narrow every window, nothing goes live without that look
   and approval, no cheap independent check of the compiler's output exists,
   npm requires two-factor on every write, and no other collaborator or deploy
   key can write to the repo; the owner makes each release by hand, as a draft
-  read before it is published (ADR 0019, ADR 0031).
+  read before it is published (ADR 0019, ADR 0031, ADR 0035). The owner
+  accepts this change to the class by merging ADR 0035.
 
 ## Open issues
 

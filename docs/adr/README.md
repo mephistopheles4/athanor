@@ -35,3 +35,4 @@ changed one gets a new record that names the one it replaces.
 | [0032](0032-a-named-base-rides-in-the-snapshot.md) | A named base rides in the snapshot (extends 0007, 0016, 0020 and 0023) |
 | [0033](0033-athanor-isolates-parallel-runs-not-a-hostile-repo.md) | athanor isolates parallel test runs; it does not contain a hostile repo (extends 0016 and 0020) |
 | [0034](0034-a-server-sees-the-working-tree-read-only-and-publishes-one-port-on-127.0.0.1.md) | A server sees the working tree read-only and publishes one port on 127.0.0.1 (extends 0004, 0016 and 0021) |
+| [0035](0035-a-tag-starts-staging.md) | A tag starts staging (amends 0019 and, in part, 0031) |
