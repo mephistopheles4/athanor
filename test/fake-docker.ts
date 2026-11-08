@@ -100,13 +100,20 @@ const RUN_VALUED = new Set([
   '--cpus', '--pids-limit', '--security-opt', '--cap-drop', '--cap-add', '-e',
 ]);
 
+// A serve run (the server label) or the check container (--entrypoint) takes
+// these too; a plain run still refuses them, so a stray one in run's options is caught.
+const SERVE_FLAGS = new Set(['--rm']);
+const SERVE_VALUED = new Set(['-p', '--mount', '-w', '--entrypoint']);
+const isServeForm = (runArgs: string[]): boolean => runArgs.some((a) => a.startsWith('athanor.server=')) || runArgs.includes('--entrypoint');
+
 function parseRun(runArgs: string[]): { error: string } | { options: Map<string, string>; image: string } {
   const options = new Map<string, string>();
+  const serveForm = isServeForm(runArgs);
   let i = 0;
   for (; i < runArgs.length && (runArgs[i] as string).startsWith('-'); i++) {
     const name = runArgs[i] as string;
-    if (RUN_FLAGS.has(name)) continue;
-    if (!RUN_VALUED.has(name)) return { error: `fake docker: unknown run option ${name}` };
+    if (RUN_FLAGS.has(name) || (serveForm && SERVE_FLAGS.has(name))) continue;
+    if (!RUN_VALUED.has(name) && !(serveForm && SERVE_VALUED.has(name))) return { error: `fake docker: unknown run option ${name}` };
     if (i + 1 >= runArgs.length || (runArgs[i + 1] as string).startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
     options.set(name, runArgs[++i] as string);
   }
@@ -190,9 +197,25 @@ async function main() {
   }
   if (a === 'image' && b === 'inspect') {
     record();
-    if (existsSync(fileFor(imagesDir, args[2]))) { console.log('[{}]'); return 0; }
-    console.error(`Error response from daemon: No such image: ${args[2]}`);
+    const tag = args.at(-1);
+    if (existsSync(fileFor(imagesDir, tag))) {
+      // The WORKDIR read: --format '{{json .Config.WorkingDir}}'.
+      if (args[2] === '--format') console.log(JSON.stringify(scenario.workdir ?? '/home/node/work'));
+      else console.log('[{}]');
+      return 0;
+    }
+    console.error(`Error response from daemon: No such image: ${tag}`);
     return 1;
+  }
+  if (a === 'port') {
+    // docker port <name> <port>/tcp: the published address, or nothing yet.
+    record();
+    const path = fileFor(containersDir, args[1]);
+    if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args[1]}`); return 1; }
+    if (scenario.portNever) { console.error('Error: No public port is published'); return 1; }
+    const state = readJson(path);
+    console.log(scenario.portAnswer ?? `127.0.0.1:${state.hostPort ?? 40000 + (parseInt(idOf(state.name).slice(0, 4), 16) % 20000)}`);
+    return 0;
   }
   if (a === 'build') {
     const input = await readStdin();
@@ -264,9 +287,11 @@ async function main() {
   }
   if (a === 'ps') {
     record();
+    // The label filter names the label to list by: athanor.slot, or athanor.server.
+    const key = (args[args.indexOf('--filter') + 1] ?? 'label=athanor.slot').replace(/^label=/, '');
     for (const f of readdirSync(containersDir)) {
       const c = readJson(join(containersDir, f));
-      if (c.labels?.['athanor.slot'] !== undefined) console.log(`${c.name}\t${c.labels['athanor.slot']}\t${c.image}`);
+      if (c.labels?.[key] !== undefined) console.log(`${c.name}\t${c.labels[key]}\t${c.image}`);
     }
     return 0;
   }
@@ -289,6 +314,16 @@ async function main() {
       return 125;
     }
     const { image } = parsed;
+    if (parsed.options.has('--entrypoint')) {
+      // The check container (issue 35): prints the writable paths the scenario
+      // lists as missing, writes no container file, and exits 0.
+      record();
+      const paths = args.slice(args.indexOf('athanor') + 1);
+      for (const p of paths) if ((scenario.missingWritable ?? []).some((m: string) => p.endsWith('/' + m))) console.log(p);
+      return scenario.checkFails ? 125 : 0;
+    }
+    // The open stdin keeps the fake alive, so it ends the process itself.
+    if ((parsed.options.get('--label') ?? '').startsWith('athanor.server=')) process.exit(await serveRun(parsed.options, image));
     const name = parsed.options.get('--name');
     const labelArg = parsed.options.get('--label');
     const labels = labelArg ? { [labelArg.split('=')[0]]: labelArg.split('=')[1] } : {};
@@ -331,6 +366,44 @@ async function main() {
   record();
   console.error(`fake docker: unhandled ${args.join(' ')}`);
   return 1;
+}
+
+// A server container (issue 35): prints the marker at once, without reading
+// stdin to its end, and stays up until it is removed, its stdin ends, or the
+// scenario's serve plan ends it: { exitCode, exitAfterMs, startDelayMs, oom, runFails, runFailText, marker, stdout, stderr }.
+async function serveRun(options: Map<string, string>, image: string): Promise<number> {
+  const name = options.get('--name');
+  const labelArg = options.get('--label') as string;
+  const labels = { [labelArg.split('=')[0] as string]: labelArg.split('=')[1] };
+  const path = fileFor(containersDir, name);
+  const plan = { marker: true, ...(scenario.serve ?? {}) };
+  if (plan.runFails) {
+    record();
+    console.error(plan.runFailText ?? 'docker: Error response from daemon: Conflict.');
+    return 125;
+  }
+  const published = options.get('-p') ?? '';
+  const hostPort = /^127\.0\.0\.1:(\d+):/.exec(published)?.[1];
+  record({ at: Date.now() });
+  let stdinEnded = false;
+  process.stdin.on('data', () => {});
+  process.stdin.on('end', () => { stdinEnded = true; });
+  // Real Docker takes a while to make the container and seed its volumes.
+  if (plan.startDelayMs) await sleep(plan.startDelayMs);
+  writeFileSync(path, JSON.stringify({ name, labels, image, running: true, ...(hostPort ? { hostPort: Number(hostPort) } : {}) }));
+  if (plan.marker) process.stderr.write('athanor-boot-ok\n');
+  if (plan.stdout) process.stdout.write(plan.stdout);
+  if (plan.stderr) process.stderr.write(plan.stderr);
+  const until = plan.exitAfterMs !== undefined ? Date.now() + plan.exitAfterMs : Infinity;
+  while (Date.now() < until) {
+    if (!existsSync(path)) return 137; // removed with rm -f
+    if (stdinEnded) { rmSync(path, { force: true }); return 137; }
+    await sleep(25);
+  }
+  if (!existsSync(path)) return 137;
+  const code = plan.oom === true ? 137 : (plan.exitCode ?? 0);
+  finish(path, code, plan.oom === true);
+  return code;
 }
 
 function finish(path: string, exitCode: number, oom: boolean): void {

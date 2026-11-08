@@ -9,6 +9,7 @@ import { checkOutputs, hasControl, showName } from './copy-out.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
+  maxServers: 2,
   memory: '2g',
   timeoutMinutes: 30,
   pruneDays: 30,
@@ -54,11 +55,13 @@ const KEYS = {
   context: { repo: true, machine: false },
   inputs: { repo: true, machine: false },
   commands: { repo: true, machine: false },
+  servers: { repo: true, machine: false },
   memory: { repo: true, machine: true, check: memory('512m or 2g') },
   cpus: { repo: true, machine: true, check: positiveNumber },
   timeoutMinutes: { repo: true, machine: true, check: positiveNumber },
   processes: { repo: true, machine: true, check: processCount },
   maxRuns: { repo: false, machine: true, check: positiveInteger },
+  maxServers: { repo: false, machine: true, check: positiveInteger },
   pruneDays: { repo: false, machine: true, check: positiveInteger },
   maxMemory: { repo: false, machine: true, check: memory('8g') },
   maxCpus: { repo: false, machine: true, check: positiveNumber },
@@ -88,6 +91,7 @@ export interface MachineValues {
   timeoutMinutes: number;
   processes: number;
   maxRuns: number;
+  maxServers: number;
   pruneDays: number;
   maxMemory: string;
   maxCpus: number;
@@ -117,7 +121,19 @@ interface CommandObject {
   base?: string;
 }
 
-const COMMAND_KEYS = ['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes', 'base'];
+// A server (issue 35): the command that serves, the container port it listens
+// on, the repo folders it may write, and limits of its own.
+interface ServerObject {
+  argv: string[];
+  port: number;
+  writable?: string[];
+  memory?: string;
+  cpus?: number;
+  processes?: number;
+}
+
+const SERVER_KEYS = ['argv', 'port', 'writable', 'memory', 'cpus', 'processes'];
+const COMMAND_KEYS =['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes', 'base'];
 
 // Why a base name is refused before git sees it, or null when it may go on to
 // be resolved (ADR 0032). It must read as one plain ref name: never an option,
@@ -141,6 +157,7 @@ interface RepoValues {
   context?: string;
   inputs?: string[];
   commands: Record<string, string[] | CommandObject>;
+  servers?: Record<string, ServerObject>;
   memory?: string;
   cpus?: number;
   timeoutMinutes?: number;
@@ -343,6 +360,17 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
     throw new AthanorError(`In ${place}, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);
   }
   for (const [name, command] of Object.entries(config.commands)) checkCommand(name, command, place, lead);
+  if (config.servers !== undefined) {
+    if (!isObject(config.servers)) {
+      throw new AthanorError(`In ${place}, servers must map names to server objects, such as { "dev": { "argv": ["npm", "run", "dev"], "port": 3000 } }.`);
+    }
+    for (const [name, server] of Object.entries(config.servers)) {
+      if (Object.hasOwn(config.commands, name)) {
+        throw new AthanorError(`In ${place}, "${showName(name)}" is both commands.${showName(name)} and servers.${showName(name)}. Rename one, so a name means one thing.`);
+      }
+      checkServer(name, server, place, lead);
+    }
+  }
   for (const k of REPO_KEYS) {
     const check = checkOf(k);
     if (check && config[k] !== undefined && !check.ok(config[k])) {
@@ -397,15 +425,14 @@ function checkCommand(rawName: string, command: unknown, place: string, lead: st
   }
 }
 
-// Everything a run needs. The machine configuration is read first, on its
-// own, because the run limit comes from it before the repo is found.
-export function resolveRunConfig(root: string, machine: MachineConfig, request: RunRequest = {}): RunConfig {
-  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
-  const machineSource: Source = { kind: 'machine', file: machine.file };
-  // Where a message tells the user to change a value: the file it came from,
-  // or the repo configuration for a default.
-  const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
+interface Picked {
+  value: unknown;
+  source: Source;
+}
 
+// The build part of the configuration: the Dockerfile, its context and the
+// inputs, as repo-relative paths with forward slashes.
+function resolveBuild(root: string, repo: RepoValues, where: string): RunConfig['build'] {
   const dockerfile = insideRepo(root, repo.dockerfile, 'dockerfile', where);
   const context = repo.context !== undefined
     ? insideRepo(root, repo.context, 'context', where)
@@ -415,12 +442,161 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     throw new AthanorError(`The Dockerfile "${repo.dockerfile}" is outside the context folder "${context}". Move it into the context, or widen the context in ${where}.`);
   }
   const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
+  return { dockerfile, context, inputs, dockerfileInContext };
+}
+
+// Per-run limits: the command's (or server's) own, then the repo's, then the
+// machine file, then the defaults, each held to the machine's ceilings. cpus
+// has no default, and maxCpus has none either: when the machine sets it, it is
+// also the cpus of a run that sets none. processes defaults to the smaller of
+// 1024 and maxProcesses, so a raised ceiling never raises it (ADR 0028).
+// The -- form takes the repo's values. Only the keys asked for are picked and
+// checked, so a server, which has no time limit, leaves timeoutMinutes out.
+function resolveLimits(
+  keys: LimitKey[],
+  machine: MachineConfig,
+  repo: RepoValues,
+  repoSource: Source & { kind: 'repo' },
+  own: { values: Partial<Record<LimitKey, unknown>>; label: string } | undefined,
+  where: string,
+): { limits: Partial<Limits>; picked: Partial<Record<LimitKey, Picked>> } {
+  const machineSource: Source = { kind: 'machine', file: machine.file };
+  const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
+  const pick = (key: LimitKey): Picked => {
+    if (own?.values[key] !== undefined) return { value: own.values[key], source: { ...repoSource, key: `${own.label}.${key}` } };
+    if (repo[key] !== undefined) return { value: repo[key], source: repoSource };
+    if (machine.values[key] !== undefined) return { value: machine.values[key], source: machineSource };
+    if (key === 'cpus') {
+      const cap = machine.values.maxCpus;
+      return cap !== undefined ? { value: cap, source: machineSource } : { value: undefined, source: { kind: 'default' } };
+    }
+    if (key === 'processes') {
+      const cap = machine.values.maxProcesses;
+      if (cap !== undefined && cap < DEFAULTS.processes) return { value: cap, source: machineSource };
+    }
+    return { value: DEFAULTS[key as Exclude<LimitKey, 'cpus'>], source: { kind: 'default' } };
+  };
+  const picked: Partial<Record<LimitKey, Picked>> = {};
+  const limits: Record<string, unknown> = {};
+  for (const key of keys) {
+    picked[key] = pick(key);
+    limits[key] = picked[key]!.value;
+  }
+  const ceilings = {
+    maxMemory: machine.values.maxMemory ?? DEFAULTS.maxMemory,
+    maxCpus: machine.values.maxCpus,
+    maxTimeoutMinutes: machine.values.maxTimeoutMinutes ?? DEFAULTS.maxTimeoutMinutes,
+    maxProcesses: machine.values.maxProcesses ?? DEFAULTS.maxProcesses,
+  };
+  const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
+    if (keys.includes(key) && above) {
+      const source = picked[key]!.source;
+      const label = source.kind === 'repo' && (source.key?.startsWith('commands.') || source.key?.startsWith('servers.')) ? source.key : key;
+      throw new AthanorError(`${label} ${limits[key]} is above the machine ceiling ${ceilingKey} ${ceilings[ceilingKey]}. Lower it in ${placeOf(source)}, or raise ${ceilingKey} in the machine configuration.`);
+    }
+  };
+  const l = limits as Partial<Limits>;
+  over('memory', 'maxMemory', l.memory !== undefined && memoryBytes(l.memory) > memoryBytes(ceilings.maxMemory));
+  over('cpus', 'maxCpus', ceilings.maxCpus !== undefined && l.cpus !== undefined && l.cpus > ceilings.maxCpus);
+  over('timeoutMinutes', 'maxTimeoutMinutes', l.timeoutMinutes !== undefined && l.timeoutMinutes > ceilings.maxTimeoutMinutes);
+  over('processes', 'maxProcesses', l.processes !== undefined && l.processes > ceilings.maxProcesses);
+  return { limits: l, picked };
+}
+
+// One entry of servers (issue 35). Every server gets the shape checks, whether or not it serves.
+function checkServer(rawName: string, server: unknown, place: string, lead: string): void {
+  const name = showName(rawName);
+  if (!isObject(server)) {
+    throw new AthanorError(`In ${place}, servers.${name} must be an object with "argv" and "port".`);
+  }
+  for (const k of Object.keys(server)) {
+    if (!SERVER_KEYS.includes(k)) {
+      throw new AthanorError(`${lead} has an unknown key "servers.${name}.${showName(k)}". A server's keys are: ${SERVER_KEYS.join(', ')}.`);
+    }
+  }
+  if (!isStrings(server.argv)) {
+    throw new AthanorError(`In ${place}, servers.${name}.argv must be an array of strings, such as ["npm", "run", "dev"]. A single string is not allowed, because athanor never uses a shell.`);
+  }
+  if (!Number.isInteger(server.port) || (server.port as number) < 1 || (server.port as number) > 65535) {
+    throw new AthanorError(`In ${place}, servers.${name}.port must be a whole number from 1 to 65535: the port the server listens on inside the container.`);
+  }
+  if (server.writable !== undefined) {
+    const problem = checkOutputs(server.writable);
+    if (problem) throw new AthanorError(`In ${place}, servers.${name}.writable ${problem.replaceAll('work folder', 'repo root')}.`);
+    // A comma would add options to the volume's --mount.
+    if ((server.writable as string[]).some((p) => p.includes(','))) {
+      throw new AthanorError(`In ${place}, servers.${name}.writable must not hold a comma: the mount cannot carry one. Rename the folder, or remove it from the list.`);
+    }
+  }
+  for (const k of ['memory', 'cpus', 'processes'] as const) {
+    const check = checkOf(k);
+    if (check && server[k] !== undefined && !check.ok(server[k])) {
+      throw new AthanorError(`In ${place}, servers.${name}.${k} ${check.rule}.`);
+    }
+  }
+}
+
+// The server limit and where it came from: the machine file or the default.
+export function resolveServerLimit(machine: MachineConfig): { limit: number; source: 'file' | 'default' } {
+  return machine.values.maxServers !== undefined ? { limit: machine.values.maxServers, source: 'file' } : { limit: DEFAULTS.maxServers, source: 'default' };
+}
+
+// Everything `athanor serve` needs from the configuration (issue 35).
+export interface ServerConfig {
+  build: RunConfig['build'];
+  dockerfileAsSet: string;
+  argv: string[];
+  // The container port the server listens on.
+  port: number;
+  // Repo-relative folder paths, in configured order.
+  writable: string[];
+  limits: Pick<Limits, 'memory' | 'cpus' | 'processes'>;
+  docker: RunConfig['docker'];
+  // The server names, for messages.
+  names: string[];
+}
+
+export function resolveServerConfig(root: string, machine: MachineConfig, name: string): ServerConfig {
+  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
+  const servers = repo.servers ?? {};
+  if (!Object.hasOwn(servers, name)) {
+    const names = Object.keys(servers).map(showName);
+    throw new AthanorError(`There is no server named "${showName(name)}" in ${where}. ${names.length > 0 ? `Its servers are: ${names.join(', ')}.` : 'It declares no servers; add a "servers" key, as the README shows.'}`);
+  }
+  const own = servers[name] as ServerObject;
+  const build = resolveBuild(root, repo, where);
+  const { limits } = resolveLimits(['memory', 'cpus', 'processes'], machine, repo, repoSource, { values: own as Partial<Record<LimitKey, unknown>>, label: `servers.${showName(name)}` }, where);
+  return {
+    build,
+    dockerfileAsSet: repo.dockerfile,
+    argv: own.argv,
+    port: own.port,
+    writable: own.writable ?? [],
+    limits: limits as ServerConfig['limits'],
+    docker: { allowPlainTcp: machine.values.allowPlainTcp === true, allowRemoteDocker: machine.values.allowRemoteDocker === true, machineFile: machine.file },
+    names: Object.keys(servers),
+  };
+}
+
+// Everything a run needs. The machine configuration is read first, on its
+// own, because the run limit comes from it before the repo is found.
+export function resolveRunConfig(root: string, machine: MachineConfig, request: RunRequest = {}): RunConfig {
+  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
+  const machineSource: Source = { kind: 'machine', file: machine.file };
+  // Where a message tells the user to change a value: the file it came from,
+  // or the repo configuration for a default.
+  const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
+
+  const build = resolveBuild(root, repo, where);
 
   const commandName = request.name ?? 'test';
   // Own keys only, so a name such as "constructor" is not found on the prototype.
   const entry = request.command === undefined && Object.hasOwn(repo.commands, commandName) ? repo.commands[commandName] : undefined;
   if (request.command === undefined && entry === undefined) {
     if (request.extraNames?.length) throw new AthanorError(`${oneNameLead(showName(commandName), request.extraNames.map(showName))} To run a command of your own, put it after -- with no name before it: athanor run -- <command>.`);
+    if (repo.servers !== undefined && Object.hasOwn(repo.servers, commandName)) {
+      throw new AthanorError(`"${showName(commandName)}" in ${where} is a server, not a command. Start it with athanor serve ${showName(commandName)}.`);
+    }
     throw new AthanorError(`There is no command named "${showName(commandName)}" in ${where}. Its commands are: ${Object.keys(repo.commands).map(showName).join(', ')}.`);
   }
   const own: CommandObject | undefined = entry !== undefined && !Array.isArray(entry) ? entry : undefined;
@@ -457,50 +633,10 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     base = { name: own.base, fromKey: true, label: `commands.${shownName}.base "${own.base}" in ${where}` };
   }
 
-  // Per-run limits: the command's own, then the repo's, then the machine file,
-  // then the defaults, each held to the machine's ceilings. cpus has no
-  // default, and maxCpus has none either: when the machine sets it, it is also
-  // the cpus of a run that sets none. processes defaults to the smaller of
-  // 1024 and maxProcesses, so a raised ceiling never raises it (ADR 0028).
-  // The -- form takes the repo's values.
-  const pick = <K extends LimitKey>(key: K): { value: Limits[K]; source: Source } => {
-    if (own?.[key] !== undefined) return { value: own[key] as Limits[K], source: { ...repoSource, key: `commands.${shownName}.${key}` } };
-    if (repo[key] !== undefined) return { value: repo[key] as Limits[K], source: repoSource };
-    if (machine.values[key] !== undefined) return { value: machine.values[key] as Limits[K], source: machineSource };
-    if (key === 'cpus') {
-      const cap = machine.values.maxCpus;
-      return cap !== undefined ? { value: cap as Limits[K], source: machineSource } : { value: undefined as Limits[K], source: { kind: 'default' } };
-    }
-    if (key === 'processes') {
-      const cap = machine.values.maxProcesses;
-      if (cap !== undefined && cap < DEFAULTS.processes) return { value: cap as Limits[K], source: machineSource };
-    }
-    return { value: DEFAULTS[key as Exclude<LimitKey, 'cpus'>] as Limits[K], source: { kind: 'default' } };
-  };
-  const picked = { memory: pick('memory'), cpus: pick('cpus'), timeoutMinutes: pick('timeoutMinutes'), processes: pick('processes') };
-  const limits: Limits = {
-    memory: picked.memory.value, cpus: picked.cpus.value, timeoutMinutes: picked.timeoutMinutes.value, processes: picked.processes.value,
-  };
-  const ceilings = {
-    maxMemory: machine.values.maxMemory ?? DEFAULTS.maxMemory,
-    maxCpus: machine.values.maxCpus,
-    maxTimeoutMinutes: machine.values.maxTimeoutMinutes ?? DEFAULTS.maxTimeoutMinutes,
-    maxProcesses: machine.values.maxProcesses ?? DEFAULTS.maxProcesses,
-  };
-  const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
-    if (above) {
-      const source = picked[key].source;
-      const label = source.kind === 'repo' && source.key?.startsWith('commands.') ? source.key : key;
-      throw new AthanorError(`${label} ${limits[key]} is above the machine ceiling ${ceilingKey} ${ceilings[ceilingKey]}. Lower it in ${placeOf(picked[key].source)}, or raise ${ceilingKey} in the machine configuration.`);
-    }
-  };
-  over('memory', 'maxMemory', memoryBytes(limits.memory) > memoryBytes(ceilings.maxMemory));
-  over('cpus', 'maxCpus', ceilings.maxCpus !== undefined && limits.cpus !== undefined && limits.cpus > ceilings.maxCpus);
-  over('timeoutMinutes', 'maxTimeoutMinutes', limits.timeoutMinutes > ceilings.maxTimeoutMinutes);
-  over('processes', 'maxProcesses', limits.processes > ceilings.maxProcesses);
+  const { limits, picked } = resolveLimits(['memory', 'cpus', 'timeoutMinutes', 'processes'], machine, repo, repoSource, own === undefined ? undefined : { values: own, label: `commands.${shownName}` }, where) as { limits: Limits; picked: Record<LimitKey, Picked> };
 
   return {
-    build: { dockerfile, context, inputs, dockerfileInContext },
+    build,
     dockerfileAsSet: repo.dockerfile,
     command,
     limits,

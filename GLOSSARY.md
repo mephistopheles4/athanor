@@ -31,7 +31,20 @@
   else `maxRuns` in the machine configuration, else 2.
 - **Orphan.** An athanor container whose slot is free, left by a caller that
   was killed hard. The next run on its slot removes it, or the in-container
-  timer ends it.
+  timer ends it. A server container whose server lock is free is an orphan too:
+  the next `serve` removes it while its lock number is within `maxServers`, and
+  `status` lists it and removes nothing.
+- **Server.** An entry of `servers`: `argv`, a container `port`, and optionally
+  `writable` folders and limits. `athanor serve <name>` runs it in a container
+  with the working tree mounted read-only, a network, and its port published on
+  127.0.0.1, until a signal or until it exits (ADR 0034).
+- **Server lock.** One of the machine's `maxServers` places for a server. A
+  server holds lock n by holding the OS lock `athanor-server-<n>`, by the same
+  mechanism as a slot, and holds no run slot. Its holder answers with its pid,
+  start time, repo folder name, limit, name and, once known, host port.
+- **Writable folder.** A path in a server's `writable` list. The server gets a
+  fresh anonymous volume at that path on every start, seeded from the image's
+  content there; the folder must exist on the host and in the image.
 - **Image tag.** `athanor:<32 hex>`, the first 32 hex digits of a SHA-256 over
   a format version and the id of the build context's git tree. The same files
   give the same tag in every clone and worktree.

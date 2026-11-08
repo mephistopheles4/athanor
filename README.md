@@ -198,10 +198,12 @@ athanor run check --base origin/main   # carry a base for a check that compares 
 athanor status              # who holds the slots, which containers exist
 athanor prune --dry-run     # list images unused for 30 days
 athanor prune --days 7
+athanor serve dev           # run a server from "servers"; see "Serving a dev server"
 ```
 
-Every command takes `--json`: stdout then holds exactly one JSON object, and
-everything else goes to stderr. With a base, the run's result has a `base`
+Every command takes `--json`. With `run`, `status` and `prune`, stdout then holds exactly one JSON object, and
+everything else goes to stderr; `serve` writes one JSON line for each event (see
+"Serving a dev server"). With a base, the run's result has a `base`
 field: the full ref name (`ref`), its tip (`tip`) and the merge base
 (`mergeBase`), as full ids.
 
@@ -280,6 +282,123 @@ test's exit after another process, such as a worker, was killed. In that case th
 line athanor prints at the end of the run says so, and the test's result may
 be incomplete.
 
+## Serving a dev server
+
+`athanor run` tests a snapshot with no network. `athanor serve` is for a dev
+server you want to open in a browser while you edit: it runs a server from
+your repo's `servers` in a container that sees your working tree live and
+publishes one port on 127.0.0.1.
+
+```json
+"servers": {
+  "dev": {
+    "argv": ["env", "CHOKIDAR_USEPOLLING=1", "pnpm", "dev", "--host", "0.0.0.0"],
+    "port": 4321,
+    "writable": ["node_modules", "packages/site/node_modules", "packages/site/.astro"],
+    "memory": "4g"
+  }
+}
+```
+
+```bash
+athanor serve dev               # a free port on 127.0.0.1; the URL is printed
+athanor serve dev --port 5000   # host port 5000
+athanor serve dev --json
+```
+
+`servers` sits beside `commands`, in `athanor.json` or under `package.json`'s
+`athanor` key. Each server has:
+
+- `argv`: the command, a non-empty array of strings, as a command's.
+- `port`: the port the server listens on in the container, 1 to 65535.
+  Required.
+- `writable`: optional, repo-relative folders the server may write (see
+  below). Each path is inside the repo, with forward slashes, no `..`, no
+  comma, no repeats, and none inside another.
+- `memory`, `cpus` and `processes`: optional limits, checked against the
+  machine ceilings as a command's are. The repo-level values apply to a server
+  that sets none.
+
+No other key is allowed in a server: `timeoutMinutes`, `args`, `outputs` and
+`base` are refused. A name can't be both a command and a server.
+`athanor run dev` never reads `servers`; if `dev` is only a server, it says so.
+
+What the container gets:
+
+- **The whole working tree, read-only, at the image's `WORKDIR`.** That is
+  every file in the folder, untracked and gitignored files and `.git`
+  included, as it is now: an edit on the host shows in the next read. Set
+  `WORKDIR` in the Dockerfile to the folder where it installs the repo's
+  dependencies. The server can't write the tree, and athanor never does.
+- **A fresh volume for each `writable` folder.** The folder holds the image's
+  content, not the host's, and is new on every start. It must exist on the
+  host as a folder, not a link (athanor never creates it; `mkdir` it), and
+  the image must have it as a folder the image's user can write: add
+  `RUN mkdir -p <path>` after `USER` and `WORKDIR`, or `COPY --chown`; a folder
+  an earlier line made as root needs that line moved after `USER`, or a
+  `chown`. `serve` checks both before it starts the container and says which
+  path and what to do.
+- **A network, with outbound access.** The container is on Docker's default
+  bridge network. The server must listen on `0.0.0.0` inside the container
+  (for Astro and Vite, `--host 0.0.0.0`), or the published port can't reach it.
+- **One published port, on 127.0.0.1 only.** Without `--port`, Docker picks a
+  free host port, so two servers never collide. With `--port <n>`, a port
+  already in use fails with Docker's message and exit 125.
+- The same limits, six kept capabilities, `no-new-privileges` and proxy
+  blanks as a run's container, and no time limit.
+
+On Docker Desktop for Windows, a change on the host doesn't wake a file
+watcher inside the container, so make the dev server poll: in the example,
+`CHOKIDAR_USEPOLLING=1` before the command, or Vite's `server.watch.usePolling`.
+Each start copies the image's content into each writable volume, so a large
+`node_modules` makes the start slower.
+
+`serve` runs in the foreground until you stop it or the server exits. It
+prints `serving <name> at http://127.0.0.1:<port>/ (stop with Ctrl-C).` on
+stderr once Docker has published the port. That means the port is published,
+not that the server is listening yet: the server's own output says when it
+does. The server's output goes to stdout, or to stderr with `--json`.
+
+Stop it with Ctrl-C, or with a signal such as SIGTERM to athanor's process (an
+agent that stops a background task sends one). athanor then removes the
+container and its volumes. Don't kill athanor's process hard: on Windows that
+leaves the container running until the next `athanor serve` removes it, and
+`athanor status` lists it as an orphan until then. On Linux, a hard
+kill ends the container's input, and the server stops within a few seconds.
+
+| Exit | Outcome | Meaning |
+| --- | --- | --- |
+| 130 | `stopped` | a signal ended it |
+| the server's own | `exited` | the server exited by itself, with any code, 0 too |
+| 137 | `memory` | Docker reports the memory limit killed a process |
+| 125 | `error` | athanor could not serve: configuration, build, Docker, a port in use, or a published port Docker did not report |
+
+With `--json`, stdout holds one JSON object per line. The first is
+`{ "schema": 1, "event": "serving", "server", "url", "port", "lock" }`, written once the port is
+published. The last, always, is `{ "schema": 1, "event": "ended", "outcome", "exitCode", "ranMs"?, "message"? }`.
+`ranMs` is how long the container ran, and it is there only when the server
+started (the container printed athanor's start marker). In `serving`, `server` is the server's name and `lock` its server lock
+number; in `athanor status --json`, `server` is the lock number. A failure before `serving` writes only the `ended` line, with
+`outcome: "error"`, a bad flag or a configuration error included. `serve` never
+writes `run`'s error object.
+
+A server holds no run slot, so a server doesn't make a test run wait. It holds
+a server lock instead: `maxServers` in the machine configuration (default 2)
+is how many run at once on the machine. With every lock held, `serve` exits
+125 at once and says so. `athanor status` lists the held locks and any server
+container. If you lower `maxServers` below a container's lock number, the next
+`serve` doesn't sweep it; remove it with `docker rm -f -v <name>`.
+
+`serve` needs a Docker engine on this machine, and refuses any other, even
+with `allowRemoteDocker`: a bind mount takes its path from the engine's
+machine, and 127.0.0.1 is that machine's. A remote builder stays under a
+run's rules.
+
+athanor 0.2.0 is the first release with `serve`. A repo that adds `servers`,
+or a machine file that adds `maxServers`, needs 0.2.0 or later wherever
+athanor runs on it, CI included: an older athanor refuses the unknown key and
+runs nothing.
+
 ## Machine configuration
 
 An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
@@ -288,10 +407,12 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
 { "maxRuns": 2, "memory": "2g", "timeoutMinutes": 30, "pruneDays": 30,
   "maxMemory": "8g", "maxTimeoutMinutes": 120, "allowPlainTcp": false,
   "allowRemoteDocker": false, "maxOutputMegabytes": 1024,
-  "processes": 1024, "maxProcesses": 1024 }
+  "processes": 1024, "maxProcesses": 1024, "maxServers": 2 }
 ```
 
-`ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. A repo value
+`ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. `maxServers`
+(default 2, a positive whole number) is how many `athanor serve` servers run
+at once on the machine; it has no environment variable. A repo value
 above a `max*` ceiling is an error. `maxMemory` and `maxTimeoutMinutes` default to
 8g and 120. `maxCpus` has no default: when you set it, it also gives a run with
 no `cpus` that many CPUs. Docker refuses a `cpus` above the CPUs the engine
@@ -302,7 +423,7 @@ keep `maxCpus` at or below the engine's CPUs. `maxOutputMegabytes` (default
 set it. `maxProcesses` (default 1024) is the ceiling for `processes`; raising
 it never raises the default, and lowering it below 1024 lowers the default.
 Every athanor on the machine reads this file, so once it holds `processes` or
-`maxProcesses`, athanor 0.1.1 and older refuse it, and every run with them.
+`maxProcesses`, athanor 0.1.1 and older refuse it, and every run with them. Once it holds `maxServers`, athanor 0.1.1 and older refuse it too.
 
 The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. With a base, it also holds a
@@ -376,10 +497,11 @@ or says it is out of scope; the threat model holds the full class.
   the class "A compromised machine or sandbox".
 - **The Windows slot pipe on the network.** On Windows, a user elsewhere on
   the network may be able to read what `status` shows about slot holders:
-  pid, start time, repo folder name and limit. On a network whose signed-in
+  pid, start time, repo folder name and limit, and, for a server, its name and port. On a network whose signed-in
   users you don't trust with those details, keep repo folder names you'd
   rather not show off the machine's runs. Accepted class "The Windows slot
   pipe on the network".
+- **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. Accepted class "A server's port on this machine".
 - **A compromised machine or sandbox.** Any program on the machine can block
   runs, read or fake what `status` shows about slot holders, and, with the
   privilege to impersonate clients, act as you on a slot connection. Don't
@@ -393,7 +515,7 @@ or says it is out of scope; the threat model holds the full class.
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
   the slot is next used, and it keeps the run's snapshot, uncommitted files
-  included, until it is removed. Set `maxCpus` for a bound. Accepted
+  included, until it is removed. A server killed hard on Windows keeps running until the next `athanor serve`; `athanor status` shows it, and `docker rm -f -v <name>` removes it. Set `maxCpus` for a bound. Accepted
   class "The machine's load".
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,

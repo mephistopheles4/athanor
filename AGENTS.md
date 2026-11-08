@@ -26,15 +26,27 @@ lasting decisions are in [docs/adr/](docs/adr/).
   are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
   form that ran something other than what it named may be fixed without a
   bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
-- **Nothing reaches the test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
+- **Nothing reaches `athanor run`'s test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
   `DAC_OVERRIDE`, `FOWNER`, `KILL`, `SETUID` and `SETGID`. The only
   `-e` are `ATHANOR_GRACE_LIMIT` and the ten proxy names, each set empty to
   block a value the Docker CLI would otherwise add: `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY`, `https_proxy`, `FTP_PROXY`, `ftp_proxy`, `NO_PROXY`, `no_proxy`, `ALL_PROXY` and `all_proxy`. Each is
   written `-e NAME=` and never `-e NAME`, which would copy the host's value in. The boot script also prints one line,
-  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. With a base, the base's history rides in the snapshot's own stream, and one of two fixed base boot scripts replaces only the boot script's git block (ADR 0032). A change here is security-sensitive work.
-  So is a change to what reaches the image build, its build arguments included.
+  `athanor-work <path>`, on stderr before the marker (ADR 0023); the run strips it. With a base, the base's history rides in the snapshot's own stream, and one of two fixed base boot scripts replaces only the boot script's git block (ADR 0032).
+- **`athanor serve`'s container is its own, in `src/serve-settings.ts`** (ADR 0034).
+  `src/container-settings.ts` does not change for it. It gets the working tree as
+  `--mount type=bind,...,readonly` at the image's `WORKDIR`, one
+  `--mount type=volume,dst=<WORKDIR>/<path>` for each `writable` folder, `--network bridge`
+  and one `-p 127.0.0.1::<port>` (or `-p 127.0.0.1:<host port>:<port>`), and no
+  `ATHANOR_GRACE_LIMIT`. It keeps `--cap-drop ALL` with the same six `--cap-add`,
+  `--security-opt no-new-privileges`, the limits and the ten `-e NAME=` proxy
+  blanks, and has no other `-e`, no `-v`, no `--privileged` and no host network.
+  `SERVE_BOOT` is fixed text; nothing is interpolated into it. The published
+  address must be 127.0.0.1, and `serve` refuses an engine off this machine, even
+  with `allowRemoteDocker`. A second, short-lived container checks that each
+  `writable` folder is a folder the image's user can write: no mount,
+  `--network none`, and the same caps, limits and proxy blanks.
 - **The archive step carries the tree as committed.** Every `git archive`,
   and the `git init` of its folder, run in the clean environment of ADR 0020:
   no inherited `GIT_*` variable, no global or system config or attributes, no template, and
@@ -142,6 +154,16 @@ manual check after the next release, recorded on issue 70. The docker tier on
 Docker Desktop (the K5 check) is a manual check before the pull request. B15 is the fast tier (on Windows too,
 the T14 check), the type checks, the source check and the docker tier passing
 on the final head, and CI. No test carries the names B13 to B15.
+
+`E1` to `E14`, from the spec on issue 35: E1 to E10 are fast-tier tests (E5 is
+two), and E11 (three tests) and E12 are docker-tier tests (E12 on Linux only). E13 is a manual
+check on the owner's Windows machine with stacks, recorded on issue 35, with
+the docker tier on Docker Desktop (K5) and the fast tier on Windows (T14). E14 is
+checked by reading at review (`git diff main -- src/container-settings.ts` is
+empty, serve's arguments live only in `src/serve-settings.ts`, `schema` stays 1,
+the docs say what the spec says) and by the fast tier, the type checks, the
+source check and the docker tier passing on the final head, and CI. No test
+carries the names E13 and E14.
 
 ## Releases
 
