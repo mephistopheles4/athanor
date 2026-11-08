@@ -299,7 +299,7 @@ async function runServer(o: RunServer, partial: ServeResult): Promise<ServeResul
       await sleep(o.portPollMs);
     }
     if (address !== null && !aborted && exited === null) {
-      const match = /^127\.0\.0\.1:(\d+)$/.exec(address);
+      const match = address.match(/^127\.0\.0\.1:(\d+)$/);
       if (!match) {
         throw new AthanorError(`Docker published the server's port on ${address.replace(/[^\x20-\x7e]/g, '?')}, not on 127.0.0.1, so athanor stopped it. Check your Docker engine's settings.`);
       }
