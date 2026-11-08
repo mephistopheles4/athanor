@@ -60,10 +60,12 @@ export interface RepoOptions {
   objectFormat?: string;
   // false writes no package.json, for a repo whose configuration is in athanor.json.
   packageJson?: boolean;
+  // The start of the repo folder's name (default athanor-repo-).
+  label?: string;
 }
 
-export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, packageExtra = {}, objectFormat, packageJson = true }: RepoOptions = {}): string {
-  const dir = tempDir(t, 'athanor-repo-');
+export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, packageExtra = {}, objectFormat, packageJson = true, label = 'athanor-repo-' }: RepoOptions = {}): string {
+  const dir = tempDir(t, label);
   git(dir, ['init', '-q', '-b', 'main', ...(objectFormat ? [`--object-format=${objectFormat}`] : [])]);
   git(dir, ['config', 'user.name', 'test']);
   git(dir, ['config', 'user.email', 'test@localhost']);

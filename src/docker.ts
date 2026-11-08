@@ -159,13 +159,18 @@ export async function prepareDocker(
   docker: DockerCommand,
   env: NodeJS.ProcessEnv = process.env,
   { allowPlainTcp = false, allowRemoteDocker = false, machineFile = 'config.json' }: DockerOptions = {},
-): Promise<{ driver: string | null; notices: string[]; checked: Checked }> {
+  // athanor serve (issue 35): an engine off this machine is refused, whatever allowRemoteDocker says.
+  { localOnly = false }: { localOnly?: boolean } = {},
+): Promise<{ driver: string | null; notices: string[]; checked: Checked; local: boolean }> {
   const notices: string[] = [];
   const endpoint = await engineEndpoint(docker, env);
   if (!allowPlainTcp && isPlainRemoteTcp(endpoint)) {
     throw new AthanorError(`${endpoint.setting} is a plain tcp endpoint without TLS verification, so the snapshot, the build context and the test output would cross the network unencrypted. Use ssh://, tcp with TLS verification (DOCKER_TLS_VERIFY=1), or a local engine. On a network you trust, you can allow it with "allowPlainTcp": true in the machine configuration (${machineFile}).`);
   }
   const local = isLocal(endpoint.host);
+  if (localOnly && !local) {
+    throw new AthanorError(`athanor serve needs a Docker engine on this machine: it mounts your working tree and opens a port on 127.0.0.1. ${endpoint.setting} is a Docker engine at ${shownValue(endpoint.host) || 'an address athanor cannot read'}. Use a Docker engine on this machine.`);
+  }
   if (!allowRemoteDocker && !local) {
     throw new AthanorError(`${endpoint.setting} is a Docker engine at ${shownValue(endpoint.host) || 'an address athanor cannot read'}, which is not on this machine, so your build context and snapshot, uncommitted changes included, would go to that machine. Use a Docker engine on this machine, or set "allowRemoteDocker": true in the machine configuration (${machineFile}).`);
   }
@@ -182,7 +187,7 @@ export async function prepareDocker(
   const builder = await checkBuilder(docker, pinned, { allowPlainTcp, allowRemoteDocker, machineFile }, endpoint);
   if (builder.notice) notices.push(builder.notice);
   if (builder.name !== undefined) pinned.BUILDX_BUILDER = builder.name;
-  return { driver: builder.driver, notices, checked: { env: pinned, engine: engineSeen(endpoint), builder: builder.seen } };
+  return { driver: builder.driver, notices, checked: { env: pinned, engine: engineSeen(endpoint), builder: builder.seen }, local };
 }
 
 // The engine and builder read again under the pin, once the run holds its
@@ -420,4 +425,79 @@ export async function listAthanorImages(docker: DockerCommand): Promise<string[]
 export async function removeImage(docker: DockerCommand, tag: string): Promise<boolean> {
   const r = await call([...docker, 'rmi', tag]);
   return r.code === 0;
+}
+
+// ---- Servers (issue 35) -----------------------------------------------------
+
+// The image's WORKDIR, or null when Docker answers with something that is not a string.
+export async function readWorkdir(docker: DockerCommand, tag: string, env?: NodeJS.ProcessEnv): Promise<string | null> {
+  const r = await call([...docker, 'image', 'inspect', '--format', '{{json .Config.WorkingDir}}', tag], { env });
+  if (r.code !== 0) throw new AthanorError(`athanor could not read the image's WORKDIR: ${firstLine(r.stderr) || `docker image inspect exit ${r.code}`}. Check that Docker is running, then run again.`);
+  try {
+    const value: unknown = JSON.parse(r.stdout.trim());
+    return typeof value === 'string' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+// The paths the short-lived check container printed: the ones the image's own
+// user cannot write. Throws when the container itself fails.
+export async function runWritableCheck(docker: DockerCommand, args: string[], env?: NodeJS.ProcessEnv): Promise<string[]> {
+  const r = await call([...docker, ...args], { env });
+  if (r.code !== 0) {
+    throw new AthanorError(`athanor could not check the writable folders in the image: ${firstLine(r.stderr) || `docker run exit ${r.code}`}. The image needs sh. Check that Docker is running, then run again.`);
+  }
+  return r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+// The address Docker published a container's port on, as "host:port", or null
+// when it has not answered.
+export async function publishedAddress(docker: DockerCommand, name: string, port: number, env?: NodeJS.ProcessEnv): Promise<string | null> {
+  const r = await call([...docker, 'port', name, `${port}/tcp`], { env });
+  if (r.code !== 0) return null;
+  const line = r.stdout.split('\n')[0]?.trim() ?? '';
+  return line === '' ? null : line;
+}
+
+// Remove server n's leftover container, if it is athanor's (label athanor.server),
+// with its anonymous volumes, as clearSlotContainer does for a slot.
+export async function clearServerContainer(docker: DockerCommand, name: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  const r = await call([...docker, 'container', 'inspect', '--format', '{{json .Config.Labels}}', name], { env });
+  if (r.code !== 0) {
+    if (noSuch(r.stderr)) return false;
+    throw new AthanorError(`athanor could not check for an old container named ${name}: ${firstLine(r.stderr)}.`);
+  }
+  let labels: Record<string, string> = {};
+  try {
+    labels = JSON.parse(r.stdout) ?? {};
+  } catch {
+    labels = {};
+  }
+  if (labels['athanor.server'] === undefined) {
+    throw new AthanorError(`A container named ${name} exists without athanor's label, so athanor leaves it alone and cannot use this server lock. Rename or remove that container yourself.`);
+  }
+  await removeServerContainer(docker, name, env, true);
+  return true;
+}
+
+// Remove a container and its anonymous volumes. With `strict`, a failure other
+// than "no such container" is an error.
+export async function removeServerContainer(docker: DockerCommand, name: string, env?: NodeJS.ProcessEnv, strict = false): Promise<void> {
+  const rm = await call([...docker, 'rm', '-f', '-v', name], { env });
+  if (strict && rm.code !== 0 && !noSuch(rm.stderr)) {
+    throw new AthanorError(`athanor could not remove the old container ${name}: ${firstLine(rm.stderr)}. Remove it yourself with docker rm -f -v ${name}, then run again.`);
+  }
+}
+
+// Every container with an athanor server label: [{ name, server, image }].
+export async function listServerContainers(docker: DockerCommand): Promise<{ name: string; server: number; image: string }[]> {
+  const r = await call([...docker, 'ps', '-a', '--filter', 'label=athanor.server', '--format', '{{.Names}}\t{{.Label "athanor.server"}}\t{{.Image}}']);
+  if (r.code !== 0) {
+    throw new AthanorError(`Docker is not reachable: docker ps failed (${firstLine(r.stderr) || `exit ${r.code}`}). Start Docker, then run again.`);
+  }
+  return r.stdout.split('\n').map((l: string) => l.trim()).filter(Boolean).map((line: string) => {
+    const [name, server, image] = line.split('\t');
+    return { name: name as string, server: Number(server), image: image as string };
+  });
 }

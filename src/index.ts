@@ -1,18 +1,18 @@
 // athanor's core API: run, status and prune (ADR 0003). It never prints,
 // exits or registers signal handlers: it reports progress through onProgress,
 // stops on an AbortSignal, and returns a result.
-import { mkdirSync, existsSync, utimesSync, writeFileSync, statSync, chmodSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
-import { readMachineConfig, resolveRunLimit, resolveRunConfig, DEFAULTS } from './run-config.js';
-import { repoRoot, makeScratch, clearStale, snapshot, buildContext, tarStream, resolveBase, packBase } from './git.js';
-import type { Scratch, BuildContext, ResolvedBase } from './git.js';
-import { prepareDocker, recheckDocker, imageExists, clearSlotContainer, listSlotContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
+import { readMachineConfig, resolveRunLimit, resolveRunConfig, resolveServerLimit, DEFAULTS } from './run-config.js';
+import { repoRoot, makeScratch, clearStale, snapshot, buildContext, resolveBase, packBase } from './git.js';
+import type { ResolvedBase } from './git.js';
+import { stateFolder, markUse, Interrupted, settleImage } from './image.js';
+import type { ImageBuild } from './image.js';
+import { prepareDocker, recheckDocker, clearSlotContainer, listSlotContainers, listServerContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
-import { acquire, ask } from './slots.js';
+import { acquire, ask, askServer } from './slots.js';
 import type { Slot } from './slots.js';
-import { start, feed } from './proc.js';
 import { containerSettings } from './container-settings.js';
 import { runContainer } from './container-run.js';
 import type { Handed, Outcome, Ran, Sink } from './container-run.js';
@@ -110,12 +110,27 @@ export interface SlotStatus {
   held?: true;
 }
 
+// A server lock, as its holder reports it (issue 35).
+export interface ServerStatus {
+  server: number;
+  pid?: number;
+  started?: number;
+  repo?: string;
+  name?: string;
+  port?: number;
+  held?: true;
+}
+
 export interface StatusResult {
   schema: 1;
   limit: number;
   limitSource: 'environment' | 'file' | 'default';
   slots: SlotStatus[];
   containers: { name: string; slot: number; orphan: boolean }[];
+  serverLimit: number;
+  serverLimitSource: 'file' | 'default';
+  servers: ServerStatus[];
+  serverContainers: { name: string; server: number; orphan: boolean }[];
 }
 
 export interface PruneOptions {
@@ -131,27 +146,6 @@ export interface PruneResult {
   removed: string[];
   kept: string[];
 }
-
-function stateFolder(): string {
-  const home = process.env.ATHANOR_HOME !== undefined && process.env.ATHANOR_HOME !== ''
-    ? process.env.ATHANOR_HOME
-    : join(homedir(), '.athanor');
-  mkdirSync(home, { recursive: true, mode: 0o700 });
-  if (process.platform === 'linux') chmodSync(home, 0o700);
-  return home;
-}
-
-function markUse(home: string, hash: string): void {
-  const dir = join(home, 'images');
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, hash);
-  const now = new Date();
-  if (existsSync(file)) utimesSync(file, now, now);
-  else writeFileSync(file, '');
-}
-
-// An interrupt that arrived while a step other than the container was running.
-class Interrupted extends Error {}
 
 function errorResult(message: string, partial: SoFar = {}): RunResult {
   return { schema: 1, outcome: 'error', exitCode: EXIT.setup, ...partial, message };
@@ -373,67 +367,6 @@ async function warnOnOtherLimits(prefix: string, slot: number, limit: number, on
   }
 }
 
-// What building the run's image needs.
-interface ImageBuild {
-  docker: DockerCommand;
-  // The run's environment with the checked Docker context and builder pinned.
-  env: NodeJS.ProcessEnv;
-  root: string;
-  scratch: Scratch;
-  ctx: BuildContext;
-  // The Dockerfile's path inside the build context.
-  dockerfile: string;
-  buildOptions: string[];
-  stderr: Sink | null;
-  signal?: AbortSignal;
-}
-
-// Build the image unless Docker already has it; onBuild says so first.
-// Returns whether it built.
-async function settleImage(b: ImageBuild, onBuild: () => void): Promise<boolean> {
-  if (await imageExists(b.docker, b.ctx.tag, b.env)) return false;
-  onBuild();
-  await build(b);
-  return true;
-}
-
-async function build({ docker, env, root, scratch, ctx, dockerfile, buildOptions, stderr, signal }: ImageBuild): Promise<void> {
-  const archive = tarStream(root, scratch, ctx.commit, 'build context');
-  const builder = start([...docker, 'build', ...buildOptions, '-t', ctx.tag, '-f', dockerfile, '-'], {
-    env, stdin: 'pipe', capture: true, onStderr: (c) => stderr?.write(c), onStdout: (c) => stderr?.write(c),
-  });
-  feed(archive, builder);
-  // On an interrupt, stop waiting once docker has exited: a buildx plugin it
-  // started can hold the output open until the build ends (S4 leaves the build
-  // to Docker).
-  let onAbort = () => {};
-  const aborted = new Promise<void>((resolve) => {
-    onAbort = () => {
-      builder.child.kill();
-      archive.child.kill();
-      if (builder.child.exitCode !== null || builder.child.signalCode !== null) resolve();
-      else builder.child.once('exit', () => resolve());
-    };
-  });
-  if (signal?.aborted) onAbort();
-  signal?.addEventListener('abort', onAbort, { once: true });
-  const settled = await Promise.race([Promise.all([archive.done, builder.done]), aborted.then(() => null)]);
-  signal?.removeEventListener('abort', onAbort);
-  if (signal?.aborted || settled === null) {
-    builder.child.stdout.destroy();
-    builder.child.stderr.destroy();
-    throw new Interrupted();
-  }
-  const [a, b] = settled;
-  if (a.code !== 0) throw new AthanorError(`git archive of the build context failed (exit ${a.code}).`);
-  if (b.code !== 0) {
-    throw new AthanorError(`The image build failed (docker build exit ${b.code}). Its output is above; fix the Dockerfile or the context, then run again.`);
-  }
-  if (!(await imageExists(docker, ctx.tag, env))) {
-    throw new AthanorError(`The image build finished, but the image ${ctx.tag} is not in Docker. Check that the buildx builder loads its images into the local engine.`);
-  }
-}
-
 // Who holds each slot, and which athanor containers exist. Starts nothing.
 export function status(): Promise<StatusResult>;
 /** @internal */
@@ -457,7 +390,31 @@ export async function status(options: StatusOptions = {}): Promise<StatusResult>
   const containers = (await listSlotContainers(docker))
     .filter((c) => names.test(c.name))
     .map((c) => ({ name: c.name, slot: c.slot, orphan: !held.has(c.slot) }));
-  return { schema: 1, limit, limitSource: source, slots, containers };
+
+  const serverLimit = resolveServerLimit(machine);
+  const serverNames = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-server-\\d+$`);
+  const serverContainers = (await listServerContainers(docker)).filter((c) => serverNames.test(c.name));
+  const heldServers = new Set<number>();
+  const servers: ServerStatus[] = [];
+  // A container above the limit (left after maxServers was lowered) is asked about too, so a live one is not called an orphan.
+  const asked = Math.max(serverLimit.limit, ...serverContainers.map((c) => c.server));
+  for (let n = 1; n <= asked; n++) {
+    const r = await askServer(prefix, n);
+    if (r.held) heldServers.add(n);
+    if (n > serverLimit.limit) continue;
+    const entry: ServerStatus = { server: n };
+    if (r.held && r.answer) {
+      Object.assign(entry, { pid: r.answer.pid, started: r.answer.started, repo: r.answer.repo, name: r.answer.name });
+      if (r.answer.port !== undefined) entry.port = r.answer.port;
+    }
+    if (r.held) entry.held = true;
+    servers.push(entry);
+  }
+  return {
+    schema: 1, limit, limitSource: source, slots, containers,
+    serverLimit: serverLimit.limit, serverLimitSource: serverLimit.source, servers,
+    serverContainers: serverContainers.map((c) => ({ name: c.name, server: c.server, orphan: !heldServers.has(c.server) })),
+  };
 }
 
 // Remove athanor image tags whose last use is older than `days` days.
@@ -467,7 +424,7 @@ export async function prune(options: PruneOptions = {}): Promise<PruneResult> {
   clearStale(home);
   const machine = readMachineConfig(home);
   const days = options.days ?? machine.values.pruneDays ?? DEFAULTS.pruneDays;
-  const inUse = new Set((await listSlotContainers(docker)).map((c) => c.image));
+  const inUse = new Set([...(await listSlotContainers(docker)), ...(await listServerContainers(docker))].map((c) => c.image));
   const removed: string[] = [];
   const kept: string[] = [];
   const now = Date.now();
@@ -489,3 +446,7 @@ export async function prune(options: PruneOptions = {}): Promise<PruneResult> {
   }
   return { schema: 1, dryRun, removed, kept };
 }
+
+export { serve } from './serve.js';
+export type { ServeOptions, ServeResult, Serving, ServeOutcome } from './serve.js';
+export { SERVE_BOOT } from './serve-settings.js';

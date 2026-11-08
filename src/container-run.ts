@@ -58,7 +58,7 @@ export interface Handed {
 
 // Strips the boot marker, and every work line before it, from the container's
 // stderr. It notes that the marker came and keeps the work lines' text.
-function markerFilter(write: (chunk: Buffer | string) => void) {
+export function markerFilter(write: (chunk: Buffer | string) => void) {
   let seen = false;
   const workLines: string[] = [];
   let pending = '';

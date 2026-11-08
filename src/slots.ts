@@ -13,8 +13,12 @@ export type Slot = { slot: number; release: () => Promise<void> };
 // Slot n's state: not held, held with no usable answer, or held with one.
 export type Asked = { held: false } | { held: true; answer?: HolderAnswer };
 
-export function lockPath(prefix: string, slot: number): string {
-  const name = `${prefix}-slot-${slot}`;
+// A lock is a run slot, or a server lock (issue 35): the same OS lock under a
+// different name, so a server never holds a run slot.
+export type Kind = 'slot' | 'server';
+
+export function lockPath(prefix: string, slot: number, kind: Kind = 'slot'): string {
+  const name = `${prefix}-${kind}-${slot}`;
   return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : `\0${name}`;
 }
 
@@ -25,19 +29,20 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 
-// Try to hold one slot. Resolves to a net.Server, or null when it is held.
-function tryHold(prefix: string, slot: number, info: Record<string, unknown>): Promise<net.Server | null> {
+// Try to hold one lock. Resolves to a net.Server, or null when it is held. The
+// answer is built when someone asks, from `info` as it is then, so a holder can
+// add to it once it knows more (a server's port).
+function tryHold(prefix: string, slot: number, info: Record<string, unknown>, kind: Kind = 'slot'): Promise<net.Server | null> {
   return new Promise((resolve, reject) => {
-    const line = JSON.stringify({ slot, ...info }) + '\n';
     const server = net.createServer((socket) => {
       socket.on('error', () => {});
-      socket.end(line);
+      socket.end(JSON.stringify({ [kind]: slot, ...info }) + '\n');
     });
     server.once('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE' || error.code === 'EACCES') resolve(null);
       else reject(error);
     });
-    server.listen(lockPath(prefix, slot), () => resolve(server));
+    server.listen(lockPath(prefix, slot, kind), () => resolve(server));
   });
 }
 
@@ -67,6 +72,25 @@ export async function acquire({ prefix, limit, info, signal, onWait }: {
   return null;
 }
 
+// A server lock held, with the answer its holder gives (issue 35). `update`
+// adds fields to the answer, such as the port once it is known.
+export type ServerLock = { server: number; update: (extra: Record<string, unknown>) => void; release: () => Promise<void> };
+
+export type ServerInfo = HolderInfo & { name: string };
+
+// Try to hold server lock n, once, without waiting. Null when it is held.
+export async function tryServerLock(prefix: string, n: number, limit: number, info: ServerInfo): Promise<ServerLock | null> {
+  const answer: Record<string, unknown> = { ...info, limit };
+  const server = await tryHold(prefix, n, answer, 'server');
+  if (!server) return null;
+  server.unref();
+  return {
+    server: n,
+    update: (extra) => { Object.assign(answer, extra); },
+    release: () => new Promise<void>((r) => server.close(() => r())),
+  };
+}
+
 const isHolderAnswer = (v: any): v is HolderAnswer =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Number.isInteger(v.slot) && Number.isInteger(v.pid) && Number.isFinite(new Date(v.started).getTime()) && typeof v.started === 'number' &&
@@ -76,11 +100,32 @@ const isHolderAnswer = (v: any): v is HolderAnswer =>
 // Ask slot n's holder. Resolves to { held: false }, { held: true }, or
 // { held: true, answer } when it answered with one well-formed JSON line.
 export function ask(prefix: string, slot: number, timeoutMs = 1000): Promise<Asked> {
+  return askLock(prefix, slot, 'slot', isHolderAnswer, timeoutMs);
+}
+
+export type ServerAnswer = HolderInfo & { server: number; limit: number; name: string; port?: number };
+export type AskedServer = { held: false } | { held: true; answer?: ServerAnswer };
+
+// No control characters, so an answer cannot draw on the terminal that shows it.
+const plain = (v: unknown): boolean => typeof v === 'string' && !/[\u0000-\u001f\u007f-\u009f]/.test(v);
+
+const isServerAnswer = (v: any): v is ServerAnswer =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) &&
+  Number.isInteger(v.server) && Number.isInteger(v.pid) && typeof v.started === 'number' && Number.isFinite(new Date(v.started).getTime()) &&
+  plain(v.repo) && plain(v.name) && Number.isInteger(v.limit) &&
+  (v.port === undefined || (Number.isInteger(v.port) && v.port >= 1 && v.port <= 65535));
+
+// Ask server lock n's holder, as ask does for a slot.
+export function askServer(prefix: string, n: number, timeoutMs = 1000): Promise<AskedServer> {
+  return askLock(prefix, n, 'server', isServerAnswer, timeoutMs);
+}
+
+function askLock<A>(prefix: string, slot: number, kind: Kind, valid: (v: unknown) => v is A, timeoutMs: number): Promise<{ held: false } | { held: true; answer?: A }> {
   return new Promise((resolve) => {
-    const socket = net.connect(lockPath(prefix, slot));
+    const socket = net.connect(lockPath(prefix, slot, kind));
     let data = '';
     let connected = false;
-    const done = (value: Asked) => { clearTimeout(timer); socket.destroy(); resolve(value); };
+    const done = (value: { held: false } | { held: true; answer?: A }) => { clearTimeout(timer); socket.destroy(); resolve(value); };
     const timer = setTimeout(() => done({ held: connected }), timeoutMs);
     socket.on('connect', () => { connected = true; });
     socket.on('data', (chunk) => {
@@ -98,7 +143,7 @@ export function ask(prefix: string, slot: number, timeoutMs = 1000): Promise<Ask
           answer = undefined;
         }
       }
-      done(isHolderAnswer(answer) ? { held: true, answer } : { held: true });
+      done(valid(answer) ? { held: true, answer } : { held: true });
     });
   });
 }

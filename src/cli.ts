@@ -1,11 +1,12 @@
 // The thin CLI: parses arguments, prints, handles signals, returns the exit code.
 // The core (index.ts) does the work and never prints or exits.
 import { readFileSync } from 'node:fs';
-import { run, status, prune } from './index.js';
-import type { RunResult, StatusResult, PruneResult } from './index.js';
+import { run, status, prune, serve } from './index.js';
+import type { RunResult, StatusResult, PruneResult, ServeResult, Serving } from './index.js';
+import type { DockerCommand } from './docker.js';
 import { AthanorError, EXIT } from './errors.js';
 
-type Command = 'run' | 'status' | 'prune';
+type Command = 'run' | 'status' | 'prune' | 'serve';
 
 interface CliOptions {
   json: boolean;
@@ -21,6 +22,8 @@ interface CliOptions {
   base?: string;
   dryRun?: boolean;
   days?: number;
+  // The host port athanor serve publishes on (default: one Docker picks).
+  port?: number;
 }
 
 type Parsed = { command: 'version' | Command; options: CliOptions };
@@ -32,7 +35,7 @@ interface ErrorResult {
   message: string;
 }
 
-const SUBCOMMANDS = 'The subcommands are: run, status, prune. Use athanor --version for the version.';
+const SUBCOMMANDS = 'The subcommands are: run, status, prune, serve. Use athanor --version for the version.';
 
 function version(): string {
   return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -43,13 +46,14 @@ export function parseArgs(argv: string[]): Parsed {
   const [command, ...rest] = argv;
   if (command === undefined) throw new AthanorError(`No subcommand given. ${SUBCOMMANDS}`);
   if (command === '--version' && rest.length === 0) return { command: 'version', options: { json: false } };
-  if (command !== 'run' && command !== 'status' && command !== 'prune') {
+  if (command !== 'run' && command !== 'status' && command !== 'prune' && command !== 'serve') {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
   const allowed: string[] = {
     run: ['--json', '--untracked', '--output', '--base'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
+    serve: ['--json', '--port'],
   }[command];
   const options: CliOptions = { json: false };
   const names: string[] = [];
@@ -84,6 +88,13 @@ export function parseArgs(argv: string[]): Parsed {
         }
         options.base = value;
       }
+      else if (arg === '--port') {
+        const value = rest[++i];
+        if (value === undefined || !/^[1-9][0-9]*$/.test(value) || Number(value) > 65535) {
+          throw new AthanorError('--port must be a whole number from 1 to 65535, such as --port 5000.');
+        }
+        options.port = Number(value);
+      }
       else if (arg === '--days') {
         const value = rest[++i];
         if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
@@ -93,8 +104,15 @@ export function parseArgs(argv: string[]): Parsed {
       }
       continue;
     }
-    if (command !== 'run') throw new AthanorError(`athanor ${command} takes no names, but got "${arg}".`);
+    if (command !== 'run' && command !== 'serve') throw new AthanorError(`athanor ${command} takes no names, but got "${arg}".`);
     names.push(arg);
+  }
+  if (command === 'serve') {
+    if (names.length !== 1) {
+      throw new AthanorError(names.length === 0
+        ? 'athanor serve needs the name of one server from the repo configuration, such as athanor serve dev.'
+        : `athanor serve takes one server name, but got ${names.length}: ${names.join(', ')}.`);
+    }
   }
   if (names.length >= 1) options.name = names[0] as string;
   if (names.length > 1) options.extraNames = names.slice(1);
@@ -120,7 +138,7 @@ export async function main(argv: string[]): Promise<number> {
   } catch (error) {
     if (!(error instanceof AthanorError)) throw error;
     say(error.message);
-    if (argv.includes('--json')) writeJson(errorResult(error.message));
+    if (argv.includes('--json')) writeJson(argv[0] === 'serve' ? serveEnded({ outcome: 'error', exitCode: EXIT.setup, message: error.message }) : errorResult(error.message));
     return EXIT.setup;
   }
   const { command, options } = parsed;
@@ -131,6 +149,7 @@ export async function main(argv: string[]): Promise<number> {
   const onProgress = (line: string): void => say(line);
   try {
     if (command === 'run') return await runCommand(options, onProgress);
+    if (command === 'serve') return await serveProcess(options);
     if (command === 'status') {
       const result = await status();
       if (options.json) writeJson(result);
@@ -178,6 +197,86 @@ async function runCommand(options: CliOptions, onProgress: (line: string) => voi
   }
 }
 
+// The signals that stop a run or a server.
+function stopSignals(): NodeJS.Signals[] {
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  if (process.platform === 'win32') signals.push('SIGBREAK');
+  return signals;
+}
+
+async function serveProcess(options: CliOptions): Promise<number> {
+  const controller = new AbortController();
+  const onSignal = (): void => controller.abort();
+  const signals = stopSignals();
+  for (const s of signals) process.on(s, onSignal);
+  try {
+    return await serveCommand(options, {
+      line: writeJson, say, stdout: process.stdout, stderr: process.stderr, signal: controller.signal,
+    });
+  } finally {
+    for (const s of signals) process.off(s, onSignal);
+  }
+}
+
+/** @internal What athanor serve writes and reads, so a test can stand in for the process (ADR 0003). */
+export interface ServeIo {
+  line(object: unknown): void;
+  say(line: string): void;
+  stdout: { write(chunk: Buffer | string): unknown };
+  stderr: { write(chunk: Buffer | string): unknown };
+  signal: AbortSignal;
+  docker?: DockerCommand;
+  prefix?: string;
+  portWaitMs?: number;
+  portPollMs?: number;
+  cwd?: string;
+}
+
+// The last JSON line of a serve, which every end writes, a failure before the
+// server included. It is never run's error object.
+function serveEnded(result: Pick<ServeResult, 'outcome' | 'exitCode' | 'ranMs' | 'message'>): unknown {
+  return {
+    schema: 1, event: 'ended', outcome: result.outcome, exitCode: result.exitCode,
+    ...(result.ranMs !== undefined ? { ranMs: result.ranMs } : {}),
+    ...(result.message !== undefined ? { message: result.message } : {}),
+  };
+}
+
+/** @internal Exported for tests (ADR 0003). */
+export async function serveCommand(options: CliOptions, io: ServeIo): Promise<number> {
+  const onServing = (s: Serving): void => {
+    io.say(`serving ${s.server} at ${s.url} (stop with Ctrl-C).`);
+    if (options.json) io.line({ schema: 1, event: 'serving', server: s.server, url: s.url, port: s.port, lock: s.lock });
+  };
+  const result = await serve({
+    cwd: io.cwd ?? process.cwd(),
+    name: options.name as string,
+    ...(options.port !== undefined ? { port: options.port } : {}),
+    signal: io.signal,
+    onProgress: io.say,
+    onServing,
+    stdout: options.json ? io.stderr : io.stdout,
+    stderr: io.stderr,
+    ...(io.docker !== undefined ? { docker: io.docker } : {}),
+    ...(io.prefix !== undefined ? { prefix: io.prefix } : {}),
+    ...(io.portWaitMs !== undefined ? { portWaitMs: io.portWaitMs } : {}),
+    ...(io.portPollMs !== undefined ? { portPollMs: io.portPollMs } : {}),
+  });
+  if (options.json) io.line(serveEnded(result));
+  io.say(serveLine(result));
+  return result.exitCode;
+}
+
+/** @internal The line printed when a server ends, exported for tests (ADR 0030). */
+export function serveLine(result: ServeResult): string {
+  switch (result.outcome) {
+    case 'stopped': return `the server was stopped and cleaned up (exit ${result.exitCode}).`;
+    case 'exited': return `the server ended on its own (exit ${result.exitCode}).`;
+    case 'memory': return `the memory limit ended the server (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
+    default: return `athanor could not serve (exit ${result.exitCode}): ${result.message}`;
+  }
+}
+
 /** @internal The line printed for a run's result, exported for tests (ADR 0030). */
 export function resultLine(result: RunResult): string {
   // The test ran and exited, but its outputs could not be copied: the message says both.
@@ -205,6 +304,12 @@ function printStatus(result: StatusResult): void {
   }
   for (const c of result.containers) say(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
   if (result.containers.length === 0) say('no athanor containers.');
+  say(`server limit ${result.serverLimit} (from ${result.serverLimitSource}).`);
+  for (const s of result.servers) {
+    if (s.pid !== undefined) say(`server ${s.server}: ${s.name} held by pid ${s.pid} for ${s.repo}${s.port !== undefined ? `, on port ${s.port}` : ''}, since ${Number.isFinite(new Date(s.started as number).getTime()) ? new Date(s.started as number).toISOString() : 'an unknown time'} (as the holder reports).`);
+    else if (s.held) say(`server ${s.server}: held.`);
+  }
+  for (const c of result.serverContainers) say(`server container ${c.name} on lock ${c.server}${c.orphan ? ', an orphan: its lock is free. docker rm -f -v ' + c.name + ' removes it, or the next athanor serve does' : ''}.`);
 }
 
 function printPrune(result: PruneResult): void {
