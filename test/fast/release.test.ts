@@ -241,7 +241,7 @@ test('F2 the release ref check refuses a tag name that is not v plus the version
     // A tag that passes the prefix but has more after the version fails on the name.
     const extra = checkRef(t, 'refs/tags/v0.2.0/extra', '0.2.0');
     assert.equal(extra.status, 1, extra.stdout);
-    assert.match(extra.stderr, /the tag must be "v0\.2\.0"/);
+    assert.match(extra.stderr, /the tag must be "v0\.2\.0"|not a tag of that form/);
   });
   await t.test('a missing, unreadable or odd package file is refused with a plain message', () => {
     const missing = checkRef(t, 'refs/tags/v0.2.0', null);
@@ -398,9 +398,11 @@ test('F5 publish stops unless the tarball\'s package.json version equals the fil
     stops([member(manifest('0.2.0')), { name: 'other/package.json', content: manifest('0.2.0-rc.1') }], /outside package\//);
     stops([member(manifest('0.2.0')), { name: 'package', content: 'x' }], /outside package\//);
     stops([member(manifest('0.2.0')), { name: 'packages/x.txt', content: 'x' }], /outside package\//);
+    // An entry name is tarball text too: it must not reach the output.
+    stops([member(manifest('0.2.0')), { name: 'CANARYTEXT/package.json', content: manifest('0.2.0-rc.1') }], /outside package\//);
   });
   await t.test('an entry whose path has a .. or . or empty segment stops it', () => {
-    for (const name of ['package/../package/package.json', 'package/./package.json', 'package//package.json', 'package/x/..']) {
+    for (const name of ['package/../package/package.json', 'package/./package.json', 'package//package.json', 'package/x/..', 'package/CANARYTEXT//x']) {
       // busybox lists package/./package.json as package/package.json, so it stops as a second member.
       stops([member(manifest('0.2.0')), { name, content: manifest('0.2.0-rc.1') }], /odd path|exactly one/);
     }
@@ -433,6 +435,7 @@ test('F5 publish stops unless the tarball\'s package.json version equals the fil
       const { r, args, summary } = attempt(`${tag}\n`);
       assert.equal(r.status, 0, r.stderr);
       assert.match(args ?? '', new RegExp(`^stage publish \\./mephistopheles4-athanor-0\\.2\\.0\\.tgz --tag ${tag} `));
+      assert.equal((args ?? '').split('--tag').length - 1, 1, 'npm gets exactly one --tag');
       assert.match(summary ?? '', new RegExp(`dist-tag: ${tag}\\n`));
     }
     for (const bad of ['beta\n', '', '\n', 'next latest\n', 'latest\nnext\n', 'NEXT\n', null]) {

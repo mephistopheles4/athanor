@@ -448,8 +448,8 @@ flowchart LR
   output goes on to that session's model provider, as it does when tests run
   on the host. The release path holds two credentials for a short time: the
   publish job's identity token (accepted class "The release and CI supply chain"), and the owner's npm login
-  around an approval, around a step 17 unpublish or deprecate, and around a
-  rollback (`docs/releasing.md`, "Stop conditions and rollback"; accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
+  around an approval, around a step 17 unpublish or deprecate, around a check
+  or reject after a failed run, and around a rollback (`docs/releasing.md`, "Stop conditions and rollback"; accepted class "The release and CI supply chain"); see the supply-chain bullet above and ADR 0019. The GitHub
   release uses a third, long-lived one: the owner's gh login, kept in the
   system keyring, which can publish releases, create tags, change the tag
   rulesets and immutable releases, push branches, edit workflows and read
@@ -723,7 +723,8 @@ doesn't protect you from"; the release and CI class stays here alone.
   and the summary's dist-tag compared with the version. The rollback in
   `docs/releasing.md` ("Stop conditions and rollback") recovers it. From
   `npm login` to `npm logout`, around an approval, around a step 17 unpublish
-  or deprecate, and around a rollback, the npm session token sits in the
+  or deprecate, around a check or reject after a failed run, and around a
+  rollback, the npm session token sits in the
   user npm configuration
   unencrypted at file level, readable by any program running as the owner,
   including one left behind by the local build. Whoever can write to the repo,

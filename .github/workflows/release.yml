@@ -229,8 +229,9 @@ jobs:
       # The dist-tag comes from the tarball's own version and nothing else
       # (S5). The block between the markers is plain POSIX sh with no
       # expression in it, and test/fast/release.test.ts (F5) runs it as it
-      # stands. It reads only the package/package.json member, as a regular
-      # file, to standard output, and never unpacks the tarball. Only the
+      # stands. It lists the entry names and reads only the content of the
+      # package/package.json member, as a regular file, to standard output,
+      # and never unpacks the tarball. Only the
       # literal latest or next leaves it, in the file named by DIST_TAG_FILE,
       # and no tarball text is printed or written anywhere else.
       - name: Bind the dist-tag to the tarball's own version
