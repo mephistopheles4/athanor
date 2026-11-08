@@ -17,13 +17,15 @@ export interface TarSpec {
   badChecksum?: boolean;
   // A size to write in the header instead of the content's length.
   declaredSize?: number;
+  // The link target, for a hard link ('1') or a symbolic link ('2').
+  linkname?: string;
 }
 
 function octal(value: number, width: number): string {
   return value.toString(8).padStart(width - 1, '0') + '\0';
 }
 
-function block(name: string, type: string, size: number, spec: { prefix?: string; sizeField?: string; badChecksum?: boolean } = {}): Buffer {
+function block(name: string, type: string, size: number, spec: { prefix?: string; sizeField?: string; badChecksum?: boolean; linkname?: string } = {}): Buffer {
   const h = Buffer.alloc(512);
   h.write(name, 0, 100, 'utf8');
   h.write('0000644\0', 100, 'latin1');
@@ -33,6 +35,7 @@ function block(name: string, type: string, size: number, spec: { prefix?: string
   h.write('00000000000\0', 136, 'latin1');
   h.fill(0x20, 148, 156);
   h.write(type, 156, 1, 'latin1');
+  if (spec.linkname) h.write(spec.linkname, 157, 100, 'utf8');
   h.write('ustar\0', 257, 'latin1');
   h.write('00', 263, 'latin1');
   if (spec.prefix) h.write(spec.prefix, 345, 155, 'utf8');

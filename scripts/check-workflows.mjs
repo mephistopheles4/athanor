@@ -55,6 +55,109 @@ function stepAround(lines, i) {
   return { start, end };
 }
 
+// The release rules (spec on issue 88, S9). They are mistake guards behind
+// stage-only publishing, not a defence against someone set on getting round
+// them. Each line is trimmed of its indentation and a backslash continuation is
+// joined to the next line before it is matched; "a command" is a shell line or
+// a run: line that begins with it, so an echo that mentions it is not one.
+// A comment line is no command.
+function commands(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    let text = lines[i].trim();
+    if (text === '' || text.startsWith('#')) continue;
+    const at = i;
+    while (text.endsWith('\\') && i + 1 < lines.length) {
+      i++;
+      text = `${text.slice(0, -1).trimEnd()} ${lines[i].trim()}`;
+    }
+    out.push({ at, command: text.replace(/^-\s+/, '').replace(/^run:\s*/i, '').replace(/^["']/, '') });
+  }
+  return out;
+}
+
+// Rule 1: a workflow that can mint an identity token starts only on a push of
+// tags v*, with no other event and nothing else under push.
+function checkIdTokenTriggers(lines, report) {
+  if (!lines.some((l) => meaningful(l) && /^\s*id-token:\s*write\b/i.test(l))) return;
+  const why = 'a workflow with id-token: write must start only on a push of tags v*: on: push: tags: [\'v*\'], with no other event, no other key under push and no wider tag pattern.';
+  const start = lines.findIndex((l) => /^on:/.test(l));
+  if (start < 0) return report(0, `this workflow has id-token: write but no top-level on: this check can read. ${why}`);
+  const inline = lines[start].replace(/^on:/, '').replace(/#.*$/, '').trim();
+  if (inline !== '') return report(start, `on: is not written as a block. ${why}`);
+  let end = start + 1;
+  while (end < lines.length && !(meaningful(lines[end]) && indent(lines[end]) === 0)) end++;
+  const body = [];
+  for (let i = start + 1; i < end; i++) if (meaningful(lines[i])) body.push({ at: i, text: lines[i].replace(/\s+#.*$/, '').trimEnd(), depth: indent(lines[i]) });
+  if (body.length === 0) return report(start, `on: holds no event. ${why}`);
+  const push = body[0];
+  if (!/^\s+push:$/.test(push.text)) return report(push.at, `the first event is not push. ${why}`);
+  let tags = 0;
+  let items = 0;
+  let tagsDepth = -1;
+  for (const l of body.slice(1)) {
+    if (l.depth <= push.depth) {
+      report(l.at, `another event is named under on:. ${why}`);
+    } else if (tagsDepth < 0 || l.depth === tagsDepth) {
+      tagsDepth = tagsDepth < 0 ? l.depth : tagsDepth;
+      const key = l.text.match(/^\s+(tags):\s*(.*)$/);
+      if (!key) {
+        report(l.at, `a key other than tags sits under push. ${why}`);
+      } else if (++tags > 1) {
+        report(l.at, `tags is set twice under push. ${why}`);
+      } else if (key[2] !== '' && !/^\[\s*['"]?v\*['"]?\s*\]$/.test(key[2])) {
+        report(l.at, `the tag pattern is not v*. ${why}`);
+      } else if (key[2] !== '') {
+        items++;
+      }
+    } else if (l.depth > tagsDepth && /^\s+-\s*['"]?v\*['"]?$/.test(l.text) && ++items === 1) {
+      // the one pattern v*
+    } else {
+      report(l.at, `the tag pattern is not exactly one v*. ${why}`);
+    }
+  }
+  if (tags === 0) report(push.at, `push names no tags. ${why}`);
+  else if (items === 0) report(push.at, `push names no tag pattern. ${why}`);
+}
+
+// Rule 2: the job that names environment: npm, where the identity token is
+// minted, has no actions/checkout step.
+function checkNoCheckoutWhereTheTokenIsMinted(lines, report) {
+  const jobs = lines.findIndex((l) => /^jobs:/.test(l));
+  if (jobs < 0) return;
+  const first = lines.findIndex((l, i) => i > jobs && meaningful(l));
+  if (first < 0) return;
+  const depth = indent(lines[first]);
+  if (depth === 0) return;
+  const headers = [];
+  for (let i = jobs + 1; i < lines.length; i++) if (meaningful(lines[i]) && indent(lines[i]) === depth) headers.push(i);
+  lines.forEach((line, i) => {
+    if (i <= jobs || value(line, 'environment') !== 'npm' || !meaningful(line)) return;
+    const from = headers.filter((h) => h <= i).pop() ?? first;
+    const to = headers.find((h) => h > i) ?? lines.length;
+    for (let k = from; k < to; k++) {
+      if (meaningful(lines[k]) && value(lines[k], 'uses')?.startsWith('actions/checkout@')) {
+        report(k, `the job that names environment: npm, where the identity token is minted, must not check out the repo: it would run repo code beside the token (line ${i + 1}).`);
+      }
+    }
+  });
+}
+
+// Rules 3 and 4: the workflows stage and never publish. npm stage publish
+// always sets the dist-tag with --tag, and no workflow runs npm publish,
+// npm dist-tag or npm stage approve.
+function checkStagingCommands(lines, report) {
+  for (const { at, command } of commands(lines)) {
+    if (/^npm\s+stage\s+publish\b/.test(command) && !/\s--tag(?:=|\s)/.test(`${command} `)) {
+      report(at, 'npm stage publish must be run with --tag, so the dist-tag is set when the version is staged.');
+    }
+    const forbidden = command.match(/^npm\s+(publish|dist-tag|stage\s+approve)\b/);
+    if (forbidden) {
+      report(at, `no workflow runs npm ${forbidden[1].replace(/\s+/g, ' ')}: a workflow stages, and only the owner makes a version live or moves a dist-tag.`);
+    }
+  }
+}
+
 const problems = [];
 let files = 0;
 for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort()) {
@@ -64,6 +167,9 @@ for (const name of readdirSync(folder).filter((n) => /\.ya?ml$/.test(n)).sort())
   const lines = readFileSync(path, 'utf8').split(/\r?\n/);
   const report = (i, why) => problems.push(`${shown}:${i + 1}: ${why}`);
   let open = false;
+  checkIdTokenTriggers(lines, report);
+  checkNoCheckoutWhereTheTokenIsMinted(lines, report);
+  checkStagingCommands(lines, report);
 
   lines.forEach((line, i) => {
     const expr = insideExpressions(line, open);

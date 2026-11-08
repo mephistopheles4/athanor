@@ -2,6 +2,8 @@
 
 Date: 2026-10-24 · Status: accepted · Source: spec revision 2 on issue 6 (S3 to S7, R1 to R10)
 
+Amended by 0035: a tag starts the workflow, in place of a start by hand.
+
 The first publish of `@mephistopheles4/athanor` is the owner's, by hand
 (`docs/releasing.md`). Every later version goes through
 `.github/workflows/release.yml`, and nothing goes live without the owner. No
