@@ -21,7 +21,8 @@ the pact's own tracker rules.
   sub-issue. The parent keeps the spec. Each ticket issue names its parent, its
   claims and what it depends on.
 - **A ticket's PR closes its own ticket issue**, not the parent, and signs
-  there. The parent closes when its last sub-issue closes.
+  there. The parent closes when its last sub-issue closes; GitHub does not do
+  that by itself, so the owner closes it.
 - **Tickets that can run side by side start side by side.** Tickets with no
   dependency between them and no shared files start in parallel, one session
   each. The cut says which tickets those are.
@@ -33,7 +34,9 @@ the pact's own tracker rules.
   gh api -X POST repos/mephistopheles4/athanor/issues/<parent number>/sub_issues -F sub_issue_id="$id"
   ```
 
-  Use `-F`, not `-f`, so the id goes as a number.
+  `gh api` takes no `-R`; the repository is in the path. Use `-F`, not `-f`,
+  so the id goes as a number. The snippet is `sh`; in PowerShell, set `$id`
+  the same way and pass `-F sub_issue_id=$id`.
 
 ## Whose text counts
 
