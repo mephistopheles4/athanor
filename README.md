@@ -572,8 +572,8 @@ full class.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
   engine's operator. Don't pass secrets as command arguments. The process list
-  is the machine's, out of scope; the engine's record, for a remote engine, is
-  the accepted class "A shared or remote engine, and the network".
+  is the machine's, out of scope; the engine's record, for a shared or remote
+  engine, is the accepted class "A shared or remote engine, and the network".
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
@@ -594,8 +594,9 @@ full class.
   messages, authors' names, emails and dates. The test code can read it, and
   it goes wherever your snapshot goes, a remote or shared engine and plain tcp
   included. Name a base only for checks that need it, and remove a leaked
-  secret from the history, not only from the tree. Where it goes beyond this
-  machine, accepted class "A shared or remote engine, and the network".
+  secret from the history, not only from the tree. Where it goes to an engine
+  shared with others or beyond this machine, accepted class "A shared or remote
+  engine, and the network".
 
 ## More
 

@@ -16,8 +16,10 @@ https://github.com/mephistopheles4/the-pact/blob/main/claude/review.md).
 
 [`SECURITY.md`](../SECURITY.md) says how to report a hole. The sensitive-work
 list is in [`sensitive-work.md`](sensitive-work.md), which keeps the old class
-names: the machine and records classes are now the machine's (see Scope), and
-"the supply-chain bullet" is the Release and CI boundary.
+names: the machine and records classes are now the machine's (see Scope),
+except what reaches an engine (a base's history, a command's arguments), which
+is the engine class, and "the supply-chain bullet" is the Release and CI
+boundary.
 
 ## Boundaries
 
@@ -145,11 +147,15 @@ the tag, the staged package, the published version and the GitHub release.
   uses, and a pin names a commit, not that it is safe. The workflow check and
   the release guards (the owner as actor, the tagged commit being `main`'s head
   or an ancestor of it, CI green, the tag matching the version) catch honest mistakes only, and a tag
-  run uses the workflow file at its commit (ADR 0035).
+  run uses the workflow file at its commit (ADR 0035). The workflow check
+  refuses any Actions cache; one would open cache poisoning from a push to
+  `main`.
 - **npm** binds the trusted publisher to `release.yml` and the `npm`
   environment, stages only,
   and makes a version live only on the owner's two-factor approval (ADR 0019).
-  It does not hold when an action in `publish` asks for the identity token and
+  The package's publishing access requires two-factor and disallows tokens
+  (`docs/releasing.md` step 2); it does not hold if that setting is loosened,
+  and nothing in the repo shows it. The staging does not hold when an action in `publish` asks for the identity token and
   stages another file or version or gets a Sigstore signature in this
   workflow's name for some other file, or when `check` changes a packed file;
   the owner's look catches the staged ones. The published manifest is first seen after the
@@ -168,7 +174,9 @@ from `npm login` to `npm logout`, the unencrypted npm session token (a rebuild
 uses the same compiler). Any tag already pushed can still be released. An
 action in `publish` could stage the owner's reviewed release candidate under
 `latest` if `npm stage view` shows no dist-tag. No repository setting limits who
-publishes a GitHub release, which Zenodo then archives for good. Whoever
+publishes a GitHub release, which Zenodo then archives for good. A deprecated
+version still installs. The class rests on no other collaborator or deploy key
+being able to write to the repo. Whoever
 controls the owner's GitHub account or can push a branch can stage a version;
 against whoever holds the account, only stage-only publishing and npm
 two-factor approval hold.
@@ -211,8 +219,9 @@ archive environment (ADR 0020); the configuration file checks (test J6);
 configured paths kept in the repo (test C17); holder answers shown, not
 trusted (ADR 0004); the `--output` parent check (the copy-out test "a parent
 others can change"); a named base checked apart from the repo's settings and
-the stale-run sweep (ADR 0032); and the run container's capability flags,
-`no-new-privileges` and limits (ADR 0016, ADR 0009). The agent
+the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
+run container's capability flags, `no-new-privileges` and limits (ADR 0016,
+ADR 0009). The agent
 test hook (`.claude/settings.json`, ADR 0024) is a nudge, not a control: it
 fails open and reads only a command's plain forms.
 
@@ -224,15 +233,16 @@ fails open and reads only a command's plain forms.
   small.
 - **A server's port on the network.** On a Linux engine before 28.0, hosts on
   the same segment can reach a server's loopback port, and any other container
-  on Docker's default bridge network can; the owner chose a documented minimum
-  over a version check.
+  on Docker's default bridge network can; the server is the repo's own dev
+  server.
 - **A shared or remote engine, and the network.** A shared, remote or forwarded
-  engine or builder, or plain tcp, receives your work, history, build arguments
-  and a command's arguments, can ask for your registry login and decides the
-  result; the user chooses whom to trust.
+  engine or builder, or plain tcp, receives your work, history and arguments,
+  can ask for your registry login and decides the result and what comes back;
+  the user chooses whom to trust.
 - **The release and CI supply chain.** A hijacked dev package, action or account
-  can shape, sign or read what the owner's account can; nothing goes live
-  without the owner's look and two-factor approval, and it has no README line.
+  can shape, sign, read or act as what the owner's account can; nothing goes
+  live on npm without the owner's look and two-factor approval; it has no
+  README line.
 
 ## Residual risk
 

@@ -34,9 +34,12 @@ brought rulings on paths wholly on the machine. The page had grown to about
   one sentence of at most 40 words.
 - **Every control stays.** This record changes no control, flag, key, exit
   code or message. The `Reason:` lines of ADR 0033 are gone from the page; the
-  guards that hold no boundary are named under its Scope, each with the ADR or
-  test that keeps it. Those are the candidates to loosen on issue 84, as under
-  ADR 0033, each its own spec decided by the owner.
+  main guards that hold no boundary are named under its Scope, each with the ADR
+  or test that keeps it. Those are the candidates to loosen on issue 84, each
+  its own spec decided by the owner. The set is larger than under ADR 0033: the
+  fixed limits, the configured-paths check, the `--output` parent check and the
+  stale-run sweep had a reason there (collision, machine load, records), and
+  have none now that records and load are the machine's.
 - **The sensitive-work list moves,** unchanged, to `docs/sensitive-work.md`,
   and AGENTS.md points at it.
 - **A cap.** The threat model is at most 3,000 words, counted by splitting the
