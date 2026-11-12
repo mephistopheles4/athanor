@@ -25,7 +25,7 @@ lasting decisions are in [docs/adr/](docs/adr/).
   and the package's major version. An addition bumps neither. Exceptions
   are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
   form that ran something other than what it named may be fixed without a
-  bump, as `athanor run <name> -- <cmd>` was (ADR 0023).
+  bump (ADR 0023).
 - **Nothing reaches `athanor run`'s test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
@@ -120,70 +120,7 @@ Node 24. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
-Each test is named by the acceptance claim it backs (`C1` to `C33`, from the
-spec on issue 1; `T1` to `T14`, from the spec on issue 8; `P1` to `P3`, from the spec on
-issue 23; `J1` to `J9`, from the spec on issue 7; `K1` to `K6`, from the spec on
-issue 4; `U1` to `U7`, from the spec on issue 36; `G1` to `G8`, from the spec on issue 20; `L1` to `L15`, from the spec on issue 33, L15 added at its Test review; `R1` to `R10`, from the spec on
-issue 6; `H1` to `H4`, from the PR that added the agent test hook; `M1` to `M20`, from the spec on issue 46; `N1` to `N10`, from the spec on issue 54; `V1` to `V8`, from the spec on
-issue 60; `B1` to `B15`, from the spec on issue 70; `Q1`, from issue 74, a fast-tier test). C22 (the Windows check), the required-check half of C23, T14 (C22
-and the fast tier on Windows), P1 on Windows and K5 (the docker tier on
-Windows) are manual checks on the owner's machine. P3, K6 and L14 are checked by
-reading at review; no test carries their names. K3 is shown by the docker
-tier's pass, and no test carries its name either. `A1` to `A7`, from the spec
-on issue 34, are CI steps, one-time checks recorded in the PR, or checks by
-reading; no test carries their names. M18 is checked by reading at review (ADR
-0023, the docs, the threat-model text as the owner approved it, and that
-`src/container-settings.ts` changes only by the work line). M19 is a manual
-check, one Stryker run on a repo the owner names. M20 is checked at Test by the
-security pair. N7 is checked by reading at review, N8 by the security pair at Test,
-and N10 is a manual check recorded on issue 54. V6 is checked by reading at review, V7 was a manual check
-that the owner dropped and is not run (recorded on issue 60), and V8 is the fast tier, the type checks, the
-source check and the docker tier passing on the final head, and CI; no test carries their names. R1 and R2 are fast-tier tests. R3, R4,
-R7 and R9 are CI steps or checks by reading, and R5, R6, R8 and R10 are
-one-time checks by the owner recorded on issue 6; no test carries their names.
-`Z1` to `Z6`, from the spec on issue 57: Z1 to Z4 are checks by reading at
-review, Z5 is a manual check at the next release recorded on issue 57, and Z6
-is the diff's file list and CI; no test carries their names.
-`W1` to `W10`, from the spec on issues 53 and 63: W1 to W8 are checks by
-reading at review, W1 with one run of its command on a local pack and W4 with
-one run of its two commands under the owner's gh login, both recorded in the
-review; W9 is a manual check at the next release recorded on issue 63; and
-W10 rests on the diff's file list; on a docs-only diff the source check,
-which reads only JavaScript and TypeScript, is a carried-over CI gate, not a
-check of its own. No test carries their names.
-`B1` to `B15`, from the spec on issue 70: B1 to B9 are fast-tier tests and
-B10 to B12 docker-tier tests. B13 is checked by reading at review. B14 is a
-manual check after the next release, recorded on issue 70. The docker tier on
-Docker Desktop (the K5 check) is a manual check before the pull request. B15 is the fast tier (on Windows too,
-the T14 check), the type checks, the source check and the docker tier passing
-on the final head, and CI. No test carries the names B13 to B15.
-
-`E1` to `E14`, from the spec on issue 35: E1 to E10 are fast-tier tests (E5 is
-two), and E11 (three tests) and E12 are docker-tier tests (E12 on Linux only). E13 is a manual
-check on the owner's Windows machine with stacks, recorded on issue 35, with
-the docker tier on Docker Desktop (K5) and the fast tier on Windows (T14). E14 is
-checked by reading at review (`git diff main -- src/container-settings.ts` is
-empty, serve's arguments live only in `src/serve-settings.ts`, `schema` stays 1,
-the docs say what the spec says) and by the fast tier, the type checks, the
-source check and the docker tier passing on the final head, and CI. No test
-carries the names E13 and E14.
-
-`D1` to `D3`, from the spec on issue 87: D1 is a fast-tier test. D2 is checked
-by reading at review (ADR 0016 quotes `kill -KILL -1`, and
-`git diff main -- src/container-settings.ts` is the one timer line and its
-comment). D3 is the fast tier, the type checks, the source check and the docker
-tier passing on the final head, and CI. No test carries the names D2 and D3.
-
-`F1` to `F12`, from the spec on issue 88: F1, F2 and F5 to F8 are fast-tier
-tests (F5 runs the marked block of `release.yml` with `sh`, and is skipped by
-name on a host with no `sh`, as on the Windows fast tier when Git's `sh` is
-not in PATH, T14). F3 and F4
-are checks by reading at review: the compare step and its order, and the
-actor check. F9 is a manual check by the owner at the first release
-candidate, recorded on issue 88. F10 and F11 are checks by reading at review
-(F11 with `git diff main -- src` empty). F12 is the fast tier, the type
-checks and the source check passing on the final head, and CI. No test carries
-the names F3, F4 and F9 to F12.
+Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. Among the Windows checks, which are the owner's by hand, are the fast tier on Windows (`T14`) and the docker tier on Docker Desktop (`K5`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
 
 `X1` to `X5`, from the spec on issue 96 (ticket 5 of the-pact issue 542): X3 is
 a fast-tier test, the 3,000-word cap on `docs/threat-model.md`, with a padded
