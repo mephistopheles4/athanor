@@ -122,17 +122,6 @@ marks.
 
 Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. Among the Windows checks, which are the owner's by hand, are the fast tier on Windows (`T14`) and the docker tier on Docker Desktop (`K5`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
 
-`X1` to `X5`, from the spec on issue 96 (ticket 5 of the-pact issue 542): X3 is
-a fast-tier test, the 3,000-word cap on `docs/threat-model.md`, with a padded
-copy that must be reported over. X1 (the file follows its template and is at
-most 3,000 words), X2 (the mapping on issue 96), X4 (`docs/sensitive-work.md` is
-byte-equal to the old section, and the README, `SECURITY.md`, code comments,
-pointer, this line and the ADR are in the diff; the CI comment and the releasing
-doc cite a kept class name and are unchanged)
-and X5 (each GitHub and repo-set control named matches a read posted on the
-PR) are checks by reading at review. No test carries the names X1, X2, X4 and
-X5.
-
 ## Releases
 
 Releases after the first are staged by `.github/workflows/release.yml`, which
