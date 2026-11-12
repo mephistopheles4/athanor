@@ -225,25 +225,6 @@ ADR 0009). The agent
 test hook (`.claude/settings.json`, ADR 0024) is a nudge, not a control: it
 fails open and reads only a command's plain forms.
 
-## Accepted threat classes
-
-- **The Windows slot pipe on the network.** On Windows an authenticated user
-  elsewhere on the network can possibly read what slot holders report; a fix
-  needs a native package, which "no dependencies" rules out, and the details are
-  small.
-- **A server's port on the network.** On a Linux engine before 28.0, hosts on
-  the same segment can reach a server's loopback port, and any other container
-  on Docker's default bridge network can; the server is the repo's own dev
-  server.
-- **A shared or remote engine, and the network.** A shared, remote or forwarded
-  engine or builder, or plain tcp, receives your work, history and arguments,
-  can ask for your registry login and decides the result and what comes back;
-  the user chooses whom to trust.
-- **The release and CI supply chain.** A hijacked dev package, action or account
-  can shape, sign, read or act as what the owner's account can; nothing goes
-  live on npm without the owner's look and two-factor approval; it has no
-  README line.
-
 ## Residual risk
 
 ```mermaid
@@ -262,6 +243,25 @@ quadrantChart
 ```
 
 Positions are judgement, after the controls.
+
+## Accepted threat classes
+
+- **The Windows slot pipe on the network.** On Windows an authenticated user
+  elsewhere on the network can possibly read what slot holders report; a fix
+  needs a native package, which "no dependencies" rules out, and the details are
+  small.
+- **A server's port on the network.** On a Linux engine before 28.0, hosts on
+  the same segment can reach a server's loopback port, and any other container
+  on Docker's default bridge network can; the server is the repo's own dev
+  server.
+- **A shared or remote engine, and the network.** A shared, remote or forwarded
+  engine or builder, or plain tcp, receives your work, history and arguments,
+  can ask for your registry login and decides the result and what comes back;
+  the user chooses whom to trust.
+- **The release and CI supply chain.** A hijacked dev package, action or account
+  can shape, sign, read or act as what the owner's account can; nothing goes
+  live on npm without the owner's look and two-factor approval; it has no
+  README line.
 
 ## Open issues
 
