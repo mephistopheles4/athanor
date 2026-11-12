@@ -311,9 +311,10 @@ bypass, a reviewer other than you, or "Prevent self-review" on (you are the
 only reviewer and push the tag, so every release would become unapprovable).
 Fix it in Settings and check again.
 
-Once this is set, every `v*` tag you push is a deployable ref, the older tags
-among them. Each stays safe through its own file's guards, the "already on
-npm" check, your approval and stage-only publishing (ADR 0035 has the detail).
+Once this is set, every `v*` tag is a deployable ref, the tags from before the
+tag workflow included. Each stays safe through the guards of the `release.yml`
+at that tag, the "already on npm" check, your approval and stage-only
+publishing (ADR 0035).
 
 ### Each release
 

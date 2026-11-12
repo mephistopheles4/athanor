@@ -15,7 +15,7 @@ function countWords(text: string): number {
 }
 
 const BUDGETS: Record<string, number> = {
-  'AGENTS.md': 1550,
+  'AGENTS.md': 1650,
   'GLOSSARY.md': 1200,
   'docs/releasing.md': 6520,
   'docs/agents/issue-tracker.md': 640,
@@ -32,7 +32,7 @@ function problems(docs: Record<string, string>, budgets: Record<string, number>)
       continue;
     }
     const words = countWords(text);
-    if (words > budget) found.push(`${name} is ${words} words, over its budget of ${budget}: cut history and duplicates, keep every instruction in force.`);
+    if (words > budget) found.push(`${name} is ${words} words, over its budget of ${budget}: cut history and duplicates, and never cut or shorten an instruction in force to fit. If the doc needs the words for one, raise its number in BUDGETS and say why in the pull request.`);
   }
   return found;
 }
@@ -48,11 +48,12 @@ test('Y5 every agent-facing doc is within its word budget', () => {
 });
 
 test('Y5 a doc over its budget, and a doc with no budget, are each refused', () => {
-  const text = 'word '.repeat(11);
+  // Eleven words, split by a space, a line break, a tab and a run of spaces.
+  const text = 'one two\nthree\tfour  five\nsix\n\nseven eight\tnine\r\nten  eleven';
   const over = problems({ 'a.md': text }, { 'a.md': 10 });
   assert.equal(over.length, 1);
   assert.match(over[0], /a\.md is 11 words, over its budget of 10/);
-  assert.deepEqual(problems({ 'a.md': text.trimEnd() }, { 'a.md': 11 }), [], 'a doc at its budget passes');
+  assert.deepEqual(problems({ 'a.md': text }, { 'a.md': 11 }), [], 'a doc at its budget passes');
   const none = problems({ 'b.md': 'word' }, { 'a.md': 10 });
   assert.equal(none.length, 1);
   assert.match(none[0], /b\.md has no word budget/);

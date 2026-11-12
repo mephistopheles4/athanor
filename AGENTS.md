@@ -23,8 +23,9 @@ lasting decisions are in [docs/adr/](docs/adr/).
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
   and the package's major version. An addition bumps neither. Exceptions
-  are the owner's decision and sit in an ADR (0017, 0021, 0023). A form that
-  ran something other than what it named may be fixed without a bump (ADR 0023).
+  are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
+  form that ran something other than what it named may be fixed without a
+  bump (ADR 0023).
 - **Nothing reaches `athanor run`'s test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
   No `-v`, `--mount`, `--privileged`, and `--network none` (ADR 0016). The container drops every capability
   with `--cap-drop ALL` and gets six back with `--cap-add`: `CHOWN`,
@@ -119,7 +120,7 @@ Node 24. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
-Each test is named by the acceptance claim it backs, such as `F5`. The spec on the claim's issue says how it is checked: a test, reading at review, a CI step, or by hand. The Windows checks are the owner's, by hand: the fast tier on Windows (`T14`) and the docker tier on Docker Desktop (`K5`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own.
+Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked: a test file's header may name it, and a search of the tracker for the claim's id finds the rest. A new spec takes a letter that no test name uses yet. Among the Windows checks, which are the owner's by hand, are the fast tier on Windows (`T14`) and the docker tier on Docker Desktop (`K5`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force, and a doc that needs a new instruction in force raises its number.
 
 ## Releases
 
