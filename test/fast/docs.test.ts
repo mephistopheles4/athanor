@@ -48,8 +48,8 @@ test('Y5 every agent-facing doc is within its word budget', () => {
 });
 
 test('Y5 a doc over its budget, and a doc with no budget, are each refused', () => {
-  // Eleven words, split by a space, a line break, a tab and a run of spaces.
-  const text = 'one two\nthree\tfour  five\nsix\n\nseven eight\tnine\r\nten  eleven';
+  // Eleven words, split by a space, line breaks, a tab and a run of spaces, and ended by a line break as a file is.
+  const text = 'one two\nthree\tfour  five\nsix\n\nseven eight\tnine\r\nten  eleven\n';
   const over = problems({ 'a.md': text }, { 'a.md': 10 });
   assert.equal(over.length, 1);
   assert.match(over[0], /a\.md is 11 words, over its budget of 10/);
