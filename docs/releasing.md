@@ -129,9 +129,8 @@ before the approval.
    the repo's Settings, Environments, set:
    - required reviewers: you;
    - deployment branches and tags: selected branches and tags, one tag
-     pattern `v*` (type **tag**) and no branch pattern (this was `main` only
-     until ADR 0035; see "The `npm` environment, after the tag workflow
-     merges, once");
+     pattern `v*` (type **tag**) and no branch pattern (see "The `npm`
+     environment, after the tag workflow merges, once");
    - "Allow administrators to bypass configured protection rules": off;
    - "Prevent self-review": off, since you are the only reviewer and also
      push the tag that starts the run;
@@ -312,11 +311,10 @@ bypass, a reviewer other than you, or "Prevent self-review" on (you are the
 only reviewer and push the tag, so every release would become unapprovable).
 Fix it in Settings and check again.
 
-Once this is set, every `v*` tag you push is a deployable ref, the old tags
-`v0.1.0` and `v0.1.1` among them. Each stays safe through its own file's
-guards (v0.1.0 has no `release.yml`, and v0.1.1's starts only by hand and
-refuses any ref but `main`), the "already on npm" check, your approval and
-stage-only publishing (ADR 0035).
+Once this is set, every `v*` tag is a deployable ref, the tags from before the
+tag workflow included. Each stays safe through its own files' guards (ADR 0035
+names them), the "already on npm" check, your approval and stage-only
+publishing.
 
 ### Each release
 
@@ -745,10 +743,9 @@ print the same number. Cautions:
   (accepted class "The release and CI supply chain").
 - After any rename or transfer of the repo or the account, revoke the trusted
   publisher and add it again. Before deleting the repo, revoke it.
-- A bot pull request that moves an action SHA in `release.yml`, and a change
-  to its `node-version`, are security-sensitive work: the pull request names
-  each release and its date, at least 7 days old. A change to `node-version`
-  also updates the npm version step 14 names.
+- A change to `node-version` also updates the npm version step 14 names. The
+  rule for a pull request that moves an action SHA or `node-version` is in
+  AGENTS.md, "Releases".
 
 ## What to know
 
@@ -783,8 +780,7 @@ print the same number. Cautions:
   transparency log when it is staged, and stays there even for a version you
   later reject.
 - **Who the record names.** A version approved from staging names "GitHub
-  Actions" as its npm user, with GitHub's no-reply address, not yours (claim
-  R8 of the spec on issue 6, recorded at 0.1.1). The version's maintainer
+  Actions" as its npm user, with GitHub's no-reply address, not yours. The version's maintainer
   list still names your npm account and its email, as "A publish makes your
   npm account's name and email public" says.
 - **A GitHub release makes a permanent, public Zenodo record,** naming the
@@ -794,11 +790,8 @@ print the same number. Cautions:
   and checked. The archive holds every file at the tag, so a secret ever
   committed and still there stays in a record no history rewrite can
   reach: rotate it, and remove it from the tree, before you release.
-  Zenodo reads `CITATION.cff` from that tag. v0.1.0 and v0.1.1
-  predate it and have no release; the first record comes with the next
-  release. Their tags stay, because steps 13 and 17 diff from the last tag
-  that went live. A release candidate gets no GitHub release, so it makes no
-  Zenodo record.
+  Zenodo reads `CITATION.cff` from that tag. A release candidate gets no
+  GitHub release, so it makes no Zenodo record.
 - **A tag run uses the workflow at the tagged commit.** A tag on a commit off
   `main`, with an edited `release.yml`, would run the edited file, so the
   file's guards cannot be what stops it. The admin-only tag ruleset, the `npm`
