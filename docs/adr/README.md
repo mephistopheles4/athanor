@@ -36,3 +36,4 @@ changed one gets a new record that names the one it replaces.
 | [0033](0033-athanor-isolates-parallel-runs-not-a-hostile-repo.md) | athanor isolates parallel test runs; it does not contain a hostile repo (extends 0016 and 0020) |
 | [0034](0034-a-server-sees-the-working-tree-read-only-and-publishes-one-port-on-127.0.0.1.md) | A server sees the working tree read-only and publishes one port on 127.0.0.1 (extends 0004, 0016 and 0021) |
 | [0035](0035-a-tag-starts-staging.md) | A tag starts staging (amends 0019 and, in part, 0031) |
+| [0036](0036-the-threat-model-is-boundaries-first-and-capped-at-3000-words.md) | The threat model is boundaries first, the machine is out of scope, and it is capped at 3,000 words (amends 0033) |

@@ -38,6 +38,11 @@ the pact's own tracker rules.
   so the id goes as a number. The snippet is `sh`; in PowerShell, set `$id`
   the same way and pass `-F sub_issue_id=$id`.
 
+## Before ruling on security
+
+Before ruling on security here, read [the threat model](../threat-model.md),
+boundaries first.
+
 ## Whose text counts
 
 The repo is public, and sessions post under the owner's account.

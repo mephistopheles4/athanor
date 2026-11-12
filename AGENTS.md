@@ -185,6 +185,16 @@ candidate, recorded on issue 88. F10 and F11 are checks by reading at review
 checks and the source check passing on the final head, and CI. No test carries
 the names F3, F4 and F9 to F12.
 
+`X1` to `X5`, from the spec on issue 96 (ticket 5 of the-pact issue 542): X3 is
+a fast-tier test, the 3,000-word cap on `docs/threat-model.md`, with a padded
+copy that must be reported over. X1 (the file follows its template and is at
+most 3,000 words), X2 (the mapping on issue 96), X4 (`docs/sensitive-work.md` is
+byte-equal to the old section, and the README, CI comment, releasing doc,
+`SECURITY.md`, code comments, pointer, this line and the ADR are in the diff)
+and X5 (each GitHub and repo-set control named matches a read posted on the
+PR) are checks by reading at review. No test carries the names X1, X2, X4 and
+X5.
+
 ## Releases
 
 Releases after the first are staged by `.github/workflows/release.yml`, which
@@ -208,5 +218,8 @@ text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
 ## Security
 
-The threat model is [docs/threat-model.md](docs/threat-model.md). Report a
+The threat model is [docs/threat-model.md](docs/threat-model.md), boundaries
+first and at most 3,000 words (a fast-tier test holds the cap; raising it is a
+spec change). Read it before you rule on a security finding. The list of
+sensitive work is [docs/sensitive-work.md](docs/sensitive-work.md). Report a
 hole privately, as [SECURITY.md](SECURITY.md) says.

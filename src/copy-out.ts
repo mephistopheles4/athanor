@@ -130,7 +130,7 @@ export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
     throw new AthanorError(`The folder that should hold --output ${dir} does not exist. Make it first, then run again.`);
   }
   // A parent that other accounts can write, with no sticky bit, lets them swap folders in it
-  // (accepted class "What athanor records, shows and leaves behind"). Windows has no mode bits to read, so this check is for the other systems.
+  // (the machine's, out of scope in the threat model). Windows has no mode bits to read, so this check is for the other systems.
   if (process.platform !== 'win32') {
     const mode = lstatSync(realParent).mode;
     if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {

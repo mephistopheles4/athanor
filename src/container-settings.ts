@@ -25,7 +25,7 @@ export const WORK_PREFIX = 'athanor-work ';
 export const KEPT_CAPABILITIES = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETUID', 'SETGID'];
 
 // The names the Docker CLI fills from the five proxy settings it reads today.
-// The list is fixed (ADR 0016; the threat model names the gap a later Docker client's proxy name opens).
+// The list is fixed (ADR 0016; the threat model's Boundaries name the gap a later Docker client's proxy name opens).
 export const PROXY_NAMES = [
   'HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'FTP_PROXY', 'ftp_proxy',
   'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy',

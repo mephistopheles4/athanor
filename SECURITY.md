@@ -20,12 +20,13 @@ runs so they don't collide; it does not contain a hostile repo
 A hole is a boundary in scope that doesn't hold: for example, an engine off
 this machine used without `allowRemoteDocker`, or plain tcp used without
 `allowPlainTcp`; something athanor exposes on
-the network beyond what the threat model says; what athanor records or leaves
-behind going further than it says, such as a host environment value reaching
-a shared engine's record of a container; or a gap in the release path. A
-control the threat model keeps only so that runs don't collide, such as no
-host folder reaching the test container, is reported privately too if it
-fails. If in doubt, report it privately here anyway.
+the network beyond what the threat model says; what athanor sends to an engine
+going further than it says, such as a host environment value reaching a shared
+engine's record of a container; or a gap in the release path. A control that
+only keeps runs from colliding, such as no host folder reaching the test
+container, is reported privately too if it fails. Records on this machine,
+and what other programs on it can do, are the machine's, out of scope. If in
+doubt, report it privately here anyway.
 
 athanor is for repos you trust to build; a repo's own code is out of scope.
 The image build runs the repo's own Dockerfile with network access. athanor sends the build context and snapshot
