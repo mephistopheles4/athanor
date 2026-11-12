@@ -22,16 +22,17 @@ brought rulings on paths wholly on the machine. The page had grown to about
 - **The classes.** Kept by name: "The Windows slot pipe on the network", "A
   shared or remote engine, and the network" and "The release and CI supply
   chain". "A server's port on this machine" becomes "A server's port on the
-  network", with only the older-engine case left. "A compromised machine or
+  network", with the older-engine case and other containers on Docker's default
+  bridge network left. "A compromised machine or
   sandbox", "The machine's load" and "What athanor records, shows and leaves
   behind" leave as classes. The sent parts of the last one, a base's history and
   a command's arguments reaching an engine, join the engine class. A class is
   one sentence of at most 40 words.
 - **Every control stays.** This record changes no control, flag, key, exit
   code or message. The `Reason:` lines of ADR 0033 are gone from the page; the
-  controls that hold no boundary keep their place in AGENTS.md and the ADRs,
-  and are still candidates to loosen on issue 84, each its own spec decided by
-  the owner.
+  guards that hold no boundary are named under its Scope, each with the ADR or
+  test that keeps it. Those are the candidates to loosen on issue 84, as under
+  ADR 0033, each its own spec decided by the owner.
 - **The sensitive-work list moves,** unchanged, to `docs/sensitive-work.md`,
   and AGENTS.md points at it.
 - **A cap.** The threat model is at most 3,000 words, counted by splitting the
@@ -42,6 +43,10 @@ brought rulings on paths wholly on the machine. The page had grown to about
   names stay.
 - **Controls are read live.** A control the page names as GitHub's was read
   from GitHub when the page was written; one that was not there is not named.
+
+Older ADRs cite rows of the old page, such as "accepted risk 23"; those ids
+refer to the threat model as it stood before this record. The sensitive-work
+list moves unchanged, so its parentheticals still use the old class names.
 
 The README's "What athanor doesn't protect you from", SECURITY.md's "What
 counts" and the code comments that cite a class follow this record.

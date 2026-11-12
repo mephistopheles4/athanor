@@ -518,7 +518,7 @@ full class.
   users you don't trust with those details, keep repo folder names you'd
   rather not show off the machine's runs. Accepted class "The Windows slot
   pipe on the network".
-- **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. The older-engine case is the accepted class "A server's port on the network"; a program or container on this machine is the machine's, out of scope.
+- **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. The older-engine case and another container on Docker's default network are the accepted class "A server's port on the network"; a program or account on this machine is the machine's, out of scope.
 - **Other programs on your machine.** Any program on the machine can block
   runs, read or fake what `status` shows about slot holders, and, with the
   privilege to impersonate clients, act as you on a slot connection. Don't
@@ -533,8 +533,8 @@ full class.
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
   the slot is next used, and it keeps the run's snapshot, uncommitted files
-  included, until it is removed. A server killed hard on Windows keeps running until the next `athanor serve`; `athanor status` shows it, and `docker rm -f -v <name>` removes it. Set `maxCpus` for a bound. Accepted
-  Out of scope: machine load is the machine's.
+  included, until it is removed. A server killed hard on Windows keeps running until the next `athanor serve`; `athanor status` shows it, and `docker rm -f -v <name>` removes it. Set `maxCpus` for a bound. Out of scope: machine load is the
+  machine's.
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,
   the whole host's on Linux. Filling it stops the engine and other programs
@@ -571,9 +571,9 @@ full class.
   scope: files left on the machine are the machine's.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
-  engine's operator. Don't pass secrets as command arguments. The process list is
-the machine's, out of scope; the engine's record, for a remote engine, is the
-accepted class "A shared or remote engine, and the network".
+  engine's operator. Don't pass secrets as command arguments. The process list
+  is the machine's, out of scope; the engine's record, for a remote engine, is
+  the accepted class "A shared or remote engine, and the network".
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
@@ -586,8 +586,9 @@ accepted class "A shared or remote engine, and the network".
   steps can name a path in the state folder or the repo's own path;
   both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
-  places your account name shouldn't go. Out of scope: the session and its
-  model provider are the harness's boundary.
+  places your account name shouldn't go. Out of scope: athanor's output goes
+  where its caller sends it, an agent session's model provider included, a
+  third party you rely on.
 - **A named base.** With `--base` or a command's `base`, a run also sends the
   history from the merge base onward: files deleted since, and commit
   messages, authors' names, emails and dates. The test code can read it, and
