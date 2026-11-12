@@ -485,7 +485,9 @@ files a copy to `--output` brings back.
 
 Each line names the accepted threat class in
 [the threat model](docs/threat-model.md#accepted-threat-classes) it comes from,
-or says it is out of scope; the threat model holds the full class.
+or says it is out of scope, as the machine's, a repo's own code or a third
+party's, in the threat model's [Scope](docs/threat-model.md#scope); the threat model holds the
+full class.
 
 - **A repo you don't trust.** athanor is not a sandbox: it keeps parallel
   runs from colliding, and does not contain a hostile repo. The image build
@@ -509,15 +511,15 @@ or says it is out of scope; the threat model holds the full class.
   that athanor counts as local can be forwarded to another machine, or held by
   another local program. Know where your Docker endpoint leads. Accepted class
   "A shared or remote engine, and the network"; a local program holding it is
-  the class "A compromised machine or sandbox".
+  the machine's, out of scope.
 - **The Windows slot pipe on the network.** On Windows, a user elsewhere on
   the network may be able to read what `status` shows about slot holders:
   pid, start time, repo folder name and limit, and, for a server, its name and port. On a network whose signed-in
   users you don't trust with those details, keep repo folder names you'd
   rather not show off the machine's runs. Accepted class "The Windows slot
   pipe on the network".
-- **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. Accepted class "A server's port on this machine".
-- **A compromised machine or sandbox.** Any program on the machine can block
+- **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. The older-engine case and another container on Docker's default network are the accepted class "A server's port on the network"; a program or account on this machine is the machine's, out of scope.
+- **Other programs on your machine.** Any program on the machine can block
   runs, read or fake what `status` shows about slot holders, and, with the
   privilege to impersonate clients, act as you on a slot connection. Don't
   run athanor on a machine where you don't trust the other programs. Once a
@@ -525,13 +527,14 @@ or says it is out of scope; the threat model holds the full class.
   your machine or in your sandbox works against you, it can plant programs a
   bare command name runs, change files a session or a hook reads, and act as a
   session would. athanor does not defend against it. Keep the machine and the
-  sandbox free of what you don't trust. Accepted class "A compromised machine or sandbox".
+  sandbox free of what you don't trust. Out of scope: the machine, in the
+  threat model's [Scope](docs/threat-model.md#scope).
 - **CPU.** With no `cpus` and no `maxCpus`, a run can use every CPU the
   engine has. A test that kills athanor's time limit inside the container,
   when athanor itself is killed hard, can leave the container running until
   the slot is next used, and it keeps the run's snapshot, uncommitted files
-  included, until it is removed. A server killed hard on Windows keeps running until the next `athanor serve`; `athanor status` shows it, and `docker rm -f -v <name>` removes it. Set `maxCpus` for a bound. Accepted
-  class "The machine's load".
+  included, until it is removed. A server killed hard on Windows keeps running until the next `athanor serve`; `athanor status` shows it, and `docker rm -f -v <name>` removes it. Set `maxCpus` for a bound. Out of scope: machine load is the
+  machine's.
 - **Processes.** If you raise `maxProcesses`, a repo can let a run's test code
   start up to that many processes. All runs share the engine's process table,
   the whole host's on Linux. Filling it stops the engine and other programs
@@ -543,12 +546,13 @@ or says it is out of scope; the threat model holds the full class.
   yourself (`athanor status` lists it). Keep `maxProcesses`
   times your largest run limit well below your
   engine's process limit ([Set up a repo](#set-up-a-repo) shows how to read
-  it). Accepted class "The machine's load".
+  it). Out of scope: machine load is the machine's.
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
   (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
-  work before a run, or know that the filter sees it. Accepted class "What athanor records, shows and leaves behind".
+  work before a run, or know that the filter sees it. Out of scope: your git
+  configuration is the machine's.
 - **What a copied file holds.** With `--output`, a report the test code wrote
   lands on your machine as written, and athanor checks names and types, never
   content. Opening it, or a viewer previewing it, does what it holds. athanor
@@ -563,29 +567,36 @@ or says it is out of scope; the threat model holds the full class.
   network".
 - **Plain files in the `--output` folder.** Copied outputs are ordinary files,
   with nothing encrypting them. They rely on your disk encryption and the
-  folder's access rules; keep the folder where only you can read it. Accepted
-  class "What athanor records, shows and leaves behind".
+  folder's access rules; keep the folder where only you can read it. Out of
+  scope: files left on the machine are the machine's.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
-  engine's operator. Don't pass secrets as command arguments. Accepted class "What athanor records, shows and leaves behind".
+  engine's operator. Don't pass secrets as command arguments. The process list
+  is the machine's, out of scope; the engine's record, for a shared or remote
+  engine, is the accepted class "A shared or remote engine, and the network".
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
   parent under your user profile. On Linux, athanor refuses a parent that other
-  accounts can write unless it has the sticky bit. Accepted class "What athanor records, shows and leaves behind".
+  accounts can write unless it has the sticky bit. Out of scope: other
+  accounts on the machine are the machine's.
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a
   ceiling) names it by its full path, and a git error from a named base's
   steps can name a path in the state folder or the repo's own path;
   both hold your home folder's name. It reaches whatever reads athanor's
   output, such as an agent session's model provider; keep that output out of
-  places your account name shouldn't go. Accepted class "What athanor records, shows and leaves behind".
+  places your account name shouldn't go. Out of scope: athanor's output goes
+  where its caller sends it, an agent session's model provider included, a
+  third party you rely on.
 - **A named base.** With `--base` or a command's `base`, a run also sends the
   history from the merge base onward: files deleted since, and commit
   messages, authors' names, emails and dates. The test code can read it, and
   it goes wherever your snapshot goes, a remote or shared engine and plain tcp
   included. Name a base only for checks that need it, and remove a leaked
-  secret from the history, not only from the tree. Accepted class "What athanor records, shows and leaves behind".
+  secret from the history, not only from the tree. Where it goes to an engine
+  shared with others or beyond this machine, accepted class "A shared or remote
+  engine, and the network".
 
 ## More
 

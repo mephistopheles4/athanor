@@ -145,5 +145,9 @@ text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
 ## Security
 
-The threat model is [docs/threat-model.md](docs/threat-model.md). Report a
+The threat model is [docs/threat-model.md](docs/threat-model.md), boundaries
+first and at most 3,000 words (a fast-tier test holds the cap; raising it is a
+spec change). Read it before you rule on a security finding. A change that
+alters a defence it names updates it in the same pull request. The list of
+sensitive work is [docs/sensitive-work.md](docs/sensitive-work.md). Report a
 hole privately, as [SECURITY.md](SECURITY.md) says.
