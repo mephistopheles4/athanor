@@ -15,7 +15,9 @@ section (`~/.claude/pact/review.md`; public copy:
 https://github.com/mephistopheles4/the-pact/blob/main/claude/review.md).
 
 [`SECURITY.md`](../SECURITY.md) says how to report a hole. The sensitive-work
-list is in [`sensitive-work.md`](sensitive-work.md).
+list is in [`sensitive-work.md`](sensitive-work.md), which keeps the old class
+names: the machine and records classes are now the machine's (see Scope), and
+"the supply-chain bullet" is the Release and CI boundary.
 
 ## Boundaries
 
@@ -87,8 +89,8 @@ likewise, and a local address that leads elsewhere.
   which has the network and gets the proxy settings as build arguments.
 - **athanor** checks what `--output` copies back: names as text, regular files
   and folders only, exclusive creates, size, count and time caps, cleanup on
-  error, Windows-acted file names skipped and a folder laid out as a bare git
-  repository refused (ADR 0023). It does not hold for a spelling or layout it
+  error, file names Windows acts on when it shows a folder skipped, and a folder
+  laid out as a bare git repository refused (ADR 0023). It does not hold for a spelling or layout it
   does not know, and never checks content: a copied file carries no
   Mark-of-the-Web, and opening or previewing it does what it holds. A remote
   operator chooses what the copy holds. The README advises
@@ -98,7 +100,7 @@ likewise, and a local address that leads elsewhere.
 on AGENTS.md's rules for the run container (ADR 0016), and on the README's
 advice not to share an engine with people you don't trust.
 
-### The network
+### What athanor exposes on the network
 
 **Crosses:** out, a slot holder's report (pid, start time, repo folder name,
 limit, and a server's name and host port) on the Windows slot pipe, and a
@@ -125,7 +127,7 @@ the tag, the staged package, the published version and the GitHub release.
 
 **Controls:**
 
-- **GitHub** (read live): rulesets on `main` (a pull request, the required
+- **GitHub** (read from GitHub when this page was written): rulesets on `main` (a pull request, the required
   check `ci`, no deletion, no non-fast-forward), on tag creation (limited to
   admins) and on tag updates and deletions (blocked); immutable releases; secret
   scanning with push protection; Dependabot security updates; CodeQL default
@@ -141,19 +143,21 @@ the tag, the staged package, the published version and the GitHub release.
   and `npm audit signatures` checks registry signatures; CI holds no secrets and
   a read-only token. None of these sees a hijacked compiler, which every build
   uses, and a pin names a commit, not that it is safe. The workflow check and
-  the release guards (the owner as actor, the commit `main`'s head or behind it,
-  CI green, the tag matching the version) catch honest mistakes only, and a tag
+  the release guards (the owner as actor, the tagged commit being `main`'s head
+  or an ancestor of it, CI green, the tag matching the version) catch honest mistakes only, and a tag
   run uses the workflow file at its commit (ADR 0035).
-- **npm** binds the trusted publisher to `release.yml` and `npm`, stages only,
+- **npm** binds the trusted publisher to `release.yml` and the `npm`
+  environment, stages only,
   and makes a version live only on the owner's two-factor approval (ADR 0019).
   It does not hold when an action in `publish` asks for the identity token and
   stages another file or version or gets a Sigstore signature in this
   workflow's name for some other file, or when `check` changes a packed file;
-  the owner's look catches the staged ones. Its manifest is first seen after the
+  the owner's look catches the staged ones. The published manifest is first seen after the
   version is live, so a bad one is unpublished while npm's policy allows, else
   deprecated.
-- **No runtime dependencies** (ADR 0001), so the compiler is the one dev
-  package that runs. It holds nothing against that compiler.
+- **Repo files, package.json:** no runtime dependencies (ADR 0001), so the
+  compiler is the one dev package that runs. It holds nothing against that
+  compiler.
 
 **Residual:** the class "The release and CI supply chain". It rests on the
 owner's rules in `docs/releasing.md`: comparing every staged file with a local
@@ -171,8 +175,8 @@ two-factor approval hold.
 
 ## Scope
 
-**In scope:** the boundaries above: a shared or remote engine or builder, the
-network, and release and CI.
+**In scope:** the boundaries above: a shared or remote engine or builder, what
+athanor exposes on the network, and release and CI.
 
 **Out of scope:**
 
@@ -185,7 +189,8 @@ network, and release and CI.
   and paths in messages), and machine load: CPU, the engine's process table, a
   server's missing time limit (ADR 0033). Anything on the machine or processed
   by it is out of scope, unless it came in from outside or touches the
-  sensitive-work list; what athanor sends to an engine is the Engine boundary's.
+  sensitive-work list (a change to an access rule or credential that list names
+  is still a finding); what athanor sends to an engine is the Engine boundary's.
 - **A repo's own code.** athanor isolates parallel runs so they don't collide;
   it is not a sandbox for a repo you don't trust (ADR 0033). The build runs the
   repo's Dockerfile with the network and the Docker client's proxy settings,
@@ -206,8 +211,8 @@ archive environment (ADR 0020); the configuration file checks (test J6);
 configured paths kept in the repo (test C17); holder answers shown, not
 trusted (ADR 0004); the `--output` parent check (the copy-out test "a parent
 others can change"); a named base checked apart from the repo's settings and
-the stale-run sweep (ADR 0032); and the run container's flags, six
-capabilities, `no-new-privileges` and limits (ADR 0016, ADR 0009). The agent
+the stale-run sweep (ADR 0032); and the run container's capability flags,
+`no-new-privileges` and limits (ADR 0016, ADR 0009). The agent
 test hook (`.claude/settings.json`, ADR 0024) is a nudge, not a control: it
 fails open and reads only a command's plain forms.
 
@@ -222,9 +227,9 @@ fails open and reads only a command's plain forms.
   on Docker's default bridge network can; the owner chose a documented minimum
   over a version check.
 - **A shared or remote engine, and the network.** A shared, remote or forwarded
-  engine or builder, or plain tcp, receives your work, history and build
-  arguments, can ask for your registry login and decides the result; the user
-  chooses whom to trust.
+  engine or builder, or plain tcp, receives your work, history, build arguments
+  and a command's arguments, can ask for your registry login and decides the
+  result; the user chooses whom to trust.
 - **The release and CI supply chain.** A hijacked dev package, action or account
   can shape, sign or read what the owner's account can; nothing goes live
   without the owner's look and two-factor approval, and it has no README line.

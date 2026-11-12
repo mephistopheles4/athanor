@@ -10,8 +10,12 @@ brought rulings on paths wholly on the machine. The page had grown to about
 
 - **Boundaries first.** The threat model opens with its boundaries: where
   something comes in from outside, or where an act goes out. Each names what
-  crosses, the controls that hold it by source (athanor, GitHub, npm, Docker,
-  the repo's own files), each with when it doesn't hold, and its residual.
+  crosses, the controls that hold it by source (athanor, Windows, GitHub, the
+  repo's files, npm), each with when it doesn't hold, and its residual. The
+  page's old rules for itself are not repeated there: a change that alters a
+  defence it names updates it in the same pull request (AGENTS.md); a finding
+  that fits no class goes to the owner, and only a merge the owner confirms adds
+  or widens one (the pact's review procedure).
 - **The machine is out of scope.** Your own computer, or a sandbox run on it,
   with every program, process, account, file and memory made there, is held by
   its own controls and is not a finding. This extends ADR 0033: what athanor

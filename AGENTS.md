@@ -189,8 +189,9 @@ the names F3, F4 and F9 to F12.
 a fast-tier test, the 3,000-word cap on `docs/threat-model.md`, with a padded
 copy that must be reported over. X1 (the file follows its template and is at
 most 3,000 words), X2 (the mapping on issue 96), X4 (`docs/sensitive-work.md` is
-byte-equal to the old section, and the README, CI comment, releasing doc,
-`SECURITY.md`, code comments, pointer, this line and the ADR are in the diff)
+byte-equal to the old section, and the README, `SECURITY.md`, code comments,
+pointer, this line and the ADR are in the diff; the CI comment and the releasing
+doc cite a kept class name and are unchanged)
 and X5 (each GitHub and repo-set control named matches a read posted on the
 PR) are checks by reading at review. No test carries the names X1, X2, X4 and
 X5.
@@ -220,6 +221,7 @@ text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
 The threat model is [docs/threat-model.md](docs/threat-model.md), boundaries
 first and at most 3,000 words (a fast-tier test holds the cap; raising it is a
-spec change). Read it before you rule on a security finding. The list of
+spec change). Read it before you rule on a security finding. A change that
+alters a defence it names updates it in the same pull request. The list of
 sensitive work is [docs/sensitive-work.md](docs/sensitive-work.md). Report a
 hole privately, as [SECURITY.md](SECURITY.md) says.

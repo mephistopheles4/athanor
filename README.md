@@ -485,8 +485,8 @@ files a copy to `--output` brings back.
 
 Each line names the accepted threat class in
 [the threat model](docs/threat-model.md#accepted-threat-classes) it comes from,
-or says it is out of scope, as the machine's or a repo's own code, in the
-threat model's [Scope](docs/threat-model.md#scope); the threat model holds the
+or says it is out of scope, as the machine's, a repo's own code or a third
+party's, in the threat model's [Scope](docs/threat-model.md#scope); the threat model holds the
 full class.
 
 - **A repo you don't trust.** athanor is not a sandbox: it keeps parallel
