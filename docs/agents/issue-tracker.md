@@ -18,7 +18,7 @@ the pact's own tracker rules.
 
 - **Each ticket is its own issue.** When a spec is cut into tickets, file
   every ticket as a separate issue and link it to the parent issue as a GitHub
-  sub-issue. The parent keeps the spec. Each ticket issue names its parent, its
+  sub-issue. The parent keeps the spec until it lands in `docs/spec/`. Each ticket issue names its parent, its
   claims and what it depends on.
 - **A ticket's PR closes its own ticket issue**, not the parent, and signs
   there. The parent closes when its last sub-issue closes; GitHub does not do
