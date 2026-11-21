@@ -2,7 +2,7 @@
 
 athanor runs a repo's tests on the tracked files in the working tree,
 uncommitted edits included, inside a fresh Docker container, and keeps a
-machine-wide limit on how many runs go at once. It is a Node 24 package, `@mephistopheles4/athanor`, with a command named
+machine-wide limit on how many runs go at once. It is a Node 24 package, `@mephistopheles4/athanor`, whose command is
 `athanor`. Words used here are defined in [GLOSSARY.md](GLOSSARY.md); the
 lasting decisions are in [docs/adr/](docs/adr/).
 
@@ -141,7 +141,8 @@ release and its date, at least 7 days old.
 
 Issues on `mephistopheles4/athanor`. Before you read or post to the tracker,
 read [the issue tracker rules](docs/agents/issue-tracker.md), including whose
-text counts. Labels: [triage labels](docs/agents/triage-labels.md).
+text counts. Labels: [triage labels](docs/agents/triage-labels.md). Read
+`docs/spec/` closely.
 
 ## Security
 
