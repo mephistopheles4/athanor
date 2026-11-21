@@ -1,7 +1,8 @@
-// The spec index check (claim Z1 to Z3, from the spec on issue 581 of the-pact,
-// C8 of its parent 574): docs/spec/README.md names every spec file in its
-// folder under "## All specs", once, and holds both its sections. Whose text
-// counts is not this check's job: it reads the working tree.
+// The spec index check. These tests back C8a to C8c of the spec on issue 581
+// of the-pact (C8 of its parent 574), so their names carry that issue: every
+// single letter athanor's own claims use is taken. docs/spec/README.md names
+// every spec file in its folder under "## All specs", once, and holds both its
+// sections. Whose text counts is not this check's job: it reads the working tree.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -38,23 +39,24 @@ function indexProblems(files: string[], readme: string | null): string[] {
 
 const README = ['# Specs', '', READ_FIRST, '', 'None yet.', '', ALL, '', '- [0002-b](0002-b.md) — second', '- history: [#9](https://example.test/9) — old', '- [0001-a](0001-a.md) — first', ''].join('\n');
 
-test('Z1 the real docs/spec folder is whole', () => {
+test('the-pact#581 C8a the real docs/spec folder is whole', () => {
   assert.ok(existsSync(dir), 'docs/spec/ is missing');
   const readme = existsSync(join(dir, 'README.md')) ? readFileSync(join(dir, 'README.md'), 'utf8') : null;
   assert.deepEqual(indexProblems(specFiles(readdirSync(dir)), readme), []);
 });
 
-test('Z2 a spec file with no line, a spec file with two lines, a missing section and a missing README are each a problem', () => {
+test('the-pact#581 C8b a spec file with no line, a spec file with two lines, a missing section and a missing README are each a problem', () => {
   assert.deepEqual(specFiles(['README.md', '0001-a.md', 'notes.txt', 'sub']), ['0001-a.md']);
   assert.deepEqual(indexProblems(['0001-a.md', '0002-b.md', '0003-c.md'], README), ['0003-c.md: no line under "## All specs"']);
   const twice = README.replace('- [0001-a](0001-a.md) — first', '- [0001-a](0001-a.md) — first\n- [0001-a](0001-a.md) — again');
   assert.deepEqual(indexProblems(['0001-a.md', '0002-b.md'], twice), ['0001-a.md: 2 lines under "## All specs", want one']);
-  assert.deepEqual(indexProblems([], README.replace(READ_FIRST, '## Start here')), ['docs/spec/README.md: missing section "## Read these first"']);
-  assert.deepEqual(indexProblems([], README.replace(ALL, '## Everything')), ['docs/spec/README.md: missing section "## All specs"']);
+  assert.deepEqual(indexProblems([], README.replace(READ_FIRST, `${READ_FIRST} (old)`)), ['docs/spec/README.md: missing section "## Read these first"']);
+  assert.deepEqual(indexProblems([], README.replace(ALL, `${ALL} (old)`)), ['docs/spec/README.md: missing section "## All specs"']);
+  assert.deepEqual(indexProblems(['0001-a.md'], README.replace('(0001-a.md)', '(old/0001-a.md)')), ['0001-a.md: no line under "## All specs"']);
   assert.deepEqual(indexProblems([], null), ['docs/spec/README.md: missing']);
 });
 
-test('Z3 a well-formed index passes: a history line, CRLF, a link under both sections, no specs', () => {
+test('the-pact#581 C8c a well-formed index passes: a history line, CRLF, a link under both sections, no specs', () => {
   assert.deepEqual(indexProblems(['0001-a.md', '0002-b.md'], README), []);
   assert.deepEqual(indexProblems(['0001-a.md', '0002-b.md'], README.replace(/\n/g, '\r\n')), []);
   const both = README.replace('None yet.', '- [0001-a](0001-a.md) — read first');
