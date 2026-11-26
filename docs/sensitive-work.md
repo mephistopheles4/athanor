@@ -7,7 +7,7 @@
   network). On
   macOS each lock is a loopback port (ADR 0037), open to any local program in
   the same way, and readable by a Mac engine's `serve` containers and image
-  builds (accepted class "The macOS lock ports and containers"). It
+  builds (accepted class "The macOS lock ports and containers"). athanor
   relies on the operating system's user separation for the state folder
   (mode 0700 on every platform but Windows; on Windows, the home folder's own
   access rules). The

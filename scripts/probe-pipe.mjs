@@ -24,28 +24,28 @@ const isMac = process.platform === 'darwin';
 // The port athanor's lockPort gives run slot 1 of the prefix `name`, worked out
 // here so the probe runs before anything is built.
 const portFor = (name) => 20000 + (createHash('sha256').update(`${name}-slot-1`).digest().readUInt32BE(0) % 27000);
-const pipeFor = (name) => {
+const addressFor = (name) => {
   if (isMac) return { host: '127.0.0.1', port: portFor(name) };
   return isWindows ? `\\\\.\\pipe\\${name}` : `\0${name}`;
 };
-const killHint = (pid) => (isMac ? `kill -9 ${pid}` : `taskkill /F /PID ${pid}`);
+const killHint = (pid) => (isWindows ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`);
 const holderLine = () =>
   JSON.stringify({ slot: 1, pid: process.pid, started: Date.now(), repo: 'probe', limit: 2 }) + '\n';
 
-function listen(path) {
+function listen(address) {
   return new Promise((resolve) => {
     const server = net.createServer((socket) => {
       socket.on('error', () => {});
       socket.end(holderLine());
     });
     server.once('error', (error) => resolve({ ok: false, code: error.code }));
-    server.listen(path, () => resolve({ ok: true, server }));
+    server.listen(address, () => resolve({ ok: true, server }));
   });
 }
 
-function ask(path, timeoutMs = 2000) {
+function ask(address, timeoutMs = 2000) {
   return new Promise((resolve) => {
-    const socket = net.connect(path);
+    const socket = net.connect(address);
     let data = '';
     const timer = setTimeout(() => {
       socket.destroy();
@@ -75,10 +75,10 @@ function kill(pid) {
   return result.status === 0;
 }
 
-async function waitForListen(path, withinMs) {
+async function waitForListen(address, withinMs) {
   const start = Date.now();
   while (Date.now() - start <= withinMs) {
-    const attempt = await listen(path);
+    const attempt = await listen(address);
     if (attempt.ok) {
       attempt.server.close();
       return { ok: true, afterMs: Date.now() - start };
@@ -96,28 +96,28 @@ function startHolder(name) {
     });
     child.once('error', reject);
     child.stdout.once('data', () => resolve(child));
-    child.once('exit', () => reject(new Error('holder exited before it held the lock')));
+    child.once('exit', () => reject(new Error('The holder exited before it held the lock. Read its message above, then run the probe again.')));
   });
 }
 
 async function hold(name) {
-  const path = pipeFor(name);
-  const attempt = await listen(path);
+  const address = addressFor(name);
+  const attempt = await listen(address);
   if (!attempt.ok) {
-    console.error(`could not listen on the lock: ${attempt.code}`);
+    console.error(`Could not listen on the lock (${attempt.code}). If another process holds it, stop that process, then run the probe again.`);
     process.exit(1);
   }
   console.log('holding');
-  const what = isMac ? `127.0.0.1:${path.port}` : `pipe ${name}`;
+  const what = isMac ? `127.0.0.1:${address.port}` : `pipe ${name}`;
   console.error(`Holding ${what} as pid ${process.pid}. Leave this terminal open; hard-kill it with: ${killHint(process.pid)}`);
   setInterval(() => {}, 1 << 30);
 }
 
 async function check(name) {
-  const path = pipeFor(name);
-  const second = await listen(path);
+  const address = addressFor(name);
+  const second = await listen(address);
   if (second.ok) second.server.close();
-  const answer = await ask(path);
+  const answer = await ask(address);
   const record = {
     secondListenFails: !second.ok,
     holderAnswersJson: answer.ok,
@@ -169,26 +169,26 @@ async function besideListener(host, port) {
 
 async function automated(remoteHost) {
   const name = `athanor-probe-${randomBytes(6).toString('hex')}`;
-  const path = pipeFor(name);
+  const address = addressFor(name);
   const record = { schema: 1, platform: process.platform, node: process.version };
-  if (isMac) record.port = path.port;
+  if (isMac) record.port = address.port;
 
   const holder = await startHolder(name);
-  const second = await listen(path);
+  const second = await listen(address);
   if (second.ok) second.server.close();
   record.secondListenFails = !second.ok;
-  const answer = await ask(path);
+  const answer = await ask(address);
   record.holderAnswersJson = answer.ok;
   record.hardKillReleasesWithin2s = false;
 
   record.killed = kill(holder.pid);
-  const after = await waitForListen(path, 2000);
+  const after = await waitForListen(address, 2000);
   record.hardKillReleasesWithin2s = after.ok;
   record.releaseAfterMs = after.afterMs;
 
   if (isMac) {
-    record.besideListenerOn0000 = await besideListener('0.0.0.0', path.port);
-    record.besideListenerOnColons = await besideListener('::', path.port);
+    record.besideListenerOn0000 = await besideListener('0.0.0.0', address.port);
+    record.besideListenerOnColons = await besideListener('::', address.port);
   }
 
   record.twoTerminals = 'not tried by this run; see the two-terminal steps below';

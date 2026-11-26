@@ -304,7 +304,8 @@ function printStatus(result: StatusResult): void {
 export function statusLines(result: StatusResult, platform: NodeJS.Platform = process.platform, prefix = 'athanor'): string[] {
   const lines: string[] = [];
   // On macOS a lock is a port any program can take, so a lock held with no
-  // usable answer says where to look. Elsewhere there is nothing to add.
+  // usable answer says where to look. Elsewhere there is nothing to add, and
+  // the lines keep their wording: such a slot still reads "free.".
   const unknownHolder = (kind: Kind, n: number): string | null => {
     const port = platform === 'darwin' ? lockPort(prefix, kind, n) : null;
     return port === null ? null : `held, by a program that gave no athanor answer, on 127.0.0.1:${port}. To see which, run lsof -nP -iTCP:${port} -sTCP:LISTEN.`;

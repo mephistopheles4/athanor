@@ -6,6 +6,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { join, basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { run, status } from '#dist/index.js';
@@ -137,6 +138,17 @@ test('MC1 on macOS a held run slot refuses a second holder, and answers on its l
   });
   assert.equal(JSON.parse(line).pid, process.pid);
   assert.equal(await acquire({ prefix, limit: 1, info: mine(), signal: AbortSignal.timeout(1500) }), null);
+  // On 127.0.0.1 only: the Mac's own network address does not reach the lock.
+  const outside = Object.values(networkInterfaces()).flat().find((a) => a?.family === 'IPv4' && !a.internal);
+  assert.ok(outside, 'this host has a network address to try');
+  const reached = await new Promise<boolean>((resolve) => {
+    const socket = net.connect({ host: outside.address, port: lockPort(prefix, 'slot', 1)! });
+    const done = (value: boolean) => { socket.destroy(); resolve(value); };
+    socket.setTimeout(3000, () => done(false));
+    socket.on('connect', () => done(true));
+    socket.on('error', () => done(false));
+  });
+  assert.equal(reached, false, `the lock answers on ${outside.address}`);
 });
 
 test('MC2 a slot is free within 2 seconds of its holder being hard-killed', { skip: process.platform === 'win32' && 'macOS and Linux; the probe covers the Windows pipe', timeout: 20000 }, async (t) => {
@@ -192,7 +204,7 @@ test('MC3 with every slot held, another caller is told once, waits, and gets the
   assert.equal(toldAgain, 1);
 });
 
-test('MC4 each lock has one port, and a lock number above 65 has none', async () => {
+test('MC4 each lock has one port, and a lock number above 65 has none', async (t) => {
   for (let n = 1; n <= 65; n++) {
     assert.equal(lockPort('athanor', 'slot', n), 47300 + n);
     assert.equal(lockPort('athanor', 'server', n), 47400 + n);
@@ -212,10 +224,16 @@ test('MC4 each lock has one port, and a lock number above 65 has none', async ()
   assert.deepEqual(lockPath(prefix, 1, 'server', 'darwin'), { host: '127.0.0.1', port: lockPort(prefix, 'server', 1) });
   assert.equal(lockPath(prefix, 66, 'slot', 'darwin'), null);
   assert.deepEqual(await askServer(prefix, 70000), { held: false });
+
+  // A server number comes from a container label. Under athanor's own prefix
+  // these give no usable port, so nothing is connected to.
+  await t.test('on macOS a label that gives no usable port is held by nobody', { skip: !mac && 'the loopback port lock is macOS only' }, async () => {
+    for (const n of [NaN, -50000]) assert.deepEqual(await askServer('athanor', n), { held: false });
+  });
 });
 
 test('MC6 on macOS a port another program holds shows as a held slot, with how to find that program', async (t) => {
-  await t.test('the macOS status line names the port, and the Linux and Windows lines do not', () => {
+  await t.test('the macOS status line names the port; the Linux and Windows lines keep their old wording', () => {
     const result: Parameters<typeof statusLines>[0] = {
       schema: 1, limit: 2, limitSource: 'default', slots: [{ slot: 1 }, { slot: 2, held: true }], containers: [],
       serverLimit: 1, serverLimitSource: 'default', servers: [{ server: 1, held: true }], serverContainers: [],

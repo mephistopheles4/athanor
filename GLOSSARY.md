@@ -24,9 +24,9 @@
   no host git config and no content filter (ADR 0020). The git calls that make
   those trees come before it and still use the host's git config.
 - **Slot.** One of the machine's N places for a running container. A run holds
-  slot n by holding the OS lock `athanor-slot-<n>`: a named pipe on Windows, an
-  abstract socket on Linux, a port on 127.0.0.1 on macOS (ADR 0037). The OS
-  frees it when the process ends, even after a hard kill.
+  slot n by holding its OS lock: the named pipe (Windows) or abstract socket
+  (Linux) `athanor-slot-<n>`, or on macOS port 47300 + n on 127.0.0.1 (ADR
+  0037). The OS frees it when the process ends, even after a hard kill.
 - **Run limit.** N, the most runs at once on the machine: `ATHANOR_MAX_RUNS`,
   else `maxRuns` in the machine configuration, else 2.
 - **Orphan.** An athanor container whose slot is free, left by a caller that
@@ -39,8 +39,8 @@
   with the working tree mounted read-only, a network, and its port published on
   127.0.0.1, until a signal or until it exits (ADR 0034).
 - **Server lock.** One of the machine's `maxServers` places for a server. A
-  server holds lock n by holding the OS lock `athanor-server-<n>`, by the same
-  mechanism as a slot, and holds no run slot. Its holder answers with its pid,
+  server holds lock n by holding its OS lock, `athanor-server-<n>` or on macOS
+  port 47400 + n, by the same mechanism as a slot, and holds no run slot. Its holder answers with its pid,
   start time, repo folder name, limit, name and, once known, host port.
 - **Writable folder.** A path in a server's `writable` list. The server gets a
   fresh anonymous volume at that path on every start, seeded from the image's

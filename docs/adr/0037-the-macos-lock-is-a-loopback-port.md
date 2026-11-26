@@ -1,6 +1,6 @@
 # 0037. The macOS lock is a loopback port
 
-Date: 2026-11-26 · Status: accepted (amends 0004) · Source: spec revision 3 on ATH-7
+Date: 2026-11-26 · Status: accepted (amends 0004, 0011 and 0020) · Source: spec revision 3 on ATH-7
 
 macOS has neither Windows' named pipes nor Linux's abstract sockets. So on
 macOS a run holds slot n, and a server holds lock n, by listening on TCP
@@ -17,12 +17,13 @@ on the network").
 
 ## Ports and the cap
 
-Run slot n is port 47300 + n and server lock n is 47400 + n. macOS holds at
-most 64 of each: a limit above 64 exits 125. n goes to 65 because the
-limit-mismatch warning asks about the lock above the cap. The two ranges could
-not hold more than 99 before slot 100 met server lock 0. Any other name prefix,
-which only tests set (ADR 0003), takes a port from 20000 to 46999 out of the
-SHA-256 of `<prefix>-<kind>-<n>`.
+Run slot n is port 47300 + n and server lock n is 47400 + n. On macOS athanor
+holds at most 64 of each: a limit above 64 exits 125. Ports go to n = 65
+because `run` asks the slot one above its limit, to warn when another caller
+uses a different run limit. Run slot 101 and server lock 1 would share a port,
+so under this scheme no cap could pass 99. Any other name prefix, which only
+tests set (ADR 0003), takes a port from 20000 to 46999 out of the SHA-256 of
+`<prefix>-<kind>-<n>`.
 
 The numbers are not part of athanor's public interface. A change to them needs
 no major version; `status` prints the port of a held lock that gave no athanor
@@ -30,6 +31,13 @@ answer.
 
 A port another program holds counts as a held lock. Any other listen error stops
 the run and names the address.
+
+## What it changes in 0011 and 0020
+
+Running on macOS changes two earlier rules for every platform but Windows. The
+state folder is set to mode 0700, one that already exists included (ADR 0011).
+The PATH search skips the working folder by what it is on disk, not by its text
+(ADR 0020), since a Mac's disk can spell one folder several ways.
 
 ## Probe records
 
@@ -40,7 +48,8 @@ network address is refused, and (6) whether a listen on `127.0.0.1:P` succeeds
 beside a listener on `0.0.0.0:P`, and beside one on `[::]:P`. Criterion 6 is
 recorded, not required.
 
-CI, 2026-11-26, `macos-15-arm64` (macOS 15.8.2), Node 24.22.3, port 40486:
+[CI](https://github.com/mephistopheles4/athanor/actions/runs/45903141575),
+2026-11-26, `macos-15-arm64` (macOS 15.8.2), Node 24.22.3, port 40486:
 criteria 1, 2 and 3 met (the port was free 4 ms after the kill). Criterion 6:
 the listen on 127.0.0.1 succeeds beside `0.0.0.0` and beside `[::]`, so a
 program that listens on every address does not block the lock. athanor binds

@@ -24,12 +24,12 @@ export type Kind = 'slot' | 'server';
 export const MAC_MOST_LOCKS = 64;
 // The highest lock number with a port: one above the most held, so the check
 // for a caller with a higher limit can still ask.
-const LAST_PORT_NUMBER = MAC_MOST_LOCKS + 1;
+const LAST_LOCK_WITH_PORT = MAC_MOST_LOCKS + 1;
 
 // The loopback port of lock n on macOS, or null above the last number. athanor's
 // own locks have fixed ports; any other prefix (tests only) gets one from a hash.
 export function lockPort(prefix: string, kind: Kind, n: number): number | null {
-  if (n > LAST_PORT_NUMBER) return null;
+  if (n > LAST_LOCK_WITH_PORT) return null;
   if (prefix === 'athanor') return (kind === 'slot' ? 47300 : 47400) + n;
   return 20000 + (createHash('sha256').update(`${prefix}-${kind}-${n}`).digest().readUInt32BE(0) % 27000);
 }
@@ -160,6 +160,7 @@ function askLock<A>(prefix: string, slot: number, kind: Kind, valid: (v: unknown
     if (address === null || (typeof address !== 'string' && !(Number.isInteger(address.port) && address.port >= 1 && address.port <= 65535))) {
       return resolve({ held: false });
     }
+    // Two calls because net.connect's types take a path or a port object, not either.
     const socket = typeof address === 'string' ? net.connect(address) : net.connect(address);
     let data = '';
     let connected = false;

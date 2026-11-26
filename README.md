@@ -529,8 +529,8 @@ full class.
   athanor on a repo whose folder name those containers shouldn't see. Accepted
   class "The macOS lock ports and containers".
 - **A lock port another program holds or shares.** On macOS each lock is a port
-  on 127.0.0.1: run slot n is 47300 + n, and server lock n is 47400 + n. A
-  program that holds one makes that lock look taken; `athanor status` then
+  on 127.0.0.1: run slot n is 47300 + n, and server lock n is 47400 + n (a
+  later version may change these numbers). A program that holds one makes that lock look taken; `athanor status` then
   names the port, and `lsof -nP -iTCP:<port> -sTCP:LISTEN` shows the program.
   A program that listens on every address on that port does not block the lock:
   athanor listens beside it, and that program's clients on 127.0.0.1 reach

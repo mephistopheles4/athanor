@@ -1,4 +1,5 @@
 # Two jobs on Node 24. ci-macos, at the end of the file, says what it runs.
+# The steps the two jobs share are copies: change both.
 # The ci job runs on Linux (spec S4, C27; spec on issue 8, S4; spec on
 # issue 34, S3 to S7; spec on issue 6, S6): zizmor on the workflows, the
 # workflows' own rules (scripts/check-workflows.mjs), a check that install scripts
