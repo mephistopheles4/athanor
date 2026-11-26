@@ -225,13 +225,15 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
   const bigHeader = buildTar([{ name: 'PaxHeader/x', type: 'x', declaredSize: MEGABYTE + 1 }], { end: false }).subarray(0, 512);
   const rows: { name: string; tar: Buffer; says: RegExp; late?: boolean; machine?: Record<string, unknown>; extra?: RunOptions }[] = [
     // Each of these starts with the output's own name, so only the segment rules can refuse it.
-    { name: 'parent part', tar: one('out/../x'), says: /out\/\.\.\/x/ },
+    // The name holds a right-to-left override too: a refusal shows it escaped.
+    { name: 'parent part', tar: one('out/../x\u202e'), says: /out\/\.\.\/x\\u\{202e\}/ },
     { name: 'backslash', tar: one('out/a\\b'), says: /out\/a\\b/ },
     { name: 'a part that climbs out', tar: one('out/a/../../x'), says: /out\/a\/\.\.\/\.\.\/x/ },
     { name: 'empty part', tar: one('out//x'), says: /out\/\/x/ },
     { name: 'a first part that is not the output', tar: one('other/x'), says: /other\/x.*not inside the output "out"/ },
     { name: '.git folder', tar: one('out/.git/config'), says: /out\/\.git\/config/ },
-    { name: '.GIT folder deeper', tar: one('out/sub/.GIT/HEAD'), says: /\.GIT/ },
+    // A dotless i folds to I, so only the upper-case fold refuses this one.
+    { name: '.git folder deeper, with a dotless i', tar: one('out/sub/.g\u0131t/HEAD'), says: /\.g\u0131t/ },
     { name: '.git as a regular file', tar: one('out/.git'), says: /out\/\.git/ },
     // git treats a folder holding HEAD with objects or refs as a bare repository, in whatever order the files come.
     { name: 'a bare repository layout, HEAD first', tar: buildTar([{ name: 'out/HEAD', content: 'ref: refs/heads/main\n' }, { name: 'out/objects/x' }]), says: /bare git repository/ },
@@ -240,7 +242,7 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     { name: 'a bare repository layout through a commondir file', tar: buildTar([{ name: 'out/a/HEAD' }, { name: 'out/a/commondir' }, { name: 'out/b/objects/x' }]), says: /bare git repository/ },
     { name: 'a bare repository layout in a nested folder', tar: buildTar([{ name: 'out/sub/objects/', type: '5' }, { name: 'out/sub/HEAD' }]), says: /bare git repository/ },
     { name: 'COM with a superscript', tar: one('out/COM¹.txt'), says: /COM¹/ },
-    { name: 'a device name with spaces before its extension', tar: one('out/nul  .txt'), says: /nul {2}\.txt/ },
+    { name: 'a device name with spaces before its extension', tar: one('out/conout$  .txt'), says: /conout\$ {2}\.txt/ },
     { name: 'a colon', tar: one('out/a:b'), says: /a:b/ },
     { name: 'a trailing dot', tar: one('out/x.'), says: /out\/x\./ },
     { name: 'a trailing space', tar: one('out/x '), says: /out\/x /s },
@@ -442,19 +444,19 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
   });
 
   await t.test('the time bound runs from the copy\'s start, not from each output', async (t) => {
-    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 1000 });
+    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 1500 });
     // The same run with a second output that is simply missing: the cost of everything but the wait.
     const baseline = scene(t, { outputs: ['one', 'two'], cp: { one: first } });
     const base = Date.now();
-    assert.equal((await copy(baseline, { copyTimeMs: 2000 })).result.outcome, 'pass');
+    assert.equal((await copy(baseline, { copyTimeMs: 2500 })).result.outcome, 'pass');
     const baseMs = Date.now() - base;
-    // The second output hangs. From the copy's start the bound ends it 1000 ms after the first output; a fresh bound would end it 2000 ms after.
+    // The second output hangs. From the copy's start the bound ends it 1000 ms after the first output; a fresh bound would end it 2500 ms after.
     const s = scene(t, { outputs: ['one', 'two'], cp: { one: first, two: { hang: true } } });
     const started = Date.now();
-    const { result } = await copy(s, { copyTimeMs: 2000 });
+    const { result } = await copy(s, { copyTimeMs: 2500 });
     assert.equal(result.outcome, 'error', JSON.stringify(result));
     assert.match(result.message!, /took longer/);
-    assert.ok(Date.now() - started - baseMs < 1500, 'the second output did not get a fresh 2000 ms');
+    assert.ok(Date.now() - started - baseMs < 1750, 'the second output did not get a fresh 2500 ms');
   });
 
   await t.test('a cp failing with an ssh login in its text gives a message without the login', async (t) => {

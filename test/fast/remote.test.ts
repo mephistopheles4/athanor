@@ -174,8 +174,10 @@ test('L5 a buildx builder off this machine is refused unless the machine allows 
     const { result } = await runRow(t, { name: 'unknown', scenario: { buildxFails: true, buildxFailText: 'ERROR: unknown command "inspect" for "buildx"' } });
     assert.equal(result.exitCode, 125, JSON.stringify(result));
   });
-  await t.test('with allowRemoteDocker: a docker-container node named for a remote TLS context runs, named before the build', async (t) => {
-    const { result, progress } = await runRow(t, { name: 'far', scenario: containerRemote, machine: remoteOptIn });
+  // One node's TLS is read from its context, the other's from its cacert option.
+  await t.test('with allowRemoteDocker: remote TLS nodes, one a context and one with a cacert, run and are named before the build', async (t) => {
+    const scenario = { ...containerRemote, builderEndpoints: undefined, builderNodes: [{ endpoint: 'far' }, ...tlsRemote.builderNodes] };
+    const { result, progress } = await runRow(t, { name: 'far', scenario, machine: remoteOptIn });
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
     assert.equal(progress.filter((l) => builderNotice.test(l)).length, 1, progress.join('\n'));
     assert.match(progress[0]!, builderNotice);

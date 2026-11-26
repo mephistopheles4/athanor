@@ -495,7 +495,7 @@ test('S4 athanor refuses a plain tcp endpoint unless the machine allows it', asy
   }
 });
 
-test('C32with core.autocrlf=true, a file stored with LF arrives with LF in the snapshot and the build', async (t) => {
+test('C32 with core.autocrlf=true, a file stored with LF arrives with LF in the snapshot and the build', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig, files: { 'test/lf.sh': 'one\ntwo\n', 'run.sh': 'a\nb\n' } });
   git(repo, ['config', 'core.autocrlf', 'true']);
