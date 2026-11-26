@@ -1,4 +1,5 @@
-# One job on Linux and Node 24 (spec S4, C27; spec on issue 8, S4; spec on
+# Two jobs on Node 24. ci-macos, at the end of the file, says what it runs.
+# The ci job runs on Linux (spec S4, C27; spec on issue 8, S4; spec on
 # issue 34, S3 to S7; spec on issue 6, S6): zizmor on the workflows, the
 # workflows' own rules (scripts/check-workflows.mjs), a check that install scripts
 # are off and every package comes from the public registry, npm ci from the
@@ -125,6 +126,145 @@ jobs:
         run: node test/run.mjs fast
       - name: Docker tier
         run: node test/run.mjs docker
+      - name: Pack and install
+        run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
+          set -e
+          # The repo's .npmrc turns prepack off (ADR 0018), so the build is an
+          # explicit step. The tiers left a dist/ behind: clearing it, and the
+          # index.d.ts check below, fail a pack made without the build. The
+          # diff against a fresh build, further down, fails a pack whose dist/
+          # differs from what this commit's source compiles to, such as a
+          # dist/ written by another step between the build and the pack.
+          # Neither checks the compiler: a hijacked compiler shapes both
+          # builds (accepted class "The release and CI supply chain" in the threat model).
+          rm -rf dist
+          node scripts/build.mjs
+          npm pack --pack-destination "$RUNNER_TEMP"
+          tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
+          # Only bin/, dist/ (compiled JavaScript and its declarations), the
+          # README, the LICENSE and package.json ship, with dist/index.d.ts.
+          # The release workflow runs the same check on what it stages.
+          node scripts/check-pack.mjs "$tgz"
+          packed_dist="$RUNNER_TEMP/athanor-packed-dist"
+          rm -rf "$packed_dist"
+          mkdir -p "$packed_dist"
+          tar -xzf "$tgz" -C "$packed_dist" package/dist
+          node scripts/build.mjs
+          diff -r "$packed_dist/package/dist" dist
+          prefix="$RUNNER_TEMP/athanor-prefix"
+          # npm skips the repo's .npmrc for a global install, so the flag is explicit.
+          npm install --global --ignore-scripts --prefix "$prefix" "$tgz"
+          expected=$(node -p "require('./package.json').version")
+          actual=$("$prefix/bin/athanor" --version)
+          test "$actual" = "$expected"
+      - name: Typed import by package name
+        run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
+          set -e
+          tgz=$(ls "$RUNNER_TEMP"/mephistopheles4-athanor-*.tgz)
+          project="$RUNNER_TEMP/athanor-typed"
+          mkdir -p "$project"
+          cd "$project"
+          echo '{ "name": "athanor-typed", "private": true, "type": "module" }' > package.json
+          npm install --ignore-scripts --no-audit --no-fund "$tgz"
+          # The public options type-check. The test-only options (ADR 0003) are
+          # left out of the declarations, so a typed caller that names one gets
+          # an error.
+          printf '%s\n' "import { run, status, prune } from '@mephistopheles4/athanor';" \
+            "export const used = () => [run({ cwd: '.', name: 'test', untracked: true }), status(), prune({ dryRun: true, days: 30 })];" \
+            "// @ts-expect-error docker is a test-only option." "export const h1 = () => run({ docker: ['docker'] });" \
+            "// @ts-expect-error prefix is a test-only option." "export const h2 = () => run({ prefix: 'x' });" \
+            "// @ts-expect-error timeLimitSeconds is a test-only option." "export const h3 = () => run({ timeLimitSeconds: 1 });" \
+            "// @ts-expect-error graceSeconds is a test-only option." "export const h4 = () => run({ graceSeconds: 1 });" \
+            "// @ts-expect-error docker is a test-only option." "export const h5 = () => status({ docker: ['docker'] });" \
+            "// @ts-expect-error prefix is a test-only option." "export const h6 = () => status({ prefix: 'x' });" \
+            "// @ts-expect-error docker is a test-only option." "export const h7 = () => prune({ docker: ['docker'] });" > check.mts
+          node "$GITHUB_WORKSPACE/node_modules/typescript/bin/tsc" --noEmit --strict \
+            --module nodenext --moduleResolution nodenext \
+            --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts
+
+  # The same checks on a Mac (spec on ATH-7, S8): the install checks, both tsc
+  # checks, the .mjs syntax check, the source check, the lock probe, the fast
+  # tier, the pack-and-install check and the typed import. zizmor, the
+  # workflows' own rules and the docker tier run in the ci job only.
+  ci-macos:
+    name: ci-macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # Proves CI reads the repo's .npmrc, and that the install and the
+      # signature check below use the public registry and its keys. It reads
+      # .npmrc and the lockfile as text and prints no line of either.
+      - name: Check that install scripts are off and the registry is public
+        run: |
+          set -e
+          ignore=$(npm config get ignore-scripts)
+          registry=$(npm config get registry)
+          echo "ignore-scripts: $ignore"
+          echo "registry: $registry"
+          test "$ignore" = "true" || { echo "npm would run install scripts here. Put ignore-scripts=true in the .npmrc at the repo root."; exit 1; }
+          test "$registry" = "https://registry.npmjs.org/" || { echo "npm is not set to the public registry. Remove the registry setting from the .npmrc, or from the npm environment variables."; exit 1; }
+          node -e '
+            const fs = require("node:fs");
+            const bad = [];
+            const cred = [];
+            fs.readFileSync(".npmrc", "utf8").split("\n").forEach((line, i) => {
+              const t = line.trim();
+              if (/_auth|_password/i.test(t)) cred.push(i + 1);
+              else if (t !== "" && t[0] !== "#" && t[0] !== ";" && t !== "ignore-scripts=true") bad.push(i + 1);
+            });
+            if (cred.length) {
+              console.error(".npmrc line " + cred.join(", ") + " looks like a credential, comment or not. Remove it; the file is public, and npm logins belong in your own npm configuration.");
+              process.exit(1);
+            }
+            if (bad.length) {
+              console.error(".npmrc line " + bad.join(", ") + " is not a comment or ignore-scripts=true. Remove it; the file is public and holds no other setting.");
+              process.exit(1);
+            }
+            const off = [];
+            const walk = (o, path) => {
+              for (const [k, v] of Object.entries(o)) {
+                if (k === "resolved" && typeof v === "string" && !v.startsWith("https://registry.npmjs.org/")) off.push(path);
+                else if (v && typeof v === "object") walk(v, path + "/" + k);
+              }
+            };
+            walk(JSON.parse(fs.readFileSync("package-lock.json", "utf8")), "");
+            if (off.length) {
+              console.error("package-lock.json has a package that does not resolve from https://registry.npmjs.org/: " + off.join(", ") + ". Regenerate the lockfile from the public registry.");
+              process.exit(1);
+            }
+          '
+      - name: Install the compiler from the lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      # Fails the job if the registry's signature over an installed package's
+      # own metadata (its name, version and integrity) does not verify. It does
+      # not compare the installed files: npm ci enforces the lockfile hashes.
+      # Only what npm ci put in node_modules needs it: the later installs of
+      # athanor's own tarball fetch nothing from the registry.
+      - name: Check the registry signatures of the installed packages
+        run: npm audit signatures
+      - name: Strict type check
+        run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Strict type check of the tests
+        run: node node_modules/typescript/bin/tsc -p test/tsconfig.json --noEmit
+      - name: Syntax check of every .mjs file
+        run: |
+          set -e
+          git ls-files '*.mjs' | while read -r f; do node --check "$f"; done
+      - name: Source check
+        run: node scripts/check-source.mjs
+      # The automated criteria of the lock on macOS (1, 2, 3 and 6); the JSON
+      # record is in this step's log.
+      - name: Probe the lock
+        run: node scripts/probe-pipe.mjs
+      - name: Fast tier
+        run: node test/run.mjs fast
       - name: Pack and install
         run: | # zizmor: ignore[adhoc-packages] This installs athanor's own tarball to test the package; the test needs the install.
           set -e
