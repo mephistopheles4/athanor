@@ -47,4 +47,6 @@ program that listens on every address does not block the lock. athanor binds
 beside it, and that program's clients on 127.0.0.1 reach athanor's answer.
 Criteria 4 and 5 were not tried.
 
-The owner's run on their own Mac is not yet recorded here.
+CI's is the only record: the spec's checks by hand on the owner's Mac (the
+probe, the docker tier on Docker Desktop, and a repo's own run) were dropped on
+2026-11-26, for want of a Mac. No Mac engine has been checked.

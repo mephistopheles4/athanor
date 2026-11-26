@@ -16,9 +16,9 @@ image build runs the repo's own Dockerfile with network access.
 ## Install
 
 Needs Node 24 or later, git 2.32 or later, and a Docker engine (Docker Desktop
-on Windows and macOS). On macOS, CI tests athanor on Apple Silicon without an
-engine; Docker Desktop on macOS is not yet checked with a real one. Colima and
-OrbStack are expected to work but are not checked, nor are Intel Macs.
+on Windows and macOS). On macOS, athanor is tested only in CI, on Apple Silicon
+and without a Docker engine. Docker Desktop, Colima and OrbStack are expected to
+work there, but none is checked on a Mac, and nor is an Intel Mac.
 
 athanor uses the Docker engine and buildx builder you have configured
 (`DOCKER_HOST`, the Docker context and the buildx builder) when they are on
