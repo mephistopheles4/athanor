@@ -32,7 +32,7 @@ flowchart LR
         Run["build and test containers"]
     end
     subgraph Net["Network"]
-        Pipe["slot pipe, a server's port"]
+        Pipe["slot pipe or ports, a server's port"]
     end
     subgraph Rel["Release and CI"]
         Pub["packages, actions, tags, publish"]
@@ -105,8 +105,8 @@ advice not to share an engine with people you don't trust.
 ### What athanor exposes on the network
 
 **Crosses:** out, a slot holder's report (pid, start time, repo folder name,
-limit, and a server's name and host port) on the Windows slot pipe, and a
-server's published port.
+limit, and a server's name and host port) on the Windows slot pipe and on
+macOS's loopback lock ports, and a server's published port.
 
 **Controls:**
 
@@ -118,9 +118,16 @@ server's published port.
   can reach a loopback port, and athanor does not check the version; nor
   against another container on Docker's default bridge network, which can
   reach the port at the container's own address.
+- **athanor** listens for a macOS lock on 127.0.0.1 only (ADR 0037). It does
+  not hold against a Mac engine's containers on a bridge network, which can
+  reach the host's loopback (Docker Desktop and OrbStack by
+  `host.docker.internal`, Colima likely by its host gateway): a `serve`
+  container and an image build can read the holders' reports. They can neither
+  hold nor block a lock, and a test run's container has `--network none`.
 
-**Residual:** the classes "The Windows slot pipe on the network" and "A
-server's port on the network". They rest on the README's advice for each.
+**Residual:** the classes "The Windows slot pipe on the network", "The macOS
+lock ports and containers" and "A server's port on the network". They rest on
+the README's advice for each.
 
 ### Release and CI
 
@@ -237,6 +244,7 @@ quadrantChart
   quadrant-3 Accept
   quadrant-4 Watch
   Windows slot pipe on the network: [0.15, 0.20]
+  macOS lock ports and containers: [0.25, 0.15]
   A server's port on the network: [0.10, 0.20]
   Shared or remote engine: [0.15, 0.82]
   Release and CI supply chain: [0.25, 0.92]
@@ -250,6 +258,9 @@ Positions are judgement, after the controls.
   elsewhere on the network can possibly read what slot holders report; a fix
   needs a native package, which "no dependencies" rules out, and the details are
   small.
+- **The macOS lock ports and containers.** On macOS a `serve` container or an
+  image build can read what lock holders report; a socket file would shut them
+  out but carries a cleanup race, and the details are small.
 - **A server's port on the network.** On a Linux engine before 28.0, hosts on
   the same segment can reach a server's loopback port, and any other container
   on Docker's default bridge network can; the server is the repo's own dev

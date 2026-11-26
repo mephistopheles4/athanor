@@ -16,7 +16,9 @@ image build runs the repo's own Dockerfile with network access.
 ## Install
 
 Needs Node 24 or later, git 2.32 or later, and a Docker engine (Docker Desktop
-on Windows).
+on Windows and macOS). On macOS, CI tests athanor on Apple Silicon without an
+engine; Docker Desktop on macOS is not yet checked with a real one. Colima and
+OrbStack are expected to work but are not checked, nor are Intel Macs.
 
 athanor uses the Docker engine and buildx builder you have configured
 (`DOCKER_HOST`, the Docker context and the buildx builder) when they are on
@@ -233,7 +235,7 @@ into `<dir>`, a folder athanor makes and that must not exist yet. It copies
 after a test that passed, failed or met the memory limit (the outcome
 stays `memory`, exit 137, and a report cut off by the kill may be partly
 written), and not after a timeout, an interrupt or an error. In the example, `<your profile>` is `$HOME` on Linux and
-`%USERPROFILE%` on Windows, and `athanor-reports` must exist already; athanor
+macOS and `%USERPROFILE%` on Windows, and `athanor-reports` must exist already; athanor
 makes only the last folder:
 
 - Pick a parent under your user profile and outside any folder a sync client
@@ -425,6 +427,7 @@ An optional `~/.athanor/config.json` (or `$ATHANOR_HOME/config.json`):
   "processes": 1024, "maxProcesses": 1024, "maxServers": 2 }
 ```
 
+On macOS, a run limit or `maxServers` above 64 is an error.
 `ATHANOR_MAX_RUNS` overrides `maxRuns` for one shell or for CI. `maxServers`
 (default 2, a positive whole number) is how many `athanor serve` servers run
 at once on the machine; it has no environment variable. A repo value
@@ -518,6 +521,21 @@ full class.
   users you don't trust with those details, keep repo folder names you'd
   rather not show off the machine's runs. Accepted class "The Windows slot
   pipe on the network".
+- **Containers on a Mac.** On macOS a `serve` container, and an image build,
+  can reach your Mac's own loopback (on Docker Desktop through
+  `host.docker.internal`) and read what `status` shows about slot holders: pid,
+  start time, repo folder name and limit, and, for a server, its name and port.
+  They can't hold or block a lock, and a test run has no network. Don't run
+  athanor on a repo whose folder name those containers shouldn't see. Accepted
+  class "The macOS lock ports and containers".
+- **A lock port another program holds or shares.** On macOS each lock is a port
+  on 127.0.0.1: run slot n is 47300 + n, and server lock n is 47400 + n. A
+  program that holds one makes that lock look taken; `athanor status` then
+  names the port, and `lsof -nP -iTCP:<port> -sTCP:LISTEN` shows the program.
+  A program that listens on every address on that port does not block the lock:
+  athanor listens beside it, and that program's clients on 127.0.0.1 reach
+  athanor instead. Stop or move such a program. Out of scope: the machine, in
+  the threat model's [Scope](docs/threat-model.md#scope).
 - **A server's port.** `athanor serve` binds to 127.0.0.1, so any program on this machine, and any other container on Docker's default network, can reach your dev server. On Linux, use Docker Engine 28.0 or later: older engines let other hosts on your network reach ports on 127.0.0.1. Don't serve on a machine whose other users you don't trust with your dev server. The older-engine case and another container on Docker's default network are the accepted class "A server's port on the network"; a program or account on this machine is the machine's, out of scope.
 - **Other programs on your machine.** Any program on the machine can block
   runs, read or fake what `status` shows about slot holders, and, with the
@@ -577,8 +595,8 @@ full class.
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
   platform, they can read the copy or redirect a write while it runs. Pick a
-  parent under your user profile. On Linux, athanor refuses a parent that other
-  accounts can write unless it has the sticky bit. Out of scope: other
+  parent under your user profile. On Linux and macOS, athanor refuses a parent
+  that other accounts can write unless it has the sticky bit. Out of scope: other
   accounts on the machine are the machine's.
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a

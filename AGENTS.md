@@ -87,7 +87,8 @@ skips the project file for those), so every pack builds `dist/` first
 the hand publish. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
-  Runs anywhere Node 24, git and `tar` run (Linux, and Windows 10 and later).
+  Runs anywhere Node 24, git and `tar` run (Linux, macOS, and Windows 10 and
+  later).
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
 - `node node_modules/typescript/bin/tsc -p test/tsconfig.json` — the type check
@@ -116,11 +117,12 @@ signatures` (the registry's signatures over the installed packages' metadata;
 the source check, both tiers, and a pack-and-install check that builds before
 it packs, compares the packed `dist/` with a rebuild, checks the packed file's
 contents and type-checks an import of the package by its name, on Linux and
-Node 24. Every test sets its own `ATHANOR_HOME` and name
+Node 24. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
+workflows' own rules and the docker tier. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
-Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. Among the Windows checks, which are the owner's by hand, are the fast tier on Windows (`T14`) and the docker tier on Docker Desktop (`K5`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
+Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. The owner's hand checks include, on Windows, the fast tier (`T14`) and the docker tier on Docker Desktop (`K5`); on macOS, the lock probe (`MC11`), the docker tier (`MC12`) and athanor-poc (`MC15`). On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
 
 ## Releases
 

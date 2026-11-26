@@ -77,10 +77,14 @@ as given; never `.cmd` or `.bat`, which need a shell. Each name is looked up
 once, and every later start of it runs the same file. A path given as the
 program, such as the tests' fake Docker, starts unchanged.
 
-The skip compares folders by their resolved text, ignoring case on Windows. A
+The skip compares folders by their resolved text, ignoring case on Windows.
+Since 2026-11-26 (ATH-7), everywhere but Windows two folders are the same when
+they are one file on disk (equal device and inode), with resolved text only when
+either cannot be read; so a link to the working folder, or a macOS spelling in
+another case or Unicode form, is skipped too. A
 full PATH entry into the repo, such as the `node_modules/.bin` folder npm puts
-first for its scripts, or another spelling of the working folder, such as a
-share or long-path form, is searched like any other: that is the environment's
+first for its scripts, or on Windows another spelling of the working folder,
+such as a share or long-path form, is searched like any other: that is the environment's
 choice, and a process that sets the environment already chooses the git that
 runs. The owner chose no guard for these and no accepted risk.
 

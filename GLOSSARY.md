@@ -25,8 +25,8 @@
   those trees come before it and still use the host's git config.
 - **Slot.** One of the machine's N places for a running container. A run holds
   slot n by holding the OS lock `athanor-slot-<n>`: a named pipe on Windows, an
-  abstract socket on Linux. The OS frees it when the process ends, even after a
-  hard kill.
+  abstract socket on Linux, a port on 127.0.0.1 on macOS (ADR 0037). The OS
+  frees it when the process ends, even after a hard kill.
 - **Run limit.** N, the most runs at once on the machine: `ATHANOR_MAX_RUNS`,
   else `maxRuns` in the machine configuration, else 2.
 - **Orphan.** An athanor container whose slot is free, left by a caller that

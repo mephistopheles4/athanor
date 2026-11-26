@@ -8,7 +8,7 @@ changed one gets a new record that names the one it replaces.
 | [0001](0001-no-runtime-dependencies.md) | No runtime dependencies |
 | [0002](0002-no-shell.md) | No command string, no shell |
 | [0003](0003-core-and-thin-cli.md) | A core module with a thin CLI (extended by 0023) |
-| [0004](0004-the-os-lock.md) | The slot lock is the OS lock |
+| [0004](0004-the-os-lock.md) | The slot lock is the OS lock (amended by 0037) |
 | [0005](0005-the-container-gets-nothing-from-the-host.md) | The container gets nothing from the host (superseded by 0015) |
 | [0006](0006-the-image-is-built-from-the-hashed-set.md) | The image is built from exactly the files that key its tag |
 | [0007](0007-snapshots-never-write-the-repo.md) | Snapshots never write the repo (extended by 0023) |
@@ -37,3 +37,4 @@ changed one gets a new record that names the one it replaces.
 | [0034](0034-a-server-sees-the-working-tree-read-only-and-publishes-one-port-on-127.0.0.1.md) | A server sees the working tree read-only and publishes one port on 127.0.0.1 (extends 0004, 0016 and 0021) |
 | [0035](0035-a-tag-starts-staging.md) | A tag starts staging (amends 0019 and, in part, 0031) |
 | [0036](0036-the-threat-model-is-boundaries-first-and-capped-at-3000-words.md) | The threat model is boundaries first, the machine is out of scope, and it is capped at 3,000 words (amends 0033) |
+| [0037](0037-the-macos-lock-is-a-loopback-port.md) | The macOS lock is a loopback port (amends 0004) |
