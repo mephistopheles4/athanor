@@ -555,7 +555,7 @@ test('B9 a run with a base leaves the repo as it was and no scratch folder behin
   // The copy of the history goes as soon as the stream is written, while the container still runs.
   const folder = tempDir(t, 'athanor-pack-');
   writeFileSync(join(folder, 'keep.txt'), 'kept\n');
-  const hanging = fake(t, { run: { hangMs: 3000 } });
+  const hanging = fake(t, { run: { hangMs: 1500 } });
   const running = run({ cwd: repo, docker: hanging.docker, prefix: uniquePrefix(), name: 'check', basePackFolder: folder });
   let done = false;
   void running.then(() => { done = true; });

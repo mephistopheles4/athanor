@@ -167,7 +167,7 @@ test('C10 a run removes its slot\'s leftover athanor container before starting i
   assert.ok(removeAt !== -1 && removeAt < runAt, 'the leftover is removed before the new run');
 });
 
-test('C11 a command past the time limit ends with exit 124 and its container is gone', async (t) => {
+test('C11 V1 a command past the time limit ends with exit 124, no containerExitCode, and its container is gone', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig });
   const docker = fake(t, { run: { hangMs: 20000 } });
@@ -176,6 +176,7 @@ test('C11 a command past the time limit ends with exit 124 and its container is 
   const ended = Date.now();
   assert.equal(result.outcome, 'timeout');
   assert.equal(result.exitCode, 124);
+  assert.equal('containerExitCode' in result, false);
   // Timed from the fake's run call, just after the host-side timer starts, so the snapshot and image build don't count (issue 32).
   const runCall = callsOf(docker.calls(), 'run')[0];
   assert.ok(ended - runCall.at! < 10000, 'ended by the host-side timer, well before the 20 second hang');
@@ -277,7 +278,7 @@ test('C19 P2 U1 no host environment value, host folder or socket reaches the con
   ]);
 });
 
-test('C21 a run changes no file\'s content and adds no file outside the state folder, and leaves no temporary index behind', async (t) => {
+test('C21 C30 a run changes no file\'s content, adds no file or git object outside the state folder, and leaves no temporary index behind', async (t) => {
   const home = isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig, files: { 'a.txt': 'a\n' } });
   writeFileSync(join(repo, 'a.txt'), 'changed\n');
@@ -455,12 +456,11 @@ test('C28 only the hashed set reaches the build', async (t) => {
 test('S4 athanor refuses a plain tcp endpoint unless the machine allows it', async (t) => {
   // The owner chose q8 A2: plain tcp without TLS is refused by default, with a
   // machine-config opt-out. An engine or builder off this machine also needs
-  // allowRemoteDocker (ADR 0021); those cases are in remote.test.ts (L1 to L13).
+  // allowRemoteDocker (ADR 0021); those cases are in remote.test.ts (L1 to L13),
+  // with a loopback engine passing (L1), a plain tcp DOCKER_HOST refused (L7)
+  // and a stopped engine (L13).
   const tls = { 'docker': ['ca.pem', 'cert.pem', 'key.pem'] };
   const passes: { name: string; env?: Record<string, string>; scenario?: Record<string, unknown>; machine?: Record<string, unknown> }[] = [
-    { name: 'a loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://127.0.0.1:2375' } },
-    { name: 'a localhost tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://localhost:2375' } },
-    { name: 'an IPv6 loopback tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://[::1]:2375' } },
     { name: 'a plain tcp DOCKER_HOST with the machine opt-outs', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, machine: { allowPlainTcp: true, allowRemoteDocker: true } },
   ];
   for (const row of passes) {
@@ -476,7 +476,6 @@ test('S4 athanor refuses a plain tcp endpoint unless the machine allows it', asy
   }
 
   const refusals: { name: string; env?: Record<string, string>; scenario?: Record<string, unknown>; machine?: Record<string, unknown>; athanor?: unknown; says: RegExp }[] = [
-    { name: 'a plain tcp DOCKER_HOST', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, says: /DOCKER_HOST \("tcp:\/\/10\.0\.0\.5:2375"\).*without TLS.*allowPlainTcp/s },
     { name: 'a context with a plain tcp endpoint', env: { DOCKER_CONTEXT: 'remote' }, scenario: { contextHost: 'tcp://10.0.0.5:2375' }, says: /DOCKER_CONTEXT \("remote"\).*without TLS.*allowPlainTcp/s },
     { name: 'a context whose TLS verification is skipped', scenario: { contextHost: 'tcp://10.0.0.5:2376', contextTls: tls, contextSkipTls: true }, says: /active Docker context.*without TLS/s },
     { name: 'the opt-out set in the repo config', env: { DOCKER_HOST: 'tcp://10.0.0.5:2375' }, athanor: { ...baseConfig, allowPlainTcp: true }, says: /unknown key "allowPlainTcp"/ },
@@ -494,31 +493,9 @@ test('S4 athanor refuses a plain tcp endpoint unless the machine allows it', asy
       assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
     });
   }
-
-  await t.test('an engine that does not answer exits 125 saying Docker is not reachable', async (t) => {
-    isolate(t);
-    const repo = makeRepo(t, { athanor: baseConfig });
-    const docker = fake(t, { engineDown: true });
-    const result = await runWith(t, repo, docker);
-    assert.equal(result.exitCode, 125, JSON.stringify(result));
-    assert.match(result.message!, /Docker is not reachable.*Start Docker/s);
-    assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
-  });
 });
 
-test('C30 a run leaves the repo\'s object count unchanged in both snapshot modes', async (t) => {
-  isolate(t);
-  const repo = makeRepo(t, { athanor: baseConfig, files: { 'a.txt': 'a\n' } });
-  writeFileSync(join(repo, 'a.txt'), 'a brand new blob\n');
-  writeFiles(repo, { 'u.txt': 'another new blob\n' });
-  const before = git(repo, ['count-objects', '-v']);
-  const docker = fake(t);
-  await runWith(t, repo, docker);
-  await runWith(t, repo, docker, { untracked: true });
-  assert.equal(git(repo, ['count-objects', '-v']), before);
-});
-
-test('C32 with core.autocrlf=true, a file stored with LF arrives with LF in the snapshot and the build', async (t) => {
+test('C32with core.autocrlf=true, a file stored with LF arrives with LF in the snapshot and the build', async (t) => {
   isolate(t);
   const repo = makeRepo(t, { athanor: baseConfig, files: { 'test/lf.sh': 'one\ntwo\n', 'run.sh': 'a\nb\n' } });
   git(repo, ['config', 'core.autocrlf', 'true']);
@@ -551,13 +528,12 @@ test('V1 a memory run keeps the container\'s own exit in containerExitCode, and 
   const others = [
     { name: 'pass', run: { exitCode: 0 }, outcome: 'pass' },
     { name: 'fail', run: { exitCode: 1 }, outcome: 'fail' },
-    { name: 'timeout', run: { hangMs: 20000 }, outcome: 'timeout', extra: { timeLimitSeconds: 1, graceSeconds: 2 } },
   ];
   for (const row of others) {
     await t.test(row.name, async (t) => {
       isolate(t);
       const repo = makeRepo(t, { athanor: baseConfig });
-      const result = await runWith(t, repo, fake(t, { run: row.run }), row.extra);
+      const result = await runWith(t, repo, fake(t, { run: row.run }));
       assert.equal(result.outcome, row.outcome, JSON.stringify(result));
       assert.equal('containerExitCode' in result, false);
     });

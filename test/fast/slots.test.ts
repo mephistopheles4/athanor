@@ -64,8 +64,11 @@ test('C13 status lists the limit and its source, each holder, and every athanor 
   writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 3 }));
   const prefix = uniquePrefix();
   const repo = makeRepo(t, { athanor: baseConfig });
-  const docker = fake(t, { run: { hangMs: 3000 } });
-  const pending = run({ cwd: repo, docker: docker.docker, prefix });
+  // The run holds its slot until the checks are done, and is then interrupted.
+  const docker = fake(t, { run: { hangMs: 20000 } });
+  const done = new AbortController();
+  t.after(() => done.abort());
+  const pending = run({ cwd: repo, docker: docker.docker, prefix, signal: done.signal });
   while (callsOf(docker.calls(), 'run').length === 0) await new Promise((r) => setTimeout(r, 50));
   docker.addContainer(`${prefix}-slot-3`, { 'athanor.slot': '3' });
   await holdSlot(t, prefix, 2, 'not json\n');
@@ -90,7 +93,8 @@ test('C13 status lists the limit and its source, each holder, and every athanor 
     { name: `${prefix}-slot-3`, slot: 3, orphan: true },
   ]);
   assert.equal(callsOf(docker.calls(), 'run').length, runsBefore, 'status starts no container');
-  await pending;
+  done.abort();
+  assert.equal((await pending).outcome, 'interrupted');
 
   process.env.ATHANOR_MAX_RUNS = '2';
   assert.equal((await status({ docker: docker.docker, prefix })).limitSource, 'environment');
