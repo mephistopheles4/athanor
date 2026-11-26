@@ -39,10 +39,21 @@ function absolute(path: string): boolean {
   return windows ? /^([a-z]:[\\/]|[\\/]{2}[^\\/])/i.test(path) : path.startsWith('/');
 }
 
-// The same folder, whatever its trailing separator, and on Windows its case.
+// The same folder, whatever its trailing separator. Windows compares the
+// spelling without its case. Elsewhere two folders are the same when they are
+// one file on disk, so a link, or a disk that ignores case or Unicode form (as
+// macOS does), cannot spell the working folder another way. When either cannot
+// be read, the spellings are compared.
 function sameFolder(a: string, b: string): boolean {
   const [x, y] = [resolve(a), resolve(b)];
-  return windows ? x.toLowerCase() === y.toLowerCase() : x === y;
+  if (windows) return x.toLowerCase() === y.toLowerCase();
+  try {
+    // As big integers, so a large inode number is not rounded.
+    const [s, t] = [statSync(x, { bigint: true }), statSync(y, { bigint: true })];
+    return s.dev === t.dev && s.ino === t.ino;
+  } catch {
+    return x === y;
+  }
 }
 
 function isProgram(file: string): boolean {

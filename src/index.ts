@@ -376,6 +376,8 @@ export async function status(options: StatusOptions = {}): Promise<StatusResult>
   const home = stateFolder();
   const machine = readMachineConfig(home);
   const { limit, source } = resolveRunLimit(process.env, machine);
+  // Both limits are checked before any lock is asked and any Docker call.
+  const serverLimit = resolveServerLimit(machine);
   const slots: SlotStatus[] = [];
   const held = new Set<number>();
   for (let n = 1; n <= limit; n++) {
@@ -391,7 +393,6 @@ export async function status(options: StatusOptions = {}): Promise<StatusResult>
     .filter((c) => names.test(c.name))
     .map((c) => ({ name: c.name, slot: c.slot, orphan: !held.has(c.slot) }));
 
-  const serverLimit = resolveServerLimit(machine);
   const serverNames = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-server-\\d+$`);
   const serverContainers = (await listServerContainers(docker)).filter((c) => serverNames.test(c.name));
   const heldServers = new Set<number>();

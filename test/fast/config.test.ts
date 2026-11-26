@@ -4,11 +4,13 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, symlinkSync, linkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFileSync, symlinkSync, linkSync, existsSync, mkdirSync, rmSync, chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { run } from '#dist/index.js';
+import { run, serve, status } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
+import { stateFolder } from '#dist/image.js';
+import { resolveRunLimit, resolveServerLimit } from '#dist/run-config.js';
 import type { Call } from '../helpers.ts';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.ts';
 
@@ -207,6 +209,63 @@ test('C24 the machine file sets limits under the repo, is read from ATHANOR_HOME
     const { results } = await together(t, 2, { hangMs: 800 });
     assert.deepEqual(results.map((r) => r.slot), [1, 1]);
   });
+});
+
+// MC5 (spec on ATH-7): athanor holds at most 64 of each lock on macOS.
+test('MC5 on macOS a limit above 64 exits 125 naming where it was set; Linux and Windows accept it', async (t) => {
+  const file = join(tempDir(t), 'config.json');
+  const machine = (values: { maxRuns?: number; maxServers?: number }) => ({ file, values });
+  const refused = (resolve: () => unknown, message: string) => assert.throws(resolve, { name: 'AthanorError', message });
+  const fromEnv = 'ATHANOR_MAX_RUNS is 65, but athanor can hold at most 64 runs on macOS. Set it to 64 or less.';
+  const fromFile = (key: string) => `${key} 65 in ${file} is above 64, the most athanor can hold on macOS. Set it to 64 or less.`;
+
+  await t.test('macOS refuses 65 and takes 64', () => {
+    refused(() => resolveRunLimit({ ATHANOR_MAX_RUNS: '65' }, machine({}), 'darwin'), fromEnv);
+    refused(() => resolveRunLimit({}, machine({ maxRuns: 65 }), 'darwin'), fromFile('maxRuns'));
+    refused(() => resolveServerLimit(machine({ maxServers: 65 }), 'darwin'), fromFile('maxServers'));
+    assert.equal(resolveRunLimit({ ATHANOR_MAX_RUNS: '64' }, machine({}), 'darwin').limit, 64);
+    assert.equal(resolveRunLimit({}, machine({ maxRuns: 64 }), 'darwin').limit, 64);
+    assert.equal(resolveServerLimit(machine({ maxServers: 64 }), 'darwin').limit, 64);
+  });
+
+  await t.test('Linux and Windows take 65', () => {
+    for (const platform of ['linux', 'win32'] as const) {
+      assert.equal(resolveRunLimit({ ATHANOR_MAX_RUNS: '65' }, machine({}), platform).limit, 65);
+      assert.equal(resolveRunLimit({}, machine({ maxRuns: 65 }), platform).limit, 65);
+      assert.equal(resolveServerLimit(machine({ maxServers: 65 }), platform).limit, 65);
+    }
+  });
+
+  await t.test('on a Mac, run, serve and status refuse it', { skip: process.platform !== 'darwin' && 'the cap is macOS only' }, async (t) => {
+    const home = isolate(t, { ATHANOR_MAX_RUNS: '65' });
+    const repo = makeRepo(t, { athanor: { ...baseConfig, servers: { dev: { argv: ['node'], port: 4321 } } } });
+    const ran = await runIn(t, repo);
+    assertSetupError(ran.result, ran.calls, /ATHANOR_MAX_RUNS is 65/);
+    const shown = await cli(['status'], { cwd: repo });
+    assert.equal(shown.code, 125, shown.stderr);
+    assert.match(shown.stderr, /ATHANOR_MAX_RUNS is 65/);
+
+    delete process.env.ATHANOR_MAX_RUNS;
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxRuns: 65 }));
+    assert.match((await runIn(t, repo)).result.message!, /maxRuns 65 in /);
+    await assert.rejects(status({ docker: fake(t).docker, prefix: uniquePrefix() }), /maxRuns 65 in /);
+
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ maxServers: 65 }));
+    const served = await serve({ cwd: repo, name: 'dev', docker: fake(t).docker, prefix: uniquePrefix() });
+    assert.equal(served.exitCode, 125, JSON.stringify(served));
+    assert.match(served.message!, /maxServers 65 in /);
+    await assert.rejects(status({ docker: fake(t).docker, prefix: uniquePrefix() }), /maxServers 65 in /);
+    // run never reads maxServers.
+    assert.equal((await runIn(t, repo)).result.outcome, 'pass');
+  });
+});
+
+// MC9 (spec on ATH-7).
+test('MC9 the state folder ends with mode 0700, even when it already existed with 0755', { skip: process.platform === 'win32' && 'Windows has no POSIX modes' }, (t) => {
+  const home = isolate(t);
+  chmodSync(home, 0o755);
+  stateFolder();
+  assert.equal(statSync(home).mode & 0o777, 0o700);
 });
 
 test('T8 a configuration message names the file the bad value came from', async (t) => {

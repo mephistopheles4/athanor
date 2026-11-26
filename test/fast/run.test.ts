@@ -432,7 +432,8 @@ test('C28 only the hashed set reaches the build', async (t) => {
     assert.match(lastBuildTar(d).find((e) => e.name === 'tool.sh')!.mode, /755$/);
   });
 
-  await t.test('on Windows, a context spelled in another case is the same folder', { skip: process.platform !== 'win32' && 'case-insensitive paths are Windows only' }, async (t) => {
+  // MC8 (spec on ATH-7): macOS disks ignore case too, by default.
+  await t.test('MC8 on Windows and macOS, a context spelled in another case is the same folder', { skip: process.platform !== 'win32' && process.platform !== 'darwin' && 'only Windows and macOS disks ignore case' }, async (t) => {
     const upper = makeRepo(t, { athanor: { ...baseConfig, context: 'TEST' } });
     const d = fake(t);
     const result = await runWith(t, upper, d);

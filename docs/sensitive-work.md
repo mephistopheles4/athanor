@@ -4,11 +4,15 @@
   The slot locks are open to any local program (accepted class "A compromised
   machine or sandbox", for a local program under any account; and accepted
   class "The Windows slot pipe on the network", for the pipe's reach from the
-  network). It
+  network). On
+  macOS each lock is a loopback port (ADR 0037), open to any local program in
+  the same way, and readable by a Mac engine's `serve` containers and image
+  builds (accepted class "The macOS lock ports and containers"). athanor
   relies on the operating system's user separation for the state folder
-  (mode 0700 on Linux; on Windows, the home folder's own access rules). The
-  `--output` folder is mode 0700 on Linux, and on Windows inherits its parent's
-  rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
+  (mode 0700 on every platform but Windows; on Windows, the home folder's own
+  access rules). The
+  `--output` folder is mode 0700 on every platform but Windows, and on Windows
+  inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
   engine, its access control is its operator's (accepted class "A shared or remote engine, and the network"). The
   release path has its own: npm's trusted-publisher binding to this repo,

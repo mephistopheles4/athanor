@@ -5,6 +5,8 @@ import { run, status, prune, serve } from './index.js';
 import type { RunResult, StatusResult, PruneResult, ServeResult, Serving } from './index.js';
 import type { DockerCommand } from './docker.js';
 import { AthanorError, EXIT } from './errors.js';
+import { lockPort } from './slots.js';
+import type { Kind } from './slots.js';
 
 type Command = 'run' | 'status' | 'prune' | 'serve';
 
@@ -295,20 +297,35 @@ export function resultLine(result: RunResult): string {
 }
 
 function printStatus(result: StatusResult): void {
-  say(`run limit ${result.limit} (from ${result.limitSource}).`);
+  for (const line of statusLines(result)) say(line);
+}
+
+/** @internal The lines status prints, exported for tests (ADR 0003). */
+export function statusLines(result: StatusResult, platform: NodeJS.Platform = process.platform, prefix = 'athanor'): string[] {
+  const lines: string[] = [];
+  // On macOS a lock is a port any program can take, so a lock held with no
+  // usable answer says where to look. Elsewhere there is nothing to add, and
+  // the lines keep their wording: such a slot still reads "free.".
+  const unknownHolder = (kind: Kind, n: number): string | null => {
+    const port = platform === 'darwin' ? lockPort(prefix, kind, n) : null;
+    return port === null ? null : `held, by a program that gave no athanor answer, on 127.0.0.1:${port}. To see which, run lsof -nP -iTCP:${port} -sTCP:LISTEN.`;
+  };
+  const since = (started: number | undefined): string =>
+    Number.isFinite(new Date(started as number).getTime()) ? new Date(started as number).toISOString() : 'an unknown time';
+  lines.push(`run limit ${result.limit} (from ${result.limitSource}).`);
   for (const s of result.slots) {
-    say(s.pid === undefined
-      ? `slot ${s.slot}: free.`
-      : `slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${Number.isFinite(new Date(s.started as number).getTime()) ? new Date(s.started as number).toISOString() : 'an unknown time'}, limit ${s.limit} (as the holder reports).`);
+    if (s.pid !== undefined) lines.push(`slot ${s.slot}: held by pid ${s.pid} for ${s.repo}, since ${since(s.started)}, limit ${s.limit} (as the holder reports).`);
+    else lines.push(`slot ${s.slot}: ${(s.held && unknownHolder('slot', s.slot)) || 'free.'}`);
   }
-  for (const c of result.containers) say(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
-  if (result.containers.length === 0) say('no athanor containers.');
-  say(`server limit ${result.serverLimit} (from ${result.serverLimitSource}).`);
+  for (const c of result.containers) lines.push(`container ${c.name} on slot ${c.slot}${c.orphan ? ', an orphan: its slot is free' : ''}.`);
+  if (result.containers.length === 0) lines.push('no athanor containers.');
+  lines.push(`server limit ${result.serverLimit} (from ${result.serverLimitSource}).`);
   for (const s of result.servers) {
-    if (s.pid !== undefined) say(`server ${s.server}: ${s.name} held by pid ${s.pid} for ${s.repo}${s.port !== undefined ? `, on port ${s.port}` : ''}, since ${Number.isFinite(new Date(s.started as number).getTime()) ? new Date(s.started as number).toISOString() : 'an unknown time'} (as the holder reports).`);
-    else if (s.held) say(`server ${s.server}: held.`);
+    if (s.pid !== undefined) lines.push(`server ${s.server}: ${s.name} held by pid ${s.pid} for ${s.repo}${s.port !== undefined ? `, on port ${s.port}` : ''}, since ${since(s.started)} (as the holder reports).`);
+    else if (s.held) lines.push(`server ${s.server}: ${unknownHolder('server', s.server) ?? 'held.'}`);
   }
-  for (const c of result.serverContainers) say(`server container ${c.name} on lock ${c.server}${c.orphan ? ', an orphan: its lock is free. docker rm -f -v ' + c.name + ' removes it, or the next athanor serve does' : ''}.`);
+  for (const c of result.serverContainers) lines.push(`server container ${c.name} on lock ${c.server}${c.orphan ? ', an orphan: its lock is free. docker rm -f -v ' + c.name + ' removes it, or the next athanor serve does' : ''}.`);
+  return lines;
 }
 
 function printPrune(result: PruneResult): void {

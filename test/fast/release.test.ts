@@ -290,8 +290,13 @@ const releaseFails = (t: TestContext, yaml: string, line: number, what: RegExp) 
 };
 
 // F5 runs the marked block of release.yml's publish job with sh. A host with
-// no sh skips it by name; Linux proves it, in athanor's run and in CI.
+// no sh skips it by name, and so does macOS: the block reads GNU tar's listing,
+// which the publish job's Ubuntu has, and macOS's tar writes dates another way,
+// so there it refuses every manifest. Linux proves it, in athanor's run and in CI.
 const hasSh = spawnSync('sh', ['-c', 'exit 0'], { shell: false }).status === 0;
+const noF5 = !hasSh
+  ? 'no sh on this host; the block is proven on Linux, in athanor\'s run and in CI'
+  : process.platform === 'darwin' && 'the block reads GNU tar\'s listing, not macOS tar\'s; it is proven on Linux, in athanor\'s run and in CI';
 
 function tagRuleBlock(): string {
   const lines = readFileSync(join(root, '.github', 'workflows', 'release.yml'), 'utf8').split(/\r?\n/);
@@ -327,7 +332,7 @@ function stepEnv(name: string, key: string): string {
   assert.fail(`step ${name} has no ${key} in its env`);
 }
 
-test('F5 publish stops unless the tarball\'s package.json version equals the file-name version and the tag\'s, and takes the dist-tag from it alone', { skip: hasSh ? false : 'no sh on this host; the block is proven on Linux, in athanor\'s run and in CI' }, async (t) => {
+test('F5 publish stops unless the tarball\'s package.json version equals the file-name version and the tag\'s, and takes the dist-tag from it alone', { skip: noF5 }, async (t) => {
   const block = tagRuleBlock();
   const manifest = (version: unknown) => JSON.stringify({ name: '@mephistopheles4/athanor', version, description: 'CANARYTEXT' });
   const member = (content: string) => ({ name: 'package/package.json', content });

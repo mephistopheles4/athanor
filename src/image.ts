@@ -16,7 +16,7 @@ export function stateFolder(): string {
     ? process.env.ATHANOR_HOME
     : join(homedir(), '.athanor');
   mkdirSync(home, { recursive: true, mode: 0o700 });
-  if (process.platform === 'linux') chmodSync(home, 0o700);
+  if (process.platform !== 'win32') chmodSync(home, 0o700);
   return home;
 }
 

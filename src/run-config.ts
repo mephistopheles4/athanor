@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
 import { checkOutputs, hasControl, showName } from './copy-out.js';
+import { MAC_MOST_LOCKS } from './slots.js';
 
 export const DEFAULTS = Object.freeze({
   maxRuns: 2,
@@ -247,16 +248,30 @@ export function readMachineConfig(home: string): MachineConfig {
   return { file, values: parsed as Partial<MachineValues> };
 }
 
+// Whether a limit is more locks than athanor can hold: only macOS has a most.
+const aboveMost = (limit: number, platform: NodeJS.Platform): boolean => platform === 'darwin' && limit > MAC_MOST_LOCKS;
+
+// A machine file limit, refused when it is more than athanor can hold.
+function fileLimit(machine: MachineConfig, key: 'maxRuns' | 'maxServers', value: number, platform: NodeJS.Platform): { limit: number; source: 'file' } {
+  if (aboveMost(value, platform)) {
+    throw new AthanorError(`${key} ${value} in ${machine.file} is above ${MAC_MOST_LOCKS}, the most athanor can hold on macOS. Set it to ${MAC_MOST_LOCKS} or less.`);
+  }
+  return { limit: value, source: 'file' };
+}
+
 // The run limit and where it came from: environment, file or default.
-export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig): { limit: number; source: 'environment' | 'file' | 'default' } {
+export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig, platform: NodeJS.Platform = process.platform): { limit: number; source: 'environment' | 'file' | 'default' } {
   if (env.ATHANOR_MAX_RUNS !== undefined) {
     const raw = env.ATHANOR_MAX_RUNS;
     if (!/^[1-9][0-9]*$/.test(raw)) {
       throw new AthanorError(`ATHANOR_MAX_RUNS is "${raw}", but it must be a positive whole number, such as 2. Fix or unset it.`);
     }
+    if (aboveMost(Number(raw), platform)) {
+      throw new AthanorError(`ATHANOR_MAX_RUNS is ${raw}, but athanor can hold at most ${MAC_MOST_LOCKS} runs on macOS. Set it to ${MAC_MOST_LOCKS} or less.`);
+    }
     return { limit: Number(raw), source: 'environment' };
   }
-  if (machine.values.maxRuns !== undefined) return { limit: machine.values.maxRuns, source: 'file' };
+  if (machine.values.maxRuns !== undefined) return fileLimit(machine, 'maxRuns', machine.values.maxRuns, platform);
   return { limit: DEFAULTS.maxRuns, source: 'default' };
 }
 
@@ -537,8 +552,9 @@ function checkServer(rawName: string, server: unknown, place: string, lead: stri
 }
 
 // The server limit and where it came from: the machine file or the default.
-export function resolveServerLimit(machine: MachineConfig): { limit: number; source: 'file' | 'default' } {
-  return machine.values.maxServers !== undefined ? { limit: machine.values.maxServers, source: 'file' } : { limit: DEFAULTS.maxServers, source: 'default' };
+export function resolveServerLimit(machine: MachineConfig, platform: NodeJS.Platform = process.platform): { limit: number; source: 'file' | 'default' } {
+  if (machine.values.maxServers !== undefined) return fileLimit(machine, 'maxServers', machine.values.maxServers, platform);
+  return { limit: DEFAULTS.maxServers, source: 'default' };
 }
 
 // Everything `athanor serve` needs from the configuration (issue 35).
