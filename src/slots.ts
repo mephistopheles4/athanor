@@ -1,7 +1,9 @@
-// Run slots, held by the OS lock the probe selected (ADR 0004): a named pipe
-// on Windows, an abstract socket on Linux. The OS frees it when the holder's
-// process ends, even after a hard kill.
+// Run slots, held by the OS lock the probe selected (ADR 0004, 0037): a named
+// pipe on Windows, an abstract socket on Linux, a loopback TCP port on macOS.
+// The OS frees it when the holder's process ends, even after a hard kill.
+import { createHash } from 'node:crypto';
 import net from 'node:net';
+import { AthanorError } from './errors.js';
 
 // What a holder tells whoever asks; `slot` and `limit` are added when it holds.
 export type HolderInfo = { pid: number; started: number; repo: string; [key: string]: unknown };
@@ -17,9 +19,29 @@ export type Asked = { held: false } | { held: true; answer?: HolderAnswer };
 // different name, so a server never holds a run slot.
 export type Kind = 'slot' | 'server';
 
-export function lockPath(prefix: string, slot: number, kind: Kind = 'slot'): string {
+// The highest lock number with a port on macOS: one above the most athanor
+// holds, so the check for a caller with a higher limit can still ask (ADR 0037).
+const LAST_PORT_NUMBER = 65;
+
+// The loopback port of lock n on macOS, or null above the last number. athanor's
+// own locks have fixed ports; any other prefix (tests only) gets one from a hash.
+export function lockPort(prefix: string, kind: Kind, n: number): number | null {
+  if (n > LAST_PORT_NUMBER) return null;
+  if (prefix === 'athanor') return (kind === 'slot' ? 47300 : 47400) + n;
+  return 20000 + (createHash('sha256').update(`${prefix}-${kind}-${n}`).digest().readUInt32BE(0) % 27000);
+}
+
+// Where a lock listens: a pipe or socket name, or on macOS a loopback port.
+export type LockAddress = string | { host: '127.0.0.1'; port: number };
+
+// Null only on macOS, for a lock number athanor never holds there.
+export function lockPath(prefix: string, slot: number, kind: Kind = 'slot', platform: NodeJS.Platform = process.platform): LockAddress | null {
+  if (platform === 'darwin') {
+    const port = lockPort(prefix, kind, slot);
+    return port === null ? null : { host: '127.0.0.1', port };
+  }
   const name = `${prefix}-${kind}-${slot}`;
-  return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : `\0${name}`;
+  return platform === 'win32' ? `\\\\.\\pipe\\${name}` : `\0${name}`;
 }
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
@@ -34,15 +56,22 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
 // add to it once it knows more (a server's port).
 function tryHold(prefix: string, slot: number, info: Record<string, unknown>, kind: Kind = 'slot'): Promise<net.Server | null> {
   return new Promise((resolve, reject) => {
+    const address = lockPath(prefix, slot, kind);
+    // Never listen with no address: Node would pick a free port and call it held.
+    if (address === null) return resolve(null);
     const server = net.createServer((socket) => {
       socket.on('error', () => {});
       socket.end(JSON.stringify({ [kind]: slot, ...info }) + '\n');
     });
     server.once('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE' || error.code === 'EACCES') resolve(null);
-      else reject(error);
+      else if (typeof address === 'string') reject(error);
+      else {
+        const what = kind === 'slot' ? 'run slot' : 'server lock';
+        reject(new AthanorError(`athanor could not listen on ${address.host}:${address.port} for ${what} ${slot} (${error.code}). Something on this Mac, such as a sandbox, refuses local ports; allow it, or run athanor outside that sandbox.`));
+      }
     });
-    server.listen(lockPath(prefix, slot, kind), () => resolve(server));
+    server.listen(address, () => resolve(server));
   });
 }
 
@@ -122,7 +151,13 @@ export function askServer(prefix: string, n: number, timeoutMs = 1000): Promise<
 
 function askLock<A>(prefix: string, slot: number, kind: Kind, valid: (v: unknown) => v is A, timeoutMs: number): Promise<{ held: false } | { held: true; answer?: A }> {
   return new Promise((resolve) => {
-    const socket = net.connect(lockPath(prefix, slot, kind));
+    const address = lockPath(prefix, slot, kind);
+    // A number with no address, or no usable port, is held by nobody. A server
+    // number comes from a container label, so it can be anything.
+    if (address === null || (typeof address !== 'string' && !(Number.isInteger(address.port) && address.port >= 1 && address.port <= 65535))) {
+      return resolve({ held: false });
+    }
+    const socket = typeof address === 'string' ? net.connect(address) : net.connect(address);
     let data = '';
     let connected = false;
     const done = (value: { held: false } | { held: true; answer?: A }) => { clearTimeout(timer); socket.destroy(); resolve(value); };
