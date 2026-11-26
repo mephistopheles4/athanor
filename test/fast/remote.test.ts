@@ -354,6 +354,19 @@ test('L15 the engine\'s own docker builder gets no second notice', async (t) => 
   }
 });
 
+// MC16 (spec on ATH-7): where each Mac engine puts its socket by default.
+test('MC16 the default endpoints of Docker Desktop, Colima and OrbStack on macOS are local', async (t) => {
+  const home = '/Users/someone';
+  for (const path of ['.docker/run/docker.sock', '.colima/default/docker.sock', '.orbstack/run/docker.sock']) {
+    const host = `unix://${home}/${path}`;
+    await t.test(host, async (t) => {
+      const { result, progress } = await runRow(t, { name: host, scenario: { contextHost: host } });
+      assert.equal(result.outcome, 'pass', JSON.stringify(result));
+      assert.ok(!progress.some((l) => /another machine/.test(l)), progress.join('\n'));
+    });
+  }
+});
+
 test('L7 the opt-out does not let a plain tcp engine through', async (t) => {
   // A host and port with no scheme is plain tcp to Docker.
   for (const host of ['tcp://10.0.0.5:2375', '10.0.0.5:2375']) {

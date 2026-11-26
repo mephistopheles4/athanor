@@ -19,9 +19,12 @@ export type Asked = { held: false } | { held: true; answer?: HolderAnswer };
 // different name, so a server never holds a run slot.
 export type Kind = 'slot' | 'server';
 
-// The highest lock number with a port on macOS: one above the most athanor
-// holds, so the check for a caller with a higher limit can still ask (ADR 0037).
-const LAST_PORT_NUMBER = 65;
+// The most run slots, and the most server locks, athanor holds on macOS, where
+// each is a port (ADR 0037).
+export const MAC_MOST_LOCKS = 64;
+// The highest lock number with a port: one above the most held, so the check
+// for a caller with a higher limit can still ask.
+const LAST_PORT_NUMBER = MAC_MOST_LOCKS + 1;
 
 // The loopback port of lock n on macOS, or null above the last number. athanor's
 // own locks have fixed ports; any other prefix (tests only) gets one from a hash.

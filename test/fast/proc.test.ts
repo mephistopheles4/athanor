@@ -2,10 +2,12 @@
 // multibyte character split across chunks comes back as written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { symlinkSync } from 'node:fs';
 import { basename, delimiter, dirname, join, parse, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { call, findProgram, programNames } from '#dist/proc.js';
 import { AthanorError } from '#dist/errors.js';
+import { tempDir } from '../helpers.ts';
 
 test('I22 captured output with a multibyte character split across chunks comes back as written', async () => {
   // Write the two bytes of "é" in separate writes, a pause apart, on both streams.
@@ -49,4 +51,23 @@ test('G8 a program is found only in PATH\'s absolute entries, never in the worki
   assert.deepEqual(programNames('git.exe'), ['git.exe']);
   // An absolute entry after the skipped ones: the full path to node.
   assert.equal(findProgram(name, { path: ['.', '', basename(dir), dir].join(delimiter), cwd: elsewhere }), join(dir, basename(process.execPath)));
+});
+
+// MC7 (spec on ATH-7): the working folder is skipped however a PATH entry
+// reaches it, so folders are compared by what they are, not how they are spelled.
+test('MC7 a PATH entry that is the working folder through a link, or on macOS in another case, is skipped', { skip: process.platform === 'win32' && 'Windows compares the spelling, without case' }, (t) => {
+  const dir = dirname(process.execPath);
+  const name = parse(process.execPath).name;
+  const link = join(tempDir(t), 'link');
+  symlinkSync(dir, link);
+  const skipped = (path: string, cwd: string) => assert.throws(() => findProgram(name, { path, cwd }),
+    (error: unknown) => error instanceof AthanorError && /was not found on PATH/.test(error.message));
+  skipped(link, dir);
+  skipped(dir, link);
+  if (process.platform === 'darwin') {
+    assert.notEqual(dir.toUpperCase(), dir);
+    skipped(dir.toUpperCase(), dir);
+  }
+  // From another working folder, the same link is an ordinary entry.
+  assert.equal(findProgram(name, { path: link, cwd: tmpdir() }), join(link, basename(process.execPath)));
 });
