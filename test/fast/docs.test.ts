@@ -15,10 +15,10 @@ function countWords(text: string): number {
 }
 
 const BUDGETS: Record<string, number> = {
-  'AGENTS.md': 1650,
+  'AGENTS.md': 1700,
   'GLOSSARY.md': 1200,
   'docs/releasing.md': 6520,
-  'docs/agents/issue-tracker.md': 640,
+  'docs/agents/issue-tracker.md': 840,
   'docs/agents/triage-labels.md': 410,
 };
 

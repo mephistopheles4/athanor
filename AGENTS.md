@@ -139,7 +139,9 @@ release and its date, at least 7 days old.
 
 ## The tracker
 
-Issues on `mephistopheles4/athanor`. Before you read or post to the tracker,
+Issues are on Linear (team `ATH`, project `athanor`); pull requests stay on
+GitHub, `mephistopheles4/athanor`. A bare "issue N" in this repo is an older
+GitHub issue there. Before you read or post to the tracker,
 read [the issue tracker rules](docs/agents/issue-tracker.md), including whose
 text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
