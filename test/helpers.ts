@@ -30,7 +30,8 @@ function strippedFake(): string {
 }
 
 export function tempDir(t?: TestContext, label = 'athanor-test-'): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), label)));
+  // The native form gives the long name of a Windows 8.3 short folder (RUNNER~1), as the core does.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), label)));
   t?.after?.(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
   return dir;
 }
