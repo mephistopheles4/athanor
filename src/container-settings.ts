@@ -72,8 +72,10 @@ const baseCommit = (init: string): string[] => [
   init,
   'git index-pack --stdin < "$b/pack" >/dev/null',
   'if [ -s "$b/shallow" ]; then cp "$b/shallow" .git/shallow; fi',
-  'git update-ref --stdin < "$b/refs"',
-  'git symbolic-ref HEAD refs/heads/athanor',
+  // Both write reflog entries; with no identity git looks up the host name
+  // for an email, which waits 5 s each with no network (ATH-10).
+  'git -c user.name=athanor -c user.email=athanor@localhost update-ref --stdin < "$b/refs"',
+  'git -c user.name=athanor -c user.email=athanor@localhost symbolic-ref HEAD refs/heads/athanor',
   'read -r t < "$b/tree"; git read-tree "$t"',
   'git update-index -q --refresh >/dev/null || true',
   'rm -rf "$b"',

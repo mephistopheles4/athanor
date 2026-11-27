@@ -1,5 +1,5 @@
-# Two jobs on Node 24. ci-macos, at the end of the file, says what it runs.
-# The steps the two jobs share are copies: change both.
+# Three jobs on Node 24. ci-macos and ci-windows, at the end of the file, say
+# what they run. The steps the jobs share are copies: change each.
 # The ci job runs on Linux (spec S4, C27; spec on issue 8, S4; spec on
 # issue 34, S3 to S7; spec on issue 6, S6): zizmor on the workflows, the
 # workflows' own rules (scripts/check-workflows.mjs), a check that install scripts
@@ -321,3 +321,26 @@ jobs:
           node "$GITHUB_WORKSPACE/node_modules/typescript/bin/tsc" --noEmit --strict \
             --module nodenext --moduleResolution nodenext \
             --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts
+
+  # The fast tier on Windows (T14), which was the owner's check by hand: npm ci
+  # from the lockfile, the strict tsc check of the tests and the fast tier. The
+  # docker tier on Docker Desktop (K5) stays by hand: a Windows runner has no
+  # Linux container engine.
+  ci-windows:
+    name: ci-windows
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install the compiler from the lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Strict type check of the tests
+        run: node node_modules/typescript/bin/tsc -p test/tsconfig.json --noEmit
+      - name: Fast tier
+        run: node test/run.mjs fast

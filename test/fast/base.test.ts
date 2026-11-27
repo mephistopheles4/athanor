@@ -319,6 +319,9 @@ function carried(calls: Call[]): { entries: TarEntry[]; files: Record<string, Bu
 function intoFreshRepo(t: TestContext, files: Record<string, Buffer>, format = 'sha1'): string {
   const dir = tempDir(t, 'athanor-fresh-');
   git(dir, ['init', '-q', `--object-format=${format}`]);
+  // update-ref --stdin below runs without the helper's committer (see git() in helpers.ts).
+  git(dir, ['config', 'user.name', 'athanor-test']);
+  git(dir, ['config', 'user.email', 'athanor-test@localhost']);
   const r = spawnSync('git', ['index-pack', '--stdin'], { cwd: dir, input: files.pack, shell: false });
   assert.equal(r.status, 0, String(r.stderr));
   const gitDir = join(dir, '.git');

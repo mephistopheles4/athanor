@@ -8,6 +8,7 @@
 // The last line is "result: <tier> pass" or "result: <tier> fail".
 import { spawn, spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,7 +59,11 @@ if (files.length === 0) {
 }
 // A configuration the machine names must not reach a test.
 delete process.env.ATHANOR_CONFIG;
-const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--test', '--test-concurrency=1', ...files], { stdio: 'inherit', shell: false });
+// Test files run side by side, one per CPU: each file is its own process, and
+// every test has its own state folder and lock name prefix, so none share a
+// lock, a port or a folder. Tests within a file still run one at a time.
+const concurrency = availableParallelism();
+const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--test', `--test-concurrency=${concurrency}`, ...files], { stdio: 'inherit', shell: false });
 child.on('exit', (code) => {
   console.log(`result: ${tier} ${code === 0 ? 'pass' : 'fail'}`);
   process.exit(code ?? 1);
