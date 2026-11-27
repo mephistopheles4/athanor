@@ -18,7 +18,7 @@ test('I22 captured output with a multibyte character split across chunks comes b
   assert.equal(ended.stderr, 'é');
 });
 
-// G8: git and docker start by name, and one that PATH does not hold is named in
+// G8, as ATH-9 cut it down: git and docker start by name, and one that PATH does not hold is named in
 // a plain message. A missing working folder is not reported that way.
 test('G8 a program PATH does not hold ends in a plain message', async (t) => {
   const name = 'athanor-no-such-program';

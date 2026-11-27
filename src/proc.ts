@@ -30,7 +30,8 @@ export interface Started {
   done: Promise<Ended>;
 }
 
-// Start argv[0] with argv.slice(1).
+// Start argv[0] with argv.slice(1). A program PATH does not hold ends in
+// `done`'s error; only `call` turns that into the plain message.
 export function start(argv: string[], { cwd, env, stdin = 'ignore', capture = true, onStdout, onStderr }: StartOptions = {}): Started {
   // stdout and stderr are always piped, so neither is null; Node's types
   // cannot tell that while stdin is either.

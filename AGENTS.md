@@ -47,9 +47,10 @@ decisions are in [docs/adr/](docs/adr/).
   `--network none`, and the same caps, limits and proxy blanks.
 - **The archive step carries the tree as committed.** Every `git archive` runs
   in athanor's own git folder, with `-filter` on every path and pinned line
-  endings, attributes file and file modes. That folder's `git init` and every
+  endings, global attributes file and file modes. That folder's `git init` and every
   archive drop `GIT_COMMON_DIR` and `GIT_WORK_TREE`, so neither places
-  another repository there. The host's other git settings apply (ADR 0020). A
+  another repository there. The host's other git settings apply: ATH-9 cut the rest of ADR 0020's
+  clean environment. A
   change here is security-sensitive work.
 - **A user-facing accepted threat class has a README line.** A change that
   adds or changes an accepted class a user has to act on or know about also

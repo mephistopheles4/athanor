@@ -84,8 +84,8 @@
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), pinned for the run and checked
   again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
-  The archive step runs no content filter, pins its line endings, attributes
-  file and file modes, and takes no `GIT_COMMON_DIR` or `GIT_WORK_TREE`
+  The archive step runs no content filter, pins its line endings, global
+  attributes file and file modes, and takes no `GIT_COMMON_DIR` or `GIT_WORK_TREE`
   (ADR 0020; G2, G5, T11); the host's other git settings reach it, as they do
   the git calls that record the work (accepted class "What athanor records, shows and leaves behind").
   A base name is checked before git sees it (no leading `-`, no revision

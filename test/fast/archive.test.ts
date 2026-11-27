@@ -1,4 +1,5 @@
-// The archive step carries the tree as committed (spec on issue 20, ADR 0020):
+// The archive step carries the tree as committed (spec on issue 20, ADR 0020,
+// cut down by ATH-9):
 // no content filter runs, the tree's own attributes still apply, and no
 // repository location from the host reaches the archive folder. Each test puts
 // the host settings it needs in its own environment and temporary files, set
@@ -39,6 +40,7 @@ function configFile(t: TestContext, text: string): string {
   return file;
 }
 
+// G2, as ATH-9 cut it down.
 test('G2 a repository location from the host never reaches the archive folder', async (t) => {
   const rows: { name: string; env: (repo: string, copy: string) => Record<string, string> }[] = [
     { name: 'GIT_COMMON_DIR naming the repo\'s own git folder', env: (repo) => ({ GIT_COMMON_DIR: join(repo, '.git') }) },

@@ -213,7 +213,9 @@ athanor exposes on the network, and release and CI.
   the build cache (which `prune` does not clear), and a `FROM` line can pull
   the owner's private images with their registry login. The test runs as the
   image's user with six capabilities. A copied report lands as written, and
-  git's error text, printed as written, can carry terminal escape codes.
+  git's error text, printed as written, can carry terminal escape codes. On
+  Windows, a program file in the repo or the working folder can be started in
+  place of git or docker, on the host (ATH-9).
 - **Third parties relied on:** Docker, Docker Desktop and its VM, git, Node,
   npm, GitHub, the operating system, and the agent harness and its model
   provider: what athanor prints goes to its caller and, for an agent session,

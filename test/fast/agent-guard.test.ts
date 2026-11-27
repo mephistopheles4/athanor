@@ -28,9 +28,9 @@ function fakeAthanor(dir: string): string {
   return dir;
 }
 
-function runHook(input: unknown, path: string): string {
+function runHook(input: unknown, path: string, cwd?: string): string {
   const env = { ...process.env, PATH: path, Path: path };
-  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, encoding: 'utf8', shell: false });
+  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, cwd, encoding: 'utf8', shell: false });
   assert.equal(r.status, 0, 'the hook always exits 0');
   assert.equal(r.stderr, '');
   return r.stdout;
@@ -53,6 +53,11 @@ test('H1 a host run of the fast tier is refused while athanor is on the machine'
     assert.match(out.hookSpecificOutput.permissionDecisionReason, /athanor run fast/);
     assert.match(out.hookSpecificOutput.permissionDecisionReason, /--host-fallback=/);
   }
+  // A relative PATH entry counts from the working folder.
+  const here = tempDir(t);
+  fakeAthanor(join(here, 'rel'));
+  const out = JSON.parse(runHook(call('node test/run.mjs fast'), 'rel', here));
+  assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', 'a relative PATH entry is searched');
 });
 
 test('H2 everything else passes in silence: no athanor, the docker tier, a named fallback, other commands, bad input', (t) => {

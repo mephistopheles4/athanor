@@ -23,8 +23,8 @@ export interface Scratch {
   // lazy fetch, and the run's object folder, so the snapshot's own objects are
   // found. It sets no GIT_DIR: git finds the repo's refs from its root.
   baseEnv: Env;
-  // An empty file: the archive's attributes file, and the base's global config
-  // and grafts file.
+  // An empty file: the archive's global attributes file, and the base's global
+  // config and grafts file.
   emptyFile: string;
   // The repo's object format, sha1 or sha256.
   format: string;
@@ -150,14 +150,13 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
   const repoObjects = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { cwd: root, what: 'find the object store' })).trim();
   writeFileSync(join(objects, 'info', 'alternates'), resolve(repoObjects) + '\n');
   const realIndex = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'], { cwd: root, what: 'find the index' })).trim();
-  // A git folder of athanor's own for every archive. Its
-  // info/attributes, which outranks the tree's .gitattributes, unsets
-  // export-ignore, export-subst and filter, so the archive holds exactly the
-  // tree and runs no content filter. The tree's text, eol, ident and
-  // working-tree-encoding attributes still apply (ADR 0020).
+  // A git folder of athanor's own for every archive. Its info/attributes, which
+  // outranks the tree's .gitattributes, unsets export-ignore, export-subst and
+  // filter, so the archive holds exactly the tree and runs no content filter.
+  // The tree's text, eol, ident and working-tree-encoding attributes still
+  // apply (ADR 0020).
   const emptyFile = join(dir, 'empty');
   writeFileSync(emptyFile, '');
-  const clean = cleanGitEnv(emptyFile);
   // That folder is a repository of athanor's own, so no variable that places
   // another one may reach it: with GIT_COMMON_DIR, init would write that other
   // repository's config and the attributes file below would go unread, and with
@@ -169,6 +168,8 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
   await git(['init', '--bare', '-q', `--object-format=${format}`, archiveDir], { cwd: dir, env: inherited, what: 'make a folder for archives' });
   mkdirSync(join(archiveDir, 'info'), { recursive: true });
   writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst -filter\n');
+  // For the base's git calls only.
+  const clean = cleanGitEnv(emptyFile);
   let copies = 0;
   return {
     dir,
@@ -447,10 +448,9 @@ export async function buildContext(
 
 // A tar stream of a commit or tree, for a Docker child's stdin. It comes from
 // athanor's own git folder, so it holds exactly the tree, with the archive
-// settings pinned here; the attributes file is pinned empty, so the owner's
-// attributes change no byte. A carried
-// base's four files ride after the tree, in their own folder (ADR 0032).
-// Returns the git child; its stdout is the stream.
+// settings pinned here; the global attributes file is pinned empty, and a
+// system one still applies. A carried base's four files ride after the tree, in
+// their own folder (ADR 0032). Returns the git child; its stdout is the stream.
 export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf, added: string[] = []): Started {
   const pinned = [
     ...ARCHIVE_CONFIG,

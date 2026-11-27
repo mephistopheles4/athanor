@@ -263,7 +263,7 @@ files it left out. It never changes your working tree, index, refs or stash
 list; it writes outside the state folder only into an `--output` folder.
 
 The files reach the container and the image build as committed: athanor pins
-their line endings and file modes, leaves out your own git attributes file,
+their line endings and file modes, leaves out your global git attributes file,
 and applies your repo's own `.gitattributes` settings for `text`, `eol`,
 `ident` and `working-tree-encoding`. The step that packs them into a tar
 stream (`git archive`) runs no git content filter, so a Git LFS file arrives
@@ -496,8 +496,12 @@ full class.
   proxy settings, passwords included. The tests run as root unless the
   Dockerfile names another user, and keep six Linux capabilities. Everything
   tracked under `context`, a file added with `git add -N` included, reaches
-  that build. Use athanor only on repos you trust to build. Out of scope: a
-  repo's own code, in the threat model's [Scope](docs/threat-model.md#scope).
+  that build. On Windows, a program file in the repo, or in the folder you run
+  athanor from, can also be started in place of git or docker, and then runs on
+  your machine, outside any container. Use athanor only on repos you trust to
+  build, and on Windows only on repos you would run on your machine. Out of
+  scope: a repo's own code, in the threat model's
+  [Scope](docs/threat-model.md#scope).
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
   builder's operator receives your work, decides the result and chooses the
