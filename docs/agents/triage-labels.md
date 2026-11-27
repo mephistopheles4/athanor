@@ -21,12 +21,6 @@ Triage sets it. An issue with no tier label is not yet triaged.
 | `tier:standard` | A short spec on the issue, read for what is unstated; one build session, ending with tests and the lenses the diff calls for. |
 | `tier:thorough` | A spec read before the owner approves it, cut into tickets; one build session per ticket. |
 
-By default, auth, secrets, crypto, input validation and data migrations are
-sensitive work: the session recommends `tier:thorough` with the security pair,
-and the owner takes it or not. In athanor, a change to what reaches the
-container, to path checks, or to how athanor handles the Docker endpoint is
-input validation.
-
 ## Creating the labels
 
 The eight labels exist on the Linear team `athanor`. To recreate one, the owner

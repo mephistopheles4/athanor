@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripTypeScriptTypes } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import type { TestContext } from 'node:test';
 import { run } from '#dist/index.js';
@@ -13,6 +14,20 @@ import type { RunResult } from '#dist/index.js';
 const here = dirname(fileURLToPath(import.meta.url));
 export const bin = join(here, '..', 'bin', 'athanor.mjs');
 export const fakeDocker = join(here, 'fake-docker.ts');
+
+// The fake Docker as plain JavaScript, its types stripped once per test
+// process (ATH-10). Node strips a .ts file's types on every start, which cost
+// more than half of each fake call; a test makes thousands of them.
+let fakeDockerJs: string | undefined;
+function strippedFake(): string {
+  if (fakeDockerJs === undefined) {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'athanor-fakejs-')));
+    process.once('exit', () => rmSync(dir, { recursive: true, force: true }));
+    fakeDockerJs = join(dir, 'fake-docker.mjs');
+    writeFileSync(fakeDockerJs, stripTypeScriptTypes(readFileSync(fakeDocker, 'utf8')));
+  }
+  return fakeDockerJs;
+}
 
 export function tempDir(t?: TestContext, label = 'athanor-test-'): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), label)));
@@ -44,8 +59,13 @@ export function cli(args: string[], { cwd, env = {}, input }: { cwd?: string; en
   });
 }
 
+// A committer for the helpers' own git calls. A clone or ref update writes a
+// reflog entry, and with no identity git looks up the host's name for an
+// email; in a container with no network that waits 5 s each time.
+const COMMITTER = { GIT_COMMITTER_NAME: 'athanor-test', GIT_COMMITTER_EMAIL: 'athanor-test@localhost' };
+
 export function git(cwd: string, args: string[], env: Record<string, string> = {}): string {
-  const r = spawnSync('git', args, { cwd, env: { ...process.env, ...env }, encoding: 'utf8', shell: false });
+  const r = spawnSync('git', args, { cwd, env: { ...COMMITTER, ...process.env, ...env }, encoding: 'utf8', shell: false });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
   return r.stdout;
 }
@@ -126,8 +146,7 @@ export function fake(t: TestContext, scenario: Record<string, unknown> = {}) {
   writeFileSync(join(dir, 'scenario.json'), JSON.stringify(scenario));
   return {
     dir,
-    // Node prints an ExperimentalWarning when it runs a .ts file, and tests check the fake's stderr, so the flag turns it off.
-    docker: [process.execPath, '--disable-warning=ExperimentalWarning', fakeDocker, dir],
+    docker: [process.execPath, strippedFake(), dir],
     setScenario: (s: Record<string, unknown>) => writeFileSync(join(dir, 'scenario.json'), JSON.stringify(s)),
     addContainer: (name: string, labels: Record<string, string>, image = 'athanor:old') => {
       mkdirSync(join(dir, 'containers'), { recursive: true });

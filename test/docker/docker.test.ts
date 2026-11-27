@@ -483,6 +483,25 @@ test('B10 with a base the time limit and copy-out work as without one', async (t
   assert.equal(readFileSync(join(target, 'out.txt'), 'utf8'), 'made\n');
 });
 
+// ATH-10: the base boot script's ref updates write reflog entries. With no
+// identity, git looks up the container's host name for an email, and with no
+// network that waits 5 s each time.
+test('GI1 a run with a base boots within 3 s of the same run without one', async (t) => {
+  isolate(t);
+  const { repo } = baseRepo(t, { plain: ['true'], based: { argv: ['true'], base: 'origin/main' } });
+  const warm = await runReal(t, repo, { name: 'plain' });
+  assert.equal(warm.result.outcome, 'pass', warm.stderr);
+  const timed = async (name: string) => {
+    const started = performance.now();
+    const r = await runReal(t, repo, { name });
+    assert.equal(r.result.outcome, 'pass', r.stderr);
+    return performance.now() - started;
+  };
+  const plain = await timed('plain');
+  const based = await timed('based');
+  assert.ok(based - plain < 3000, `a base run took ${Math.round(based)} ms, a plain one ${Math.round(plain)} ms`);
+});
+
 test('B11 a check that compares with the base fails without a version bump and passes with one, as on the host', async (t) => {
   isolate(t);
   // grimoire's five git calls, in sh: merge-base, rev-parse, diff, and show at
