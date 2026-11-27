@@ -9,8 +9,8 @@
   the same way, and readable by a Mac engine's `serve` containers and image
   builds (accepted class "The macOS lock ports and containers"). athanor
   relies on the operating system's user separation for the state folder
-  (mode 0700 on every platform but Windows; on Windows, the home folder's own
-  access rules). The
+  (its mode comes from the owner's umask on Linux and macOS; on Windows, the
+  home folder's own access rules). The
   `--output` folder is mode 0700 on every platform but Windows, and on Windows
   inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
@@ -82,8 +82,8 @@
   entries, `--output`, and every entry name and header in a copied tar are
   checked too (M10, M11, M13). The engine endpoint and every builder node are
   checked for locality and plain tcp, read as Docker reads them (a value with
-  no "://" is tcp; a pipe in one exact form), pinned for the run and checked
-  again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
+  no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
+  ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.
   git settings, attributes, templates and `GIT_*` variables inherited from the
   host are kept out of the archive step (ADR 0020); the git calls that record
   the work still use them (accepted class "What athanor records, shows and leaves behind").

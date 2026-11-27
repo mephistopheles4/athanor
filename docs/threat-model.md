@@ -64,9 +64,10 @@ likewise, and a local address that leads elsewhere.
   could not read, and plain tcp, unless the machine file sets
   `allowRemoteDocker` or `allowPlainTcp`; a repo cannot set either. The machine
   file follows `ATHANOR_HOME`, which whatever sets the environment can move.
-  What it checked is pinned for the run and checked again once the slot is held
-  (ADR 0013, ADR 0021). It does not hold when an opt-in is set, or when a local
-  address (`localhost` included) is forwarded elsewhere. Then the operator
+  What it checked is pinned for the run (ADR 0013, ADR 0021). It does not hold
+  when an opt-in is set, when a local address (`localhost` included) is
+  forwarded elsewhere, or when the pinned context or builder is edited after
+  the check. Then the operator
   decides the result and the limits, can see the work, the build arguments and
   what the build leaves in image layers or cache, a builder can ask this
   machine for the owner's registry login, and a remote builder host sees the

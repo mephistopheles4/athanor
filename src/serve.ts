@@ -12,7 +12,7 @@ import { repoRoot, makeScratch, clearStale, buildContext } from './git.js';
 import { stateFolder, markUse, Interrupted, settleImage } from './image.js';
 import type { ImageBuild } from './image.js';
 import {
-  prepareDocker, recheckDocker, readWorkdir, runWritableCheck, publishedAddress, clearServerContainer,
+  prepareDocker, readWorkdir, runWritableCheck, publishedAddress, clearServerContainer,
   removeServerContainer, readExit,
 } from './docker.js';
 import type { DockerCommand } from './docker.js';
@@ -128,9 +128,8 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
   const root = await repoRoot(cwd);
   const config = resolveServerConfig(root, machine, name);
 
-  const { notices, driver, checked } = await prepareDocker(docker, env, config.docker, { localOnly: true });
+  const { notices, driver, pinned } = await prepareDocker(docker, env, config.docker, { localOnly: true });
   for (const notice of notices) onProgress(notice);
-  const pinned = checked.env;
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
   const scratch = await makeScratch(home, root);
@@ -197,7 +196,6 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
     }
     partial.lock = lock.server;
     containerName = serverContainerName(prefix, lock.server);
-    await recheckDocker(docker, checked);
     await clearServerContainer(docker, containerName, pinned);
     if (signal?.aborted) return stopped(partial);
 

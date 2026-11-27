@@ -447,8 +447,10 @@ The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. With a base, it also holds a
 pack of the history from the merge base onward, until the run has streamed it
 into the container (or, if it can't be removed then, until the run ends), and
-for up to a day after a run that was killed hard. If you set
-`ATHANOR_HOME`, point it at a folder only you can read.
+for up to a day after a run that was killed hard. athanor sets no private mode
+on the folder: on Linux and macOS your umask does, which often lets other
+accounts read it. Run `chmod 700` on it. If you set `ATHANOR_HOME`, point it
+at a folder only you can read.
 
 ## Disk
 
