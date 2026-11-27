@@ -3,7 +3,7 @@
 // runs until it is aborted or the server exits. Like the rest of the core it
 // never prints, exits or registers signal handlers (ADR 0003): it reports
 // through callbacks and returns a result.
-import { lstatSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
@@ -92,19 +92,18 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
   }
 }
 
-// What the host's path to a writable folder is, and whether it is a folder and
-// not a link, on the way or at the end.
-function hostFolderProblem(root: string, path: string): 'missing' | 'link' | 'file' | null {
+// Why the host's path to a writable folder is not a folder, on the way or at the
+// end, or null when it is one.
+function hostFolderProblem(root: string, path: string): 'missing' | 'file' | null {
   let current = root;
   for (const segment of path.split('/')) {
     current = join(current, segment);
     let stat;
     try {
-      stat = lstatSync(current);
+      stat = statSync(current);
     } catch {
       return 'missing';
     }
-    if (stat.isSymbolicLink()) return 'link';
     if (!stat.isDirectory()) return 'file';
   }
   return null;
@@ -155,20 +154,17 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
     }
     const workdir = rawWorkdir.replace(/\/+$/, '');
 
-    // Each writable folder: a real folder on the host, athanor never makes one (ADR 0033).
+    // Each writable folder: a folder on the host, athanor never makes one (ADR 0033).
     const missing: string[] = [];
     for (const path of config.writable) {
       const problem = hostFolderProblem(root, path);
-      if (problem === 'link') {
-        throw new AthanorError(`The writable folder "${showName(path)}" is a link, which athanor does not follow. Replace it with a real folder, or remove it from servers.${showName(name)}.writable.`);
-      }
       if (problem === 'file') {
         throw new AthanorError(`The writable folder "${showName(path)}" is a file, not a folder. Rename or remove the file, make the folder, or remove it from servers.${showName(name)}.writable.`);
       }
       if (problem === 'missing') missing.push(path);
     }
     if (missing.length > 0) {
-      throw new AthanorError(`The writable folder${missing.length === 1 ? '' : 's'} ${missing.map((p) => `"${showName(p)}"`).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in the repo, and athanor never writes your working tree. Make ${missing.length === 1 ? 'it' : 'them'} first, such as mkdir -p ${missing.map(showName).join(' ')}, then run again.`);
+      throw new AthanorError(`The writable folder${missing.length === 1 ? '' : 's'} ${missing.map((p) => `"${showName(p)}"`).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in the repo, and athanor never writes your working tree. Make ${missing.length === 1 ? 'it' : 'them'} first, such as mkdir -p ${missing.map(showName).join(' ')}, then run again. A link that leads nowhere counts as missing: remove it first.`);
     }
 
     // And in the image, a folder its own user can write: a volume on a folder

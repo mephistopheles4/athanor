@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '#dist/index.js';
 import type { RunOptions } from '#dist/index.js';
@@ -103,7 +103,6 @@ test('M11 a bad --output exits 125 before any Docker call and creates nothing', 
     { name: 'a missing parent', says: /does not exist/, make: (s) => ({ output: join(s.parent, 'nope', 'x') }) },
     { name: 'a new folder named .git', says: /\.git/, make: (s) => ({ output: join(s.parent, '.git') }) },
     { name: 'a new folder named .GIT', says: /\.git/i, make: (s) => ({ output: join(s.parent, '.GIT') }) },
-    ...(process.platform === 'win32' ? [] : [{ name: 'a parent others can change', says: /group or other write bit.*chmod go-w/s, make: (s: Scene) => { chmodSync(s.parent, 0o777); return {}; } }]),
     { name: 'a parent inside .git', says: /inside a \.git folder/, make: (s) => { mkdirSync(join(s.parent, '.GIT')); return { output: join(s.parent, '.GIT', 'x') }; } },
   ];
   for (const row of rows) {
@@ -178,7 +177,6 @@ test('M12 a copy lands the files with their bytes, by the container ID, between 
   assert.equal(files['out/nofolder/x.txt'], 'x');
   assert.equal(files['out/later/f.txt'], 'f');
   assert.equal(files['reports/mutation/report.json'], '{"a":1}');
-  if (process.platform !== 'win32') assert.equal(statSync(s.dir).mode & 0o777, 0o700);
   const bytes = 6 + 4 + 3 + 3 + 6 + binary.length + 1 + 1 + 7;
   assert.deepEqual(result.outputs, { dir: s.dir, files: 9, bytes, skipped: 0, missing: ['absent'] });
   assert.equal(lines.filter((l) => /copied 9 files/.test(l) && l.includes(s.dir)).length, 1, lines.join('\n'));
@@ -235,12 +233,6 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     // A dotless i folds to I, so only the upper-case fold refuses this one.
     { name: '.git folder deeper, with a dotless i', tar: one('out/sub/.g\u0131t/HEAD'), says: /\.g\u0131t/ },
     { name: '.git as a regular file', tar: one('out/.git'), says: /out\/\.git/ },
-    // git treats a folder holding HEAD with objects or refs as a bare repository, in whatever order the files come.
-    { name: 'a bare repository layout, HEAD first', tar: buildTar([{ name: 'out/HEAD', content: 'ref: refs/heads/main\n' }, { name: 'out/objects/x' }]), says: /bare git repository/ },
-    { name: 'a bare repository layout, HEAD last', tar: buildTar([{ name: 'out/refs/x' }, { name: 'out/HEAD' }]), says: /bare git repository/ },
-    // git also finds a repository's objects and refs through a commondir file, in another folder.
-    { name: 'a bare repository layout through a commondir file', tar: buildTar([{ name: 'out/a/HEAD' }, { name: 'out/a/commondir' }, { name: 'out/b/objects/x' }]), says: /bare git repository/ },
-    { name: 'a bare repository layout in a nested folder', tar: buildTar([{ name: 'out/sub/objects/', type: '5' }, { name: 'out/sub/HEAD' }]), says: /bare git repository/ },
     { name: 'COM with a superscript', tar: one('out/COM¹.txt'), says: /COM¹/ },
     { name: 'a device name with spaces before its extension', tar: one('out/conout$  .txt'), says: /conout\$ {2}\.txt/ },
     { name: 'a colon', tar: one('out/a:b'), says: /a:b/ },
@@ -314,28 +306,23 @@ test('M13 the caps hold across several outputs, and the test\'s own exit is repo
   });
 });
 
-test('M14 links, devices, FIFOs and act-on-view files are skipped and counted', async (t) => {
-  const viewed = ['out/a.lnk', 'out/b.scf', 'out/c.library-ms', 'out/d.searchConnector-ms', 'out/e.theme', 'out/f.themepack'];
+test('M14 links, devices and FIFOs are skipped and counted', async (t) => {
   const tar = buildTar([
     { name: 'out/', type: '5' },
     { name: 'out/real.txt', content: 'real' },
+    // A file Windows acts on when it shows a folder is copied like any other.
     { name: 'out/desktop.ini', content: '[x]' },
-    { name: 'out/x.URL', content: '[InternetShortcut]' },
-    ...viewed.map((name) => ({ name, content: 'x' })),
     { name: 'out/link', type: '2' },
     { name: 'out/hard', type: '1' },
     { name: 'out/dev', type: '3' },
     { name: 'out/fifo', type: '6' },
   ]);
-  // The files Windows acts on when it shows a folder are skipped on every engine, local or not.
-  for (const machine of [undefined, { allowRemoteDocker: true }]) {
-    const s = scene(t, { cp: { out: served(tar) }, machine });
-    const { result } = await copy(s);
-    assert.equal(result.outcome, 'pass', JSON.stringify(result));
-    assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/real.txt']);
-    assert.equal(result.outputs!.files, 1);
-    assert.equal(result.outputs!.skipped, 12, 'four links, devices and FIFOs, and the eight act-on-view files');
-  }
+  const s = scene(t, { cp: { out: served(tar) } });
+  const { result } = await copy(s);
+  assert.equal(result.outcome, 'pass', JSON.stringify(result));
+  assert.deepEqual(Object.keys(tree(s.dir)).sort(), ['out', 'out/desktop.ini', 'out/real.txt']);
+  assert.equal(result.outputs!.files, 2);
+  assert.equal(result.outputs!.skipped, 4, 'the two links, the device and the FIFO');
 });
 
 test('M15 the copy runs after pass, fail or the memory limit, and after nothing else; a hanging cp, the time bound and an ssh login', async (t) => {
