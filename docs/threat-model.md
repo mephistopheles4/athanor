@@ -215,8 +215,9 @@ athanor exposes on the network, and release and CI.
   the owner's private images with their registry login. The test runs as the
   image's user with six capabilities. A copied report lands as written, and
   git's error text, printed as written, can carry terminal escape codes. On
-  Windows, a program file in the repo or the working folder can be started in
-  place of git or docker, on the host (ATH-9).
+  Windows, and on any system when PATH holds a relative entry such as `.`, a
+  program file in the repo or the working folder can be started in place of git
+  or docker, on the host (ADR 0038).
 - **Third parties relied on:** Docker, Docker Desktop and its VM, git, Node,
   npm, GitHub, the operating system, and the agent harness and its model
   provider: what athanor prints goes to its caller and, for an agent session,
@@ -224,11 +225,12 @@ athanor exposes on the network, and release and CI.
   two-factor approval.
 
 athanor's own guards hold no boundary above, and only the owner's spec loosens
-one (issue 84): no shell (ADR 0002); the archive step's content filter block
-and pins (ADR 0020); configuration files and configured paths kept in the repo
-(tests C17, J6); holder answers shown, not trusted (ADR 0004); a named base's
-git calls kept from the host's git settings, and the stale-run sweep (ADR
-0032); serve's container guards (ADR 0034); and the
+one (ADR 0038). Among those that stay: no shell (ADR 0002); the archive step's
+`-filter` on every path and its pinned line endings, file modes and global
+attributes file (ADR 0020); configuration files and
+configured paths kept in the repo (tests C17, J6); holder answers shown, not
+trusted (ADR 0004); a named base's git calls kept from the host's git settings,
+and the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
 run container's capability flags, `no-new-privileges` and limits (ADR 0016,
 ADR 0009). The agent
 test hook (`.claude/settings.json`, ADR 0024) is a nudge, not a control: it
@@ -279,4 +281,3 @@ Positions are judgement, after the controls.
 ## Open issues
 
 - **#42:** the snapshot's git calls still run the host's content filters.
-- **#84:** the guards named under Scope, which hold no boundary, are candidates to loosen.

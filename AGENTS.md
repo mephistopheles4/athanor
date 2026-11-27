@@ -21,7 +21,7 @@ decisions are in [docs/adr/](docs/adr/).
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
   and the package's major version. An addition bumps neither. Exceptions
-  are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
+  are the owner's decision and sit in ADRs (0017, 0021, 0023, 0038). Among them, a
   form that ran something other than what it named may be fixed without a
   bump (ADR 0023).
 - **Nothing reaches `athanor run`'s test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
@@ -49,9 +49,8 @@ decisions are in [docs/adr/](docs/adr/).
   in athanor's own git folder, with `-filter` on every path and pinned line
   endings, global attributes file and file modes. That folder's `git init` and every
   archive drop `GIT_COMMON_DIR` and `GIT_WORK_TREE`, so neither places
-  another repository there. The host's other git settings apply: ATH-9 cut the rest of ADR 0020's
-  clean environment. A
-  change here is security-sensitive work.
+  another repository there. The host's other git settings apply: ADR 0038 cut the rest of
+  ADR 0020's clean environment. A change here is security-sensitive work.
 - **A user-facing accepted threat class has a README line.** A change that
   adds or changes an accepted class a user has to act on or know about also
   adds or changes its line in the README's "What athanor doesn't protect you

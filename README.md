@@ -256,7 +256,7 @@ makes only the last folder:
   `missing` (declared paths the container did not have).
 
 athanor copies regular files and folders, checks every name, and refuses the
-whole copy on a bad one; links and devices are skipped. A copy reads at
+whole copy on a bad one; links, devices and FIFOs are skipped. A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
 ends the run with exit 125 and the test's own exit in `testExitCode`; after a
 memory run, `testExitCode` is athanor's 137, not the test's, and
@@ -503,11 +503,13 @@ full class.
   proxy settings, passwords included. The tests run as root unless the
   Dockerfile names another user, and keep six Linux capabilities. Everything
   tracked under `context`, a file added with `git add -N` included, reaches
-  that build. On Windows, a program file in the repo, or in the folder you run
+  that build. On Windows, and on any system when your PATH holds a relative
+  entry such as `.`, a program file in the repo, or in the folder you run
   athanor from, can also be started in place of git or docker, and then runs on
   your machine, outside any container. Use athanor only on repos you trust to
-  build, and on Windows only on repos you would run on your machine. Out of
-  scope: a repo's own code, in the threat model's
+  build. Keep relative entries out of your PATH, and on Windows use it only on
+  repos you would run on your machine. Out of scope: a repo's own code, in the
+  threat model's
   [Scope](docs/threat-model.md#scope).
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
