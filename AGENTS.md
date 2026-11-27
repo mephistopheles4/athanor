@@ -13,9 +13,7 @@ decisions are in [docs/adr/](docs/adr/).
 - **No shell, ever.** Every child process is started with an argument array
   and `shell: false`. Never build a command string, and never use `exec`,
   `execSync`, or `execFile` with a shell. `scripts/check-source.mjs` fails the
-  build on any of these (ADR 0002). git and docker start by a full path found
-  in PATH's absolute entries, never by bare name, and never from the working
-  folder or a relative entry (ADR 0020's amendment).
+  build on any of these (ADR 0002).
 - **The core never prints, exits or registers signal handlers.** It takes
   options, returns results, and reports progress through a callback. Only
   `src/cli.ts` prints, sets the exit code and handles signals (ADR 0003).
@@ -47,10 +45,13 @@ decisions are in [docs/adr/](docs/adr/).
   with `allowRemoteDocker`. A second, short-lived container checks that each
   `writable` folder is a folder the image's user can write: no mount,
   `--network none`, and the same caps, limits and proxy blanks.
-- **The archive step carries the tree as committed.** Every `git archive`,
-  and the `git init` of its folder, run in the clean environment of ADR 0020:
-  no inherited `GIT_*` variable, no global or system config or attributes, no template, and
-  `-filter` on every path. A change here is security-sensitive work.
+- **The archive step carries the tree as committed.** Every `git archive` runs
+  in athanor's own git folder, with `-filter` on every path and pinned line
+  endings, global attributes file and file modes. That folder's `git init` and every
+  archive drop `GIT_COMMON_DIR` and `GIT_WORK_TREE`, so neither places
+  another repository there. The host's other git settings apply: ATH-9 cut the rest of ADR 0020's
+  clean environment. A
+  change here is security-sensitive work.
 - **A user-facing accepted threat class has a README line.** A change that
   adds or changes an accepted class a user has to act on or know about also
   adds or changes its line in the README's "What athanor doesn't protect you

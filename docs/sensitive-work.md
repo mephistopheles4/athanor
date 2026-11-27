@@ -8,9 +8,9 @@
   macOS each lock is a loopback port (ADR 0037), open to any local program in
   the same way, and readable by a Mac engine's `serve` containers and image
   builds (accepted class "The macOS lock ports and containers"). athanor
-  relies on the operating system's user separation for the state folder
-  (mode 0700 on every platform but Windows; on Windows, the home folder's own
-  access rules). The
+  sets no mode on the state folder: on Linux and macOS it takes the owner's
+  umask, which can let other accounts read it, and the owner makes it private
+  (README); on Windows, the home folder's own access rules apply. The
   `--output` folder takes its mode from the owner's umask on Linux and macOS,
   and on Windows inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
@@ -82,16 +82,18 @@
   entries, `--output`, and every entry name and header in a copied tar are
   checked too (M10, M11, M13). The engine endpoint and every builder node are
   checked for locality and plain tcp, read as Docker reads them (a value with
-  no "://" is tcp; a pipe in one exact form), pinned for the run and checked
-  again once the slot is held (ADR 0013, ADR 0021; L1, L2, L5, L8, L10, L11). Holder answers are shown as reported, never as checked facts.
-  git settings, attributes, templates and `GIT_*` variables inherited from the
-  host are kept out of the archive step (ADR 0020); the git calls that record
-  the work still use them (accepted class "What athanor records, shows and leaves behind").
+  no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
+  ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.
+  The archive step runs no content filter, pins its line endings, global
+  attributes file and file modes, and takes no `GIT_COMMON_DIR` or `GIT_WORK_TREE`
+  (ADR 0020; G2, G5, T11); the host's other git settings reach it, as they do
+  the git calls that record the work (accepted class "What athanor records, shows and leaves behind").
   A base name is checked before git sees it (no leading `-` and no revision
   syntax), then resolved, with the ambiguity check pinned on, to one branch,
-  remote-tracking branch or tag (a command's `base` to the last two), in ADR
-  0020's clean environment with the repo's own config still read, its replace
-  refs and grafts included, and lazy fetching off on git 2.45 and later. A
+  remote-tracking branch or tag (a command's `base` to the last two), in a clean
+  environment (no inherited `GIT_*` variable, no global or system config) with
+  the repo's own config still read, its replace refs and grafts included, and
+  lazy fetching off on git 2.45 and later. A
   shallow or partial clone, and a snapshot holding the reserved path, are
   refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
   against a fetch (ADR 0032; B1, B5, B7).

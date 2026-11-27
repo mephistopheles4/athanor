@@ -4,11 +4,10 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync, chmodSync, statSync } from 'node:fs';
+import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { run, serve, status } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
-import { stateFolder } from '#dist/image.js';
 import { resolveRunLimit, resolveServerLimit } from '#dist/run-config.js';
 import type { Call } from '../helpers.ts';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, tempDir, callsOf, cli, together, waited } from '../helpers.ts';
@@ -257,14 +256,6 @@ test('MC5 on macOS a limit above 64 exits 125 naming where it was set; Linux and
     // run never reads maxServers.
     assert.equal((await runIn(t, repo)).result.outcome, 'pass');
   });
-});
-
-// MC9 (spec on ATH-7).
-test('MC9 the state folder ends with mode 0700, even when it already existed with 0755', { skip: process.platform === 'win32' && 'Windows has no POSIX modes' }, (t) => {
-  const home = isolate(t);
-  chmodSync(home, 0o755);
-  stateFolder();
-  assert.equal(statSync(home).mode & 0o777, 0o700);
 });
 
 test('T8 a configuration message names the file the bad value came from', async (t) => {
