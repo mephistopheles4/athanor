@@ -70,6 +70,9 @@ export function makeRepo(t: TestContext, { files = {}, athanor, commit = true, p
   git(dir, ['config', 'user.name', 'test']);
   git(dir, ['config', 'user.email', 'test@localhost']);
   git(dir, ['config', 'core.autocrlf', 'false']);
+  // A commit starts git's maintenance in the background, whose lock file can
+  // vanish while a test copies the repo's .git folder.
+  git(dir, ['config', 'maintenance.auto', 'false']);
   const pkg: Record<string, unknown> = { name: 'fixture', private: true, ...packageExtra };
   if (athanor !== undefined) pkg.athanor = athanor;
   const all = {
