@@ -57,8 +57,8 @@ const START = [
 // The boot script, joined with \n so no checkout's line endings can reach sh -c.
 export const BOOT = [...UNPACK, ...COMMIT, ...START].join('\n');
 
-// With a carried base (ADR 0032), the commit part becomes this: check the
-// four files athanor added, put the history into a fresh repo with the
+// With a carried base (ADR 0032), the commit part becomes this: move the
+// folder athanor added out of the work tree, put the history into a fresh repo with the
 // repo's object format, read the index from the snapshot's own tree, and
 // commit it on top of the host's HEAD only when it differs. Any failure ends
 // the boot before the marker; its exit code is not read, since a missing
@@ -67,10 +67,7 @@ const baseCommit = (init: string): string[] => [
   'fail() { echo "athanor: $1" >&2; exit 3; }',
   'command -v git >/dev/null 2>&1 || fail "the image has no git, which a run with a base needs. Add git to the image, or run without a base."',
   'b=.athanor-base',
-  '{ [ -d "$b" ] && [ ! -L "$b" ]; } || fail "the snapshot has no base folder that athanor made. Run again; if it repeats, check the Docker engine."',
-  'n=0; for f in "$b"/* "$b"/.[!.]* "$b"/..?*; do if [ -e "$f" ] || [ -L "$f" ]; then n=$((n+1)); fi; done',
-  '[ "$n" = 4 ] || fail "the base folder holds something athanor did not put there. Run again; if it repeats, check the Docker engine."',
-  'for f in pack shallow refs tree; do { [ -f "$b/$f" ] && [ ! -L "$b/$f" ]; } || fail "the base folder holds something athanor did not put there. Run again; if it repeats, check the Docker engine."; done',
+  '[ -d "$b" ] || fail "the snapshot has no base folder that athanor made. Run again; if it repeats, check the Docker engine."',
   'rm -rf "$HOME/.athanor-base"; mv "$b" "$HOME/.athanor-base"; b="$HOME/.athanor-base"',
   init,
   'git index-pack --stdin < "$b/pack" >/dev/null',

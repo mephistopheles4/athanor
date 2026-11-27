@@ -16,7 +16,7 @@ import type { Slot } from './slots.js';
 import { containerSettings } from './container-settings.js';
 import { runContainer } from './container-run.js';
 import type { Handed, Outcome, Ran, Sink } from './container-run.js';
-import { copyOut, checkOutputTarget, workFolder, CopyError, CopyInterrupted, MAX_ENTRIES, COPY_TIME_MS } from './copy-out.js';
+import { copyOut, checkOutputTarget, showName, workFolder, CopyError, CopyInterrupted, MAX_ENTRIES, COPY_TIME_MS } from './copy-out.js';
 import type { OutputTarget } from './copy-out.js';
 
 export { AthanorError };
@@ -237,7 +237,7 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     if (config.base !== undefined) {
       base = await resolveBase(root, scratch, snap, config.base);
       partial.base = { ref: base.ref, tip: base.tip, mergeBase: base.mergeBase };
-      onProgress(`base ${config.base.name} at ${base.tip.slice(0, 12)}, merge base ${base.mergeBase.slice(0, 12)}.`);
+      onProgress(`base ${showName(config.base.name)} at ${base.tip.slice(0, 12)}, merge base ${base.mergeBase.slice(0, 12)}.`);
       if (signal?.aborted) return interruptedResult(partial);
     }
 

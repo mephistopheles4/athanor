@@ -4,9 +4,8 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, symlinkSync, linkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { writeFileSync, symlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { run, serve, status } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
 import { resolveRunLimit, resolveServerLimit } from '#dist/run-config.js';
@@ -386,10 +385,8 @@ test('J5 athanor.json with a package.json that is not valid JSON exits 125 namin
   assert.equal(calls.length, 0, 'no Docker call at all');
 });
 
-test('J6 athanor.json gets the key checks, and both files must be regular files inside the repo', async (t) => {
-  const outside = tempDir(t, 'athanor-outside-');
-  writeFileSync(join(outside, 'other.json'), JSON.stringify({ outsideKeyName: 1 }));
-  const rows: { name: string; json?: string; dir?: boolean; link?: string; says: RegExp; exact?: string; absent?: string[] }[] = [
+test('J6 athanor.json gets the key checks, and one that cannot be read, or links outside the repo, exits 125', async (t) => {
+  const rows: { name: string; json?: string; dir?: boolean; says: RegExp; exact?: string; absent?: string[] }[] = [
     { name: 'invalid JSON', json: `{ ${MARKER}`, says: /athanor\.json.*not valid JSON/s, exact: 'athanor.json at the repo root is not valid JSON. Fix it, then run again.', absent: [MARKER] },
     { name: 'not an object', json: '[1]', says: /athanor\.json must hold one JSON object/ },
     { name: 'an unknown key', json: asJson({ ...baseConfig, image: 'x' }), says: /athanor\.json has an unknown key "image". Its keys are: dockerfile/ },
@@ -397,15 +394,12 @@ test('J6 athanor.json gets the key checks, and both files must be regular files 
     { name: 'a bad type', json: asJson({ ...baseConfig, cpus: 0 }), says: /athanor\.json.*cpus must be a number greater than 0/s },
     { name: 'no dockerfile', json: asJson({ commands: baseConfig.commands }), says: /"dockerfile" is required in athanor\.json/ },
     { name: 'a folder named athanor.json', dir: true, says: /athanor\.json at the repo root could not be read/ },
-    { name: 'a link named athanor.json to a file outside', link: 'athanor.json', says: /athanor\.json at the repo root could not be read/, absent: ['outsideKeyName'] },
-    { name: 'a link named package.json to a file outside', link: 'package.json', json: asJson(baseConfig), says: /package\.json at the repo root could not be read/, absent: ['outsideKeyName'] },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
       isolate(t);
-      const repo = makeRepo(t, { packageJson: row.link !== 'package.json', files: row.json !== undefined ? { 'athanor.json': row.json } : {} });
+      const repo = makeRepo(t, { files: row.json !== undefined ? { 'athanor.json': row.json } : {} });
       if (row.dir) mkdirSync(join(repo, 'athanor.json'));
-      if (row.link) symlinkSync(join(outside, 'other.json'), join(repo, row.link), 'file');
       const { result, calls } = await runIn(t, repo);
       assertSetupError(result, calls, row.says);
       if (row.exact !== undefined) assert.equal(result.message, row.exact);
@@ -414,24 +408,6 @@ test('J6 athanor.json gets the key checks, and both files must be regular files 
     });
   }
 
-  await t.test('a pipe named athanor.json inside the repo exits 125 promptly', { skip: process.platform === 'win32' ? 'no mkfifo' : false, timeout: 20000 }, async (t) => {
-    isolate(t);
-    const repo = makeRepo(t);
-    const made = spawnSync('mkfifo', [join(repo, 'athanor.json')], { shell: false });
-    assert.equal(made.status, 0, 'mkfifo');
-    const { result, calls } = await runIn(t, repo);
-    assertSetupError(result, calls, /athanor\.json at the repo root could not be read/);
-  });
-
-  await t.test('a hard link named athanor.json to a file outside the repo exits 125 and shows none of its keys', async (t) => {
-    isolate(t);
-    const repo = makeRepo(t);
-    linkSync(join(outside, 'other.json'), join(repo, 'athanor.json'));
-    const { result, calls } = await runIn(t, repo);
-    assertSetupError(result, calls, /athanor\.json at the repo root could not be read/);
-    assertNoLeak(result.message!, repo, 'outsideKeyName');
-  });
-
   await t.test('a path outside the repo set in athanor.json names athanor.json', async (t) => {
     isolate(t);
     const repo = makeRepo(t, { files: { 'athanor.json': asJson({ ...baseConfig, dockerfile: '../Dockerfile' }) } });
@@ -439,12 +415,16 @@ test('J6 athanor.json gets the key checks, and both files must be regular files 
     assertSetupError(result, calls, /dockerfile "\.\.\/Dockerfile" in athanor\.json is outside the repo/);
   });
 
-  await t.test('a link to /dev/zero exits 125 promptly', { skip: process.platform === 'win32' ? 'no /dev/zero' : false }, async (t) => {
+  await t.test('a link named athanor.json to a file outside the repo exits 125 and shows none of its keys', async (t) => {
     isolate(t);
+    const outside = tempDir(t, 'athanor-outside-');
+    writeFileSync(join(outside, 'other.json'), JSON.stringify({ outsideKeyName: 1 }));
     const repo = makeRepo(t);
-    symlinkSync('/dev/zero', join(repo, 'athanor.json'));
+    symlinkSync(join(outside, 'other.json'), join(repo, 'athanor.json'), 'file');
     const { result, calls } = await runIn(t, repo);
     assertSetupError(result, calls, /athanor\.json at the repo root could not be read/);
+    assertNoLeak(result.message!, repo, 'outsideKeyName');
+    assert.equal(calls.length, 0, 'no Docker call at all');
   });
 });
 

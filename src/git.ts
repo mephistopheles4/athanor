@@ -7,7 +7,6 @@ import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
-import { hasControl, showName } from './copy-out.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -19,12 +18,12 @@ export interface Scratch {
   objectsEnv: Env;
   archiveEnv: Env;
   // The environment for every git call that resolves or carries a base (ADR
-  // 0032): a clean one (cleanGitEnv), with replace refs and grafts off, no
-  // lazy fetch, and the run's object folder, so the snapshot's own objects are
-  // found. It sets no GIT_DIR: git finds the repo's refs from its root.
+  // 0032): a clean one (cleanGitEnv), with no lazy fetch, and the run's
+  // object folder, so the snapshot's own objects are found. It sets no GIT_DIR:
+  // git finds the repo's refs from its root.
   baseEnv: Env;
   // An empty file: the archive's global attributes file, and the base's global
-  // config and grafts file.
+  // config.
   emptyFile: string;
   // The repo's object format, sha1 or sha256.
   format: string;
@@ -188,10 +187,7 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
     archiveEnv: { ...inherited, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
-    baseEnv: {
-      ...clean, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1',
-      GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: emptyFile, GIT_NO_LAZY_FETCH: '1',
-    },
+    baseEnv: { ...clean, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1', GIT_NO_LAZY_FETCH: '1' },
     emptyFile,
     format,
     remove(): void {
@@ -266,11 +262,6 @@ export async function resolveBase(
       throw new AthanorError(`${label} is ambiguous: more than one ref has that name. Name it in full, such as refs/remotes/origin/main.`);
     }
     throw new AthanorError(`${label} names nothing athanor can carry. If it is a remote-tracking branch, fetch it, or name a ref that exists.`);
-  }
-  // git follows a symbolic ref, such as a remote's HEAD, to a name the check
-  // above never saw; that name must hold no control or format character either.
-  if (hasControl(ref)) {
-    throw new AthanorError(`${label} resolves to ${showName(ref)}, a name with a control or invisible formatting character. Name the branch you mean directly.`);
   }
   if (ref.includes(' ')) {
     throw new AthanorError(`${label} resolves to "${ref}", a name with a space. Name the branch you mean directly.`);

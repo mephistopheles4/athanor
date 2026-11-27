@@ -88,13 +88,12 @@
   attributes file and file modes, and takes no `GIT_COMMON_DIR` or `GIT_WORK_TREE`
   (ADR 0020; G2, G5, T11); the host's other git settings reach it, as they do
   the git calls that record the work (accepted class "What athanor records, shows and leaves behind").
-  A base name is checked before git sees it (no leading `-`, no revision
-  syntax, no control or format character), then resolved, with the ambiguity
-  check pinned on, to one branch, remote-tracking branch or tag (a command's
-  `base` to the last two), in a clean environment (no inherited `GIT_*`
-  variable, no global or system config) with the repo's own config still read, replace refs off (on git 2.32 to 2.41 the repo's own
-  config may turn them back on, issue 72), grafts off, and lazy fetching off on
-  git 2.45 and later. The name git resolves to gets the same control-set check. A
+  A base name is checked before git sees it (no leading `-` and no revision
+  syntax), then resolved, with the ambiguity check pinned on, to one branch,
+  remote-tracking branch or tag (a command's `base` to the last two), in a clean
+  environment (no inherited `GIT_*` variable, no global or system config) with
+  the repo's own config still read, its replace refs and grafts included, and
+  lazy fetching off on git 2.45 and later. A
   shallow or partial clone, and a snapshot holding the reserved path, are
   refused; on git 2.32 to 2.44 the partial-clone refusal is the only guard
   against a fetch (ADR 0032; B1, B5, B7).

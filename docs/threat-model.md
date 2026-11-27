@@ -225,10 +225,10 @@ athanor exposes on the network, and release and CI.
 
 athanor's own guards hold no boundary above, and only the owner's spec loosens
 one (issue 84): no shell (ADR 0002); the archive step's content filter block
-and pins (ADR 0020); the configuration file checks (test J6);
-configured paths kept in the repo (test C17); holder answers shown, not
-trusted (ADR 0004); a named base checked apart from the repo's settings and
-the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
+and pins (ADR 0020); configuration files and configured paths kept in the repo
+(tests C17, J6); holder answers shown, not trusted (ADR 0004); a named base's
+git calls kept from the host's git settings, and the stale-run sweep (ADR
+0032); serve's container guards (ADR 0034); and the
 run container's capability flags, `no-new-privileges` and limits (ADR 0016,
 ADR 0009). The agent
 test hook (`.claude/settings.json`, ADR 0024) is a nudge, not a control: it
@@ -279,5 +279,4 @@ Positions are judgement, after the controls.
 ## Open issues
 
 - **#42:** the snapshot's git calls still run the host's content filters.
-- **#72:** a named base's git calls do not yet pin replace refs off on git 2.32 to 2.41.
 - **#84:** the guards named under Scope, which hold no boundary, are candidates to loosen.
