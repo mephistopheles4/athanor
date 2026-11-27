@@ -59,13 +59,17 @@
 - **Repo configuration.** What the repo sets for athanor: the `athanor.json`
   file at the repo root, or the `athanor` key in its `package.json`, never
   both. A run with both exits 125.
-- **Run configuration.** Everything a run needs from the repo configuration
+- **Outside configuration.** A file named by `--config` or `ATHANOR_CONFIG`,
+  read instead of the repo configuration (ADR 0039).
+- **Configuration folder.** The outside configuration's folder, where its
+  `{ "config": … }` paths start.
+- **Run configuration.** What a run needs from the repo or outside configuration
   and the machine configuration: the build settings, the command, the limits,
   the time limit, the command's outputs, the copy-out size cap
   (`maxOutputMegabytes`, machine only) and the Docker endpoint settings
   (`allowPlainTcp` and `allowRemoteDocker`, machine only). A command's own
   limits come before the repo's and the machine's. Its paths are checked to
-  stay inside the repo, its limits are held to the machine's ceilings where the machine
+  stay inside their folder, its limits are held to the machine's ceilings where the machine
   configuration sets them, and
   each value keeps the file it came from, so a message names the file to fix.
   One table says which keys a repo may set and which only the machine may set.

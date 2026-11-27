@@ -6,8 +6,9 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { join, relative, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { run, serve } from '#dist/index.js';
 import type { RunOptions, Serving } from '#dist/index.js';
 import { serveCommand } from '#dist/cli.js';
@@ -245,6 +246,16 @@ test('OC12 status and prune have no --config, the docker run options are unchang
       assert.equal(result.exitCode, 125);
       assert.match(result.message!, row.says);
       assert.equal(calls.length, 0);
+    });
+  }
+});
+
+// Y5 and X3, the other half of this claim, are their own tests.
+test('OC13 the README, the glossary, the threat model and the sensitive-work list name the outside configuration', async (t) => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  for (const doc of ['README.md', 'GLOSSARY.md', 'docs/threat-model.md', 'docs/sensitive-work.md']) {
+    await t.test(doc, () => {
+      assert.match(readFileSync(join(root, doc), 'utf8'), /outside\s+configuration/i);
     });
   }
 });

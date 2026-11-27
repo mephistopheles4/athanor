@@ -78,7 +78,10 @@ likewise, and a local address that leads elsewhere.
   machine even with `allowRemoteDocker` (ADR 0034).
 - **athanor** sends the build only the hashed set: tracked files under
   `context` and the listed `inputs`, plus `git add -N` files under `context`,
-  never untracked, ignored or git files (ADR 0006). It does not hold for the
+  never the repo's untracked, ignored or git files (ADR 0006). It does not hold
+  for an outside configuration (`--config`, `ATHANOR_CONFIG`), whose
+  configuration-side paths send any file in its folder, `.git` entries excepted
+  (ADR 0039), nor for the
   run's container: the snapshot carries uncommitted work, and `--untracked`
   adds untracked files git doesn't ignore.
 - **athanor** gives a run's container nothing from the host but the snapshot
@@ -227,8 +230,9 @@ athanor exposes on the network, and release and CI.
 athanor's own guards hold no boundary above, and only the owner's spec loosens
 one (ADR 0038). Among those that stay: no shell (ADR 0002); the archive step's
 `-filter` on every path and its pinned line endings, file modes and global
-attributes file (ADR 0020); configuration files and
-configured paths kept in the repo (tests C17, J6); holder answers shown, not
+attributes file (ADR 0020); the repo's own configuration
+and its paths kept in the repo (tests C17, J6), and an outside configuration's
+paths kept in the repo or its own folder (ADR 0039); holder answers shown, not
 trusted (ADR 0004); a named base's git calls kept from the host's git settings,
 and the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
 run container's capability flags, `no-new-privileges` and limits (ADR 0016,
