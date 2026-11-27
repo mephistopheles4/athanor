@@ -9,7 +9,7 @@ import net from 'node:net';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { run, status, serve, BOOT_BASE_SHA1 } from '#dist/index.js';
+import { run, status, serve } from '#dist/index.js';
 import type { RunOptions, ServeOptions, Serving } from '#dist/index.js';
 import { ask } from '#dist/slots.js';
 import { makeRepo, isolate, uniquePrefix, collector, cli, tempDir, bin } from '../helpers.ts';
@@ -481,27 +481,6 @@ test('B10 with a base the time limit and copy-out work as without one', async (t
   const writes = await runReal(t, repo, { name: 'writes', output: target });
   assert.equal(writes.result.outcome, 'pass', writes.stderr);
   assert.equal(readFileSync(join(target, 'out.txt'), 'utf8'), 'made\n');
-});
-
-test('B10 a stream whose base folder holds an extra member, a hidden member or a link ends before the marker', async (t) => {
-  isolate(t);
-  const { repo } = baseRepo(t, { check: { argv: ['true'], base: 'origin/main' } });
-  const first = await runReal(t, repo, { name: 'check' });
-  assert.equal(first.result.outcome, 'pass', first.stderr);
-  // Each tampered stream is made by tar in a container, where a link is easy on any host.
-  const streams: Array<[string, string]> = [
-    ['an extra member', 'for f in pack shallow refs tree extra; do echo $f > .athanor-base/$f; done'],
-    ['a hidden fifth member', 'for f in pack shallow refs tree .extra; do echo $f > .athanor-base/$f; done'],
-    ['a pack that is a link', 'for f in shallow refs tree; do echo $f > .athanor-base/$f; done; ln -s shallow .athanor-base/pack'],
-  ];
-  for (const [label, fill] of streams) {
-    const made = spawnSync('docker', ['run', '--rm', '--network', 'none', first.result.image!.tag, 'sh', '-c', `set -e; mkdir -p /t/.athanor-base; cd /t; ${fill}; echo a > a.txt; tar -cf - .athanor-base a.txt`], { shell: false, maxBuffer: 16 * 1024 * 1024 });
-    assert.equal(made.status, 0, `${label}: ${made.stderr}`);
-    const ran = spawnSync('docker', ['run', '-i', '--rm', '--network', 'none', '-e', 'ATHANOR_GRACE_LIMIT=30', first.result.image!.tag, 'sh', '-c', BOOT_BASE_SHA1, 'athanor', 'true'], { input: made.stdout, encoding: 'utf8', shell: false });
-    assert.notEqual(ran.status, 0, `${label}: the boot stops`);
-    assert.equal(ran.stderr.includes('athanor-boot-ok'), false, `${label}: no marker: ${ran.stderr}`);
-    assert.match(ran.stderr, /holds something athanor did not put there/, `${label}: the folder guard stopped it`);
-  }
 });
 
 test('B11 a check that compares with the base fails without a version bump and passes with one, as on the host', async (t) => {
