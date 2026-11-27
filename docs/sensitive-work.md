@@ -8,9 +8,9 @@
   macOS each lock is a loopback port (ADR 0037), open to any local program in
   the same way, and readable by a Mac engine's `serve` containers and image
   builds (accepted class "The macOS lock ports and containers"). athanor
-  relies on the operating system's user separation for the state folder
-  (its mode comes from the owner's umask on Linux and macOS; on Windows, the
-  home folder's own access rules). The
+  sets no mode on the state folder: on Linux and macOS it takes the owner's
+  umask, which can let other accounts read it, and the owner makes it private
+  (README); on Windows, the home folder's own access rules apply. The
   `--output` folder is mode 0700 on every platform but Windows, and on Windows
   inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote

@@ -449,8 +449,8 @@ pack of the history from the merge base onward, until the run has streamed it
 into the container (or, if it can't be removed then, until the run ends), and
 for up to a day after a run that was killed hard. athanor sets no private mode
 on the folder: on Linux and macOS your umask does, which often lets other
-accounts read it. Run `chmod 700` on it. If you set `ATHANOR_HOME`, point it
-at a folder only you can read.
+accounts read it. Run `mkdir -p ~/.athanor && chmod 700 ~/.athanor`, with your
+`ATHANOR_HOME` folder in place of `~/.athanor` if you set one.
 
 ## Disk
 
@@ -514,7 +514,9 @@ full class.
   outputs cross the network unencrypted. Set it only on a network you trust. Accepted class "A shared or remote engine, and the network".
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
   that athanor counts as local can be forwarded to another machine, or held by
-  another local program. Know where your Docker endpoint leads. Accepted class
+  another local program. athanor checks your engine and builder once, so know
+  where your Docker endpoint leads, and don't edit your Docker context or builder
+  while a run or server is starting or waiting. Accepted class
   "A shared or remote engine, and the network"; a local program holding it is
   the machine's, out of scope.
 - **The Windows slot pipe on the network.** On Windows, a user elsewhere on
@@ -589,6 +591,11 @@ full class.
   with nothing encrypting them. They rely on your disk encryption and the
   folder's access rules; keep the folder where only you can read it. Out of
   scope: files left on the machine are the machine's.
+- **Who can read the state folder.** On Linux and macOS its mode comes from
+  your umask, so other accounts may be able to read the copies of your files and
+  history in it. Make it private, as
+  [the configuration section](#machine-configuration) says. Out of scope: other
+  accounts on the machine are the machine's.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
   engine's operator. Don't pass secrets as command arguments. The process list
