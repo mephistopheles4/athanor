@@ -1,8 +1,9 @@
 // The thin CLI: parses arguments, prints, handles signals, returns the exit code.
 // The core (index.ts) does the work and never prints or exits.
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { run, status, prune, serve } from './index.js';
-import type { RunResult, StatusResult, PruneResult, ServeResult, Serving } from './index.js';
+import type { RunResult, StatusResult, PruneResult, ServeResult, Serving, ConfigFile } from './index.js';
 import type { DockerCommand } from './docker.js';
 import { AthanorError, EXIT } from './errors.js';
 import { lockPort } from './slots.js';
@@ -22,6 +23,8 @@ interface CliOptions {
   output?: string;
   // The base to carry into the snapshot (ADR 0032).
   base?: string;
+  // The --config flag's path, as given (ADR 0039).
+  config?: string;
   dryRun?: boolean;
   days?: number;
   // The host port athanor serve publishes on (default: one Docker picks).
@@ -52,10 +55,10 @@ export function parseArgs(argv: string[]): Parsed {
     throw new AthanorError(`unknown subcommand "${command}". ${SUBCOMMANDS}`);
   }
   const allowed: string[] = {
-    run: ['--json', '--untracked', '--output', '--base'],
+    run: ['--json', '--untracked', '--output', '--base', '--config'],
     status: ['--json'],
     prune: ['--json', '--dry-run', '--days'],
-    serve: ['--json', '--port'],
+    serve: ['--json', '--port', '--config'],
   }[command];
   const options: CliOptions = { json: false };
   const names: string[] = [];
@@ -89,6 +92,13 @@ export function parseArgs(argv: string[]): Parsed {
           throw new AthanorError('--base needs the name of the branch to compare with right after it, such as --base origin/main.');
         }
         options.base = value;
+      }
+      else if (arg === '--config') {
+        const value = rest[++i];
+        if (value === undefined || value === '' || value.startsWith('-')) {
+          throw new AthanorError('--config needs the path of a configuration file right after it, such as --config ../athanor.json.');
+        }
+        options.config = value;
       }
       else if (arg === '--port') {
         const value = rest[++i];
@@ -170,14 +180,25 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
+// The outside configuration (ADR 0039): the --config flag's path, else
+// ATHANOR_CONFIG's, where an empty value counts as unset. A relative path is
+// taken from the current folder.
+function outsideConfig(flag: string | undefined, env: NodeJS.ProcessEnv, cwd: string): ConfigFile | undefined {
+  const given = flag ?? (env.ATHANOR_CONFIG || undefined);
+  if (given === undefined) return undefined;
+  return { file: resolve(cwd, given), from: flag !== undefined ? 'flag' : 'environment', given };
+}
+
 async function runCommand(options: CliOptions, onProgress: (line: string) => void): Promise<number> {
   const controller = new AbortController();
   const onSignal = (): void => controller.abort();
   const signals = stopSignals();
   for (const s of signals) process.on(s, onSignal);
   try {
+    const config = outsideConfig(options.config, process.env, process.cwd());
     const result = await run({
       cwd: process.cwd(),
+      ...(config !== undefined ? { config } : {}),
       name: options.name,
       command: options.command,
       args: options.args,
@@ -231,6 +252,7 @@ export interface ServeIo {
   portWaitMs?: number;
   portPollMs?: number;
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 // The last JSON line of a serve, which every end writes, a failure before the
@@ -247,10 +269,13 @@ function serveEnded(result: Pick<ServeResult, 'outcome' | 'exitCode' | 'ranMs' |
 export async function serveCommand(options: CliOptions, io: ServeIo): Promise<number> {
   const onServing = (s: Serving): void => {
     io.say(`serving ${s.server} at ${s.url} (stop with Ctrl-C).`);
-    if (options.json) io.line({ schema: 1, event: 'serving', server: s.server, url: s.url, port: s.port, lock: s.lock });
+    if (options.json) io.line({ schema: 1, event: 'serving', server: s.server, url: s.url, port: s.port, lock: s.lock, ...(s.config !== undefined ? { config: s.config } : {}) });
   };
+  const cwd = io.cwd ?? process.cwd();
+  const config = outsideConfig(options.config, io.env ?? process.env, cwd);
   const result = await serve({
-    cwd: io.cwd ?? process.cwd(),
+    cwd,
+    ...(config !== undefined ? { config } : {}),
     name: options.name as string,
     ...(options.port !== undefined ? { port: options.port } : {}),
     signal: io.signal,
@@ -264,19 +289,22 @@ export async function serveCommand(options: CliOptions, io: ServeIo): Promise<nu
     ...(io.portPollMs !== undefined ? { portPollMs: io.portPollMs } : {}),
   });
   if (options.json) io.line(serveEnded(result));
-  io.say(serveLine(result));
+  io.say(serveLine(result, config !== undefined));
   return result.exitCode;
 }
 
 /** @internal The line printed when a server ends, exported for tests (ADR 0030). */
-export function serveLine(result: ServeResult): string {
+export function serveLine(result: ServeResult, outside = false): string {
   switch (result.outcome) {
     case 'stopped': return `the server was stopped and cleaned up (exit ${result.exitCode}).`;
     case 'exited': return `the server ended on its own (exit ${result.exitCode}).`;
-    case 'memory': return `the memory limit ended the server (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
+    case 'memory': return `the memory limit ended the server (exit ${result.exitCode}). Raise memory in ${configurationWords(outside)}, or use less.`;
     default: return `athanor could not serve (exit ${result.exitCode}): ${result.message}`;
   }
 }
+
+// Which configuration a message sends the user to.
+const configurationWords = (outside: boolean): string => `the ${outside ? 'outside' : 'repo'} configuration`;
 
 /** @internal The line printed for a run's result, exported for tests (ADR 0030). */
 export function resultLine(result: RunResult): string {
@@ -288,9 +316,9 @@ export function resultLine(result: RunResult): string {
     case 'timeout': return `the time limit ended the run (exit ${result.exitCode}). Raise timeoutMinutes, or find what hangs.`;
     case 'memory':
       if (result.containerExitCode !== undefined && result.containerExitCode !== EXIT.memory) {
-        return `the test exited ${result.containerExitCode}, but the memory limit killed a process in the container during the run (exit ${result.exitCode}). The test's result may be incomplete. Raise memory in the repo configuration, or use less.`;
+        return `the test exited ${result.containerExitCode}, but the memory limit killed a process in the container during the run (exit ${result.exitCode}). The test's result may be incomplete. Raise memory in ${configurationWords(result.config !== undefined)}, or use less.`;
       }
-      return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in the repo configuration, or use less.`;
+      return `the memory limit ended the run (exit ${result.exitCode}). Raise memory in ${configurationWords(result.config !== undefined)}, or use less.`;
     case 'interrupted': return `the run was interrupted and cleaned up (exit ${result.exitCode}).`;
     default: return `athanor could not run the test (exit ${result.exitCode}): ${result.message}`;
   }

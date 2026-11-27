@@ -1,8 +1,9 @@
-// The run configuration: everything a run needs from the repo configuration
-// and the machine configuration, path-checked and ceiling-checked, with the
-// source of each value, so every message names the file to fix.
-import { readFileSync, existsSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+// The run configuration: everything a run needs from the repo configuration, or
+// an outside configuration in its place, and the machine configuration,
+// path-checked and ceiling-checked, with the source of each value, so every
+// message names the file to fix.
+import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
+import { join, isAbsolute } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
 import { checkOutputs, showName } from './copy-out.js';
@@ -21,9 +22,35 @@ export const DEFAULTS = Object.freeze({
   maxProcesses: 1024,
 });
 
+// An outside configuration (ADR 0039): a configuration file named by --config
+// or ATHANOR_CONFIG, read instead of the repo configuration.
+export interface ConfigFile {
+  // An absolute path.
+  file: string;
+  from: 'flag' | 'environment';
+  // The path as the user gave it, for messages (default: file).
+  given?: string;
+}
+
+// The outside configuration a run or a server used, as its result reports it.
+export interface ConfigReport {
+  file: string;
+  from: 'flag' | 'environment';
+  // The repo configuration it stands in for, when the repo has one.
+  replaced?: 'athanor.json' | 'package.json';
+}
+
+const FROM_WORDS = { flag: '--config', environment: 'ATHANOR_CONFIG' } as const;
+
+// The line every run and server with an outside configuration prints.
+export function sourceLine({ from, replaced }: ConfigReport): string {
+  return `using the configuration from ${FROM_WORDS[from]}${replaced === undefined ? '' : `, not the repo's ${replaced}`}.`;
+}
+
 // Where a value came from.
 export type Source =
   | { kind: 'repo'; file: string; key?: string }
+  | { kind: 'outside'; file: string; key?: string }
   | { kind: 'machine'; file: string }
   | { kind: 'default' };
 
@@ -290,10 +317,65 @@ const PACKAGE_PLACE = `the "${PACKAGE_KEY}" key in package.json`;
 // The same words at the start of a sentence.
 const PACKAGE_PLACE_LEAD = `The "${PACKAGE_KEY}" key in package.json`;
 
+// The configuration a run or a server reads, validated. `place` names where it
+// was read, for every message that sends the user back to it.
+export interface Configuration {
+  source: Source & { kind: 'repo' | 'outside' };
+  values: RepoValues;
+  place: string;
+  // Set when the configuration is an outside one.
+  outside?: ConfigReport;
+}
+
+// The outside configuration when one is named, and the repo's own otherwise.
+// With an outside one, nothing else of the repo's configuration is read beyond
+// which file it stands in for.
+export function loadConfiguration(root: string, outside?: ConfigFile): Configuration {
+  return outside === undefined ? readRepoConfig(root) : readOutsideConfig(root, outside);
+}
+
+function readOutsideConfig(root: string, { file, from, given }: ConfigFile): Configuration {
+  if (!isAbsolute(file)) {
+    throw new AthanorError(`The configuration file "${showName(file)}" is not an absolute path. Give config.file as an absolute path, then run again.`);
+  }
+  const named = `configuration file ${showName(given ?? file)} (from ${FROM_WORDS[from]})`;
+  const place = `the ${named}`;
+  const lead = `The ${named}`;
+  let text: string;
+  try {
+    // Checked first: reading something such as a pipe would never end.
+    if (!statSync(file).isFile()) throw new Error('not a file');
+    text = readFileSync(file, 'utf8');
+  } catch {
+    throw new AthanorError(`${lead} could not be read. Make it a regular file you can read, then run again.`);
+  }
+  let config: unknown;
+  try {
+    config = JSON.parse(text);
+  } catch {
+    throw new AthanorError(`${lead} is not valid JSON. Fix it, then run again.`);
+  }
+  if (!isObject(config)) throw new AthanorError(`${lead} must hold one JSON object, such as { "dockerfile": "test/Dockerfile", "commands": { "test": ["npm", "test"] } }. Fix it, then run again.`);
+  const values = checkRepoValues(config, place, lead);
+  const replaced = replacedConfig(root);
+  return { source: { kind: 'outside', file }, values, place, outside: { file, from, ...(replaced !== undefined ? { replaced } : {}) } };
+}
+
+// The repo configuration an outside one stands in for. A package.json that
+// cannot be read or parsed counts as having none: nothing here is an error.
+function replacedConfig(root: string): ConfigReport['replaced'] {
+  if (existsSync(join(root, 'athanor.json'))) return 'athanor.json';
+  try {
+    const pkg: unknown = JSON.parse(readRootFile(root, 'package.json'));
+    return isObject(pkg) && Object.hasOwn(pkg, PACKAGE_KEY) ? 'package.json' : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The repo configuration, validated: athanor.json, or the athanor key in the
-// package.json at the repo root, never both. `place` names where it was read,
-// for every message that sends the user back to it.
-function readRepoConfig(root: string): { source: Source & { kind: 'repo' }; values: RepoValues; place: string } {
+// package.json at the repo root, never both.
+function readRepoConfig(root: string): Configuration {
   const hasJson = existsSync(join(root, 'athanor.json'));
   let pkg: unknown;
   if (existsSync(join(root, 'package.json'))) {
@@ -454,7 +536,7 @@ function resolveLimits(
   keys: LimitKey[],
   machine: MachineConfig,
   repo: RepoValues,
-  repoSource: Source & { kind: 'repo' },
+  repoSource: Configuration['source'],
   own: { values: Partial<Record<LimitKey, unknown>>; label: string } | undefined,
   where: string,
 ): { limits: Partial<Limits>; picked: Partial<Record<LimitKey, Picked>> } {
@@ -489,7 +571,7 @@ function resolveLimits(
   const over = (key: LimitKey, ceilingKey: keyof typeof ceilings, above: boolean): void => {
     if (keys.includes(key) && above) {
       const source = picked[key]!.source;
-      const label = source.kind === 'repo' && (source.key?.startsWith('commands.') || source.key?.startsWith('servers.')) ? source.key : key;
+      const label = (source.kind === 'repo' || source.kind === 'outside') && (source.key?.startsWith('commands.') || source.key?.startsWith('servers.')) ? source.key : key;
       throw new AthanorError(`${label} ${limits[key]} is above the machine ceiling ${ceilingKey} ${ceilings[ceilingKey]}. Lower it in ${placeOf(source)}, or raise ${ceilingKey} in the machine configuration.`);
     }
   };
@@ -555,8 +637,8 @@ export interface ServerConfig {
   names: string[];
 }
 
-export function resolveServerConfig(root: string, machine: MachineConfig, name: string): ServerConfig {
-  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
+export function resolveServerConfig(root: string, machine: MachineConfig, name: string, configuration: Configuration = loadConfiguration(root)): ServerConfig {
+  const { source: repoSource, values: repo, place: where } = configuration;
   const servers = repo.servers ?? {};
   if (!Object.hasOwn(servers, name)) {
     const names = Object.keys(servers).map(showName);
@@ -579,8 +661,8 @@ export function resolveServerConfig(root: string, machine: MachineConfig, name: 
 
 // Everything a run needs. The machine configuration is read first, on its
 // own, because the run limit comes from it before the repo is found.
-export function resolveRunConfig(root: string, machine: MachineConfig, request: RunRequest = {}): RunConfig {
-  const { source: repoSource, values: repo, place: where } = readRepoConfig(root);
+export function resolveRunConfig(root: string, machine: MachineConfig, request: RunRequest = {}, configuration: Configuration = loadConfiguration(root)): RunConfig {
+  const { source: repoSource, values: repo, place: where } = configuration;
   const machineSource: Source = { kind: 'machine', file: machine.file };
   // Where a message tells the user to change a value: the file it came from,
   // or the repo configuration for a default.
