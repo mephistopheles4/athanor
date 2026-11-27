@@ -23,7 +23,7 @@ decisions are in [docs/adr/](docs/adr/).
   flags, the configuration keys and the environment variables are athanor's
   public interface. A removal, or a change in what one means, bumps `schema`
   and the package's major version. An addition bumps neither. Exceptions
-  are the owner's decision and sit in an ADR (0017, 0021, 0023). Among them, a
+  are the owner's decision and sit in ADRs (0017, 0021, 0023, 0038). Among them, a
   form that ran something other than what it named may be fixed without a
   bump (ADR 0023).
 - **Nothing reaches `athanor run`'s test container but the snapshot and `ATHANOR_GRACE_LIMIT`.**
