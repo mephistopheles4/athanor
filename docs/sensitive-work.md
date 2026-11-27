@@ -11,8 +11,8 @@
   sets no mode on the state folder: on Linux and macOS it takes the owner's
   umask, which can let other accounts read it, and the owner makes it private
   (README); on Windows, the home folder's own access rules apply. The
-  `--output` folder is mode 0700 on every platform but Windows, and on Windows
-  inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
+  `--output` folder takes its mode from the owner's umask on Linux and macOS,
+  and on Windows inherits its parent's rules (accepted class "What athanor records, shows and leaves behind"). It relies on whatever access control the configured Docker engine has. Docker Desktop's
   local engine is the owner's; when the machine configuration allows a remote
   engine, its access control is its operator's (accepted class "A shared or remote engine, and the network"). The
   release path has its own: npm's trusted-publisher binding to this repo,

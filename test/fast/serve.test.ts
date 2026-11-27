@@ -148,6 +148,10 @@ const limitsAndControls = (memory: string) => [
 test('E2 Arguments: the docker run call is exactly the settings list, and the boot script is the fixed text', async (t) => {
   isolate(t);
   const repo = serverRepo(t, { dev: { ...devServer, writable: ['node_modules', 'cache'], memory: '1g' } });
+  // A writable folder that is a link to a folder goes to Docker under its own path.
+  mkdirSync(join(repo, 'real'));
+  rmSync(join(repo, 'cache'), { recursive: true });
+  symlinkSync(join(repo, 'real'), join(repo, 'cache'), 'junction');
   for (const hostPort of [undefined, 5000]) {
     const docker = fake(t);
     const run = serveIn(t, repo, docker, hostPort === undefined ? {} : { port: hostPort });
@@ -179,7 +183,7 @@ test('E2 Arguments: the docker run call is exactly the settings list, and the bo
 });
 
 test('E4 Checks before the container: each exits 125 with its message and starts no server', async (t) => {
-  const rows: { name: string; says: RegExp; scenario?: Record<string, unknown>; servers?: unknown; machine?: unknown; files?: Record<string, string>; port?: number; remove?: string; link?: string; file?: string; label?: string }[] = [
+  const rows: { name: string; says: RegExp; scenario?: Record<string, unknown>; servers?: unknown; machine?: unknown; files?: Record<string, string>; port?: number; remove?: string; file?: string; label?: string }[] = [
     { name: 'WORKDIR empty', scenario: { workdir: '' }, says: /WORKDIR/ },
     { name: 'WORKDIR /', scenario: { workdir: '/' }, says: /WORKDIR/ },
     { name: 'WORKDIR relative', scenario: { workdir: 'work' }, says: /WORKDIR/ },
@@ -187,7 +191,6 @@ test('E4 Checks before the container: each exits 125 with its message and starts
     { name: 'a missing writable folder', servers: { dev: { ...devServer, writable: ['cache', 'gone/deep', 'gone2'] } }, says: /"gone\/deep", "gone2" do not exist.*mkdir -p gone\/deep gone2/ },
     { name: 'a writable path that is a file', servers: { dev: { ...devServer, writable: ['afile'] } }, file: 'afile', says: /"afile" is a file, not a folder/ },
     { name: 'a writable folder the image cannot write', servers: { dev: { ...devServer, writable: ['cache'] } }, scenario: { missingWritable: ['cache'] }, says: /\/home\/node\/work\/cache.*RUN mkdir -p cache/ },
-    { name: 'a writable folder that is a link', servers: { dev: { ...devServer, writable: ['linked'] } }, link: 'linked', says: /"linked" is a link/ },
     { name: 'a repo path with a comma', label: 'athanor,repo-', says: /repo folder's path holds a comma/ },
     { name: 'a port of 0', port: 0, says: /--port/ },
     { name: 'an engine off this machine', scenario: { contextHost: 'ssh://user@example.test' }, says: /needs a Docker engine on this machine/ },
@@ -198,15 +201,6 @@ test('E4 Checks before the container: each exits 125 with its message and starts
       const home = isolate(t);
       if (row.machine) writeFileSync(join(home, 'config.json'), JSON.stringify(row.machine));
       const repo = serverRepo(t, row.servers, { ...(row.label ? { label: row.label } : {}) });
-      if (row.link) {
-        mkdirSync(join(repo, 'real'));
-        try {
-          symlinkSync(join(repo, 'real'), join(repo, row.link), 'junction');
-        } catch {
-          t.skip('this platform does not let the test make a link');
-          return;
-        }
-      }
       if (row.file) writeFileSync(join(repo, row.file), 'x');
       const docker = fake(t, row.scenario);
       const run = serveIn(t, repo, docker, row.port === undefined ? {} : { port: row.port });

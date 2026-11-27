@@ -96,8 +96,7 @@ export function checkOutputs(outputs: unknown): string | null {
 export interface OutputTarget {
   // The folder as the caller wrote it, for every message.
   asTyped: string;
-  // The parent as resolved at the start, and its real path recorded then.
-  parent: string;
+  // The parent's real path, recorded at the start.
   realParent: string;
   // The new folder's name inside the parent.
   name: string;
@@ -129,18 +128,10 @@ export function checkOutputTarget(dir: string, cwd: string): OutputTarget {
   } catch {
     throw new AthanorError(`The folder that should hold --output ${dir} does not exist. Make it first, then run again.`);
   }
-  // A parent that other accounts can write, with no sticky bit, lets them swap folders in it
-  // (the machine's, out of scope in the threat model). Windows has no mode bits to read, so this check is for the other systems.
-  if (process.platform !== 'win32') {
-    const mode = lstatSync(realParent).mode;
-    if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {
-      throw new AthanorError(`The folder that should hold --output ${dir} can be changed by other accounts: its group or other write bit is set and it has no sticky bit. Run chmod go-w on it, pick a parent that only you can write, or set the sticky bit with chmod +t. (A private user group with umask 0002 sets the group bit too; athanor cannot tell a private group from a shared one.)`);
-    }
-  }
   if (realParent.split(/[\\/]/).some((part) => part.toLowerCase() === '.git')) {
     throw new AthanorError(`--output ${dir} is inside a .git folder. Give a folder somewhere else.`);
   }
-  return { asTyped: dir, parent, realParent, name: basename(full) };
+  return { asTyped: dir, realParent, name: basename(full) };
 }
 
 // The work folder the boot script named. Exactly one line must have come before
@@ -180,8 +171,6 @@ export interface Copied {
   missing: string[];
 }
 
-// Files Windows acts on when it shows a folder: skipped and counted, on every engine (accepted class "A shared or remote engine, and the network").
-const ACT_ON_VIEW = /(^desktop\.ini$)|(\.(lnk|url|scf|library-ms|searchConnector-ms|theme|themepack)$)/i;
 const MISSING = /no such container:path|could not find the file/i;
 const RETRY = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY']);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -210,8 +199,6 @@ class Job {
   private kinds = new Map<string, 'file' | 'dir'>();
   // The same names by lower-case name, for the case check.
   private folded = new Map<string, string>();
-  // What each folder holds, by lower-case name, to refuse a bare git repository layout.
-  private children = new Map<string, Set<string>>();
   private counts: Copied = { files: 0, bytes: 0, skipped: 0, missing: [] };
   private req: CopyRequest;
   private root: string;
@@ -235,10 +222,8 @@ class Job {
   async run(): Promise<Copied> {
     const { req } = this;
     const deadline = Date.now() + req.timeMs;
-    const parentNow = (() => { try { return realpathSync.native(req.target.parent); } catch { return null; } })();
-    if (parentNow !== req.target.realParent) throw new CopyError(`the folder that holds ${req.target.asTyped} changed while the run was going.`);
     try {
-      mkdirSync(this.root, { mode: 0o700 });
+      mkdirSync(this.root);
     } catch {
       throw new CopyError(`${req.target.asTyped} could not be created.`);
     }
@@ -323,20 +308,6 @@ class Job {
       }
       this.made.push({ path, kind: 'dir' });
       this.kinds.set(exact, 'dir');
-      this.beside(parts);
-    }
-  }
-
-  // git treats a folder holding HEAD with objects, refs or a commondir file (which points at
-  // them elsewhere) as a bare repository, wherever the
-  // folder sits and in whatever order the files come (accepted class "A shared or remote engine, and the network").
-  private beside(parts: string[]): void {
-    const parent = parts.slice(0, -1).join('/');
-    const names = this.children.get(parent) ?? new Set<string>();
-    this.children.set(parent, names);
-    names.add(parts.at(-1)!.toLowerCase());
-    if (names.has('head') && (names.has('objects') || names.has('refs') || names.has('commondir'))) {
-      throw new CopyError(`the folder "${showName(parent || '.')}" would hold HEAD with objects, refs or commondir, the layout of a bare git repository, which git run there could treat as one.`);
     }
   }
 
@@ -364,26 +335,21 @@ class Job {
     this.folders(this.place(raw, output, true), true);
   }
 
-  // Opens a file for the entry; returns null when the entry is skipped.
-  file(raw: string, output: string): number | null {
+  // Opens a new file for the entry.
+  file(raw: string, output: string): number {
     const segments = this.place(raw, output, false);
-    if (ACT_ON_VIEW.test(segments.at(-1)!)) {
-      this.counts.skipped++;
-      return null;
-    }
     this.folders(segments, false);
     const exact = this.fold(segments);
     if (this.kinds.has(exact)) throw new CopyError(`the entry "${showName(exact)}" came twice.`);
     const path = join(this.root, ...segments);
     let fd: number;
     try {
-      fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o666);
+      fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o666);
     } catch {
       throw new CopyError(`the file "${showName(exact)}" could not be created (it may already exist).`);
     }
     this.made.push({ path, kind: 'file' });
     this.kinds.set(exact, 'file');
-    this.beside(segments);
     this.counts.files++;
     return fd;
   }
@@ -533,7 +499,7 @@ class Reader {
       case '\0':
       case '0': {
         this.fd = this.job.file(name, this.output);
-        this.begin(this.fd === null ? 'skip' : 'file', size);
+        this.begin('file', size);
         return;
       }
       case '5':
