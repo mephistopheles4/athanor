@@ -99,8 +99,8 @@ The same object works as `athanor.json`, at the top level of the file with no
 Save `athanor.json` as UTF-8 without a byte-order mark. PowerShell 5.1's `>`
 writes UTF-16, which athanor rejects as invalid JSON. Whichever
 file you use must be a regular file inside the repo, not a link to a place
-outside it. athanor reads it as it finds it, so a named pipe in its place
-holds the run up.
+outside it. athanor does not check that the file is a regular one, so a named
+pipe in its place makes the run wait: stop it and put a file there.
 
 - `dockerfile` (required) and `context` (default: the Dockerfile's folder)
   are repo-relative paths. Every tracked file under `context` keys the image,
@@ -170,8 +170,9 @@ check run on the host, reading only commits, would not.
 - A shallow or partial clone is refused, since part of the history may be
   missing, and so is a snapshot that holds a path named `.athanor-base`.
 - Replace refs and grafts change what git reads on your machine and are not
-  carried, so in a repo that has them a run with a base can disagree with your
-  machine, or fail.
+  carried, so in a repo that has them the history inside the container can be
+  missing commits, and your command's git calls can then fail. Remove them, or
+  run without a base.
 - The image needs git for a run with a base, 2.29 or later for a sha256 repo.
 - athanor 0.2.0 is the first release that takes `base` and `--base`. A repo
   that adopts the key needs 0.2.0 or later: an older athanor refuses the

@@ -223,7 +223,7 @@ athanor exposes on the network, and release and CI.
 athanor's own guards hold no boundary above, and only the owner's spec loosens
 one (issue 84): no shell (ADR 0002); git and docker by full path and the clean
 archive environment (ADR 0020); configuration files and configured paths kept
-in the repo (test C17); holder answers shown, not trusted (ADR 0004); a named
+in the repo (tests C17, J6); holder answers shown, not trusted (ADR 0004); a named
 base's git calls kept from the host's git settings, and the stale-run sweep
 (ADR 0032); serve's container guards (ADR 0034); and the
 run container's capability flags, `no-new-privileges` and limits (ADR 0016,

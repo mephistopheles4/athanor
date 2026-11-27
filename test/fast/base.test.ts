@@ -29,7 +29,8 @@ function assertRefused(result: RunResult, calls: Call[], pattern: RegExp) {
 }
 
 // The control set (C0, DEL, C1, U+2028, U+2029, Unicode format characters):
-// none may reach a message raw.
+// none may reach a message raw from a name given on the command line or in a
+// configuration file.
 const RAW_CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]|\p{Cf}/u;
 const CONTROLS = [['ESC', '\u001b'], ['C1 CSI', '\u009b'], ['a bidi override', '\u202e']] as const;
 
@@ -80,10 +81,17 @@ test('B1 a base name that is not a plain ref name exits 125 naming the flag, or 
       assertRefused(notArgs.result, notArgs.calls, /does not take arguments/);
       const ceiling = await runIn(t, named, { name: `n${c}` });
       assertRefused(ceiling.result, ceiling.calls, /above the machine ceiling/);
+      // A base name may hold the character, so git is asked for it and finds nothing.
+      const asFlag = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }), { base: `a${c}b` });
+      const asKey = await runIn(t, makeRepo(t, { athanor: withBase(`a${c}b`) }), { name: 'check' });
+      for (const r of [asFlag, asKey]) {
+        assert.equal(r.result.exitCode, 125, JSON.stringify(r.result));
+        assert.match(r.result.message!, /names nothing athanor can carry/);
+      }
       writeFileSync(join(home, 'config.json'), JSON.stringify({ [`m${c}`]: 1 }));
       const machineKey = await runIn(t, makeRepo(t, { athanor: withCommands({ test: ['true'] }) }));
       assertRefused(machineKey.result, machineKey.calls, /unknown key/);
-      for (const r of [inKey, inName, extraWords, notArgs, ceiling, machineKey]) {
+      for (const r of [asFlag, asKey, inKey, inName, extraWords, notArgs, ceiling, machineKey]) {
         assert.doesNotMatch(r.result.message!, RAW_CONTROL, r.result.message);
         assert.ok(r.result.message!.includes(`\\u{${c.codePointAt(0)!.toString(16)}}`), `shown escaped: ${r.result.message}`);
       }
@@ -164,6 +172,15 @@ test('B1 a base name is resolved to one branch, remote-tracking branch or tag, a
     const direct = await runIn(t, repo, { base: 'origin/main' });
     assert.equal(direct.result.base?.tip, b2, 'the name it points at is taken');
   });
+  await t.test('the progress line shows a name with a bidi override escaped', async (t) => {
+    isolate(t);
+    const { repo, b2 } = historyRepo(t);
+    git(repo, ['branch', 'a\u202eb', b2]);
+    const lines: string[] = [];
+    const { result } = await runIn(t, repo, { base: 'a\u202eb', onProgress: (l) => lines.push(l) });
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.match(lines.find((l) => l.startsWith('base '))!, /^base a\\u\{202e\}b at /);
+  });
   await t.test('a raw commit id', async (t) => {
     isolate(t);
     const { repo, b2 } = historyRepo(t);
@@ -211,7 +228,6 @@ test('B2 --base overrides a command\'s base, works with any command, and a key r
   assert.equal('base' in other.result, false, 'the check command\'s key does not reach the test command');
 });
 
-// B5, as ATH-9 cut it down.
 test('B5 an inherited git setting does not change what a base run does', async (t) => {
   isolate(t);
   const { repo, c0 } = historyRepo(t);

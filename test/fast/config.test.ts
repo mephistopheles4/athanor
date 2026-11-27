@@ -394,7 +394,7 @@ test('J5 athanor.json with a package.json that is not valid JSON exits 125 namin
   assert.equal(calls.length, 0, 'no Docker call at all');
 });
 
-test('J6 athanor.json gets the key checks, and one that cannot be read exits 125', async (t) => {
+test('J6 athanor.json gets the key checks, and one that cannot be read, or links outside the repo, exits 125', async (t) => {
   const rows: { name: string; json?: string; dir?: boolean; says: RegExp; exact?: string; absent?: string[] }[] = [
     { name: 'invalid JSON', json: `{ ${MARKER}`, says: /athanor\.json.*not valid JSON/s, exact: 'athanor.json at the repo root is not valid JSON. Fix it, then run again.', absent: [MARKER] },
     { name: 'not an object', json: '[1]', says: /athanor\.json must hold one JSON object/ },
@@ -424,6 +424,17 @@ test('J6 athanor.json gets the key checks, and one that cannot be read exits 125
     assertSetupError(result, calls, /dockerfile "\.\.\/Dockerfile" in athanor\.json is outside the repo/);
   });
 
+  await t.test('a link named athanor.json to a file outside the repo exits 125 and shows none of its keys', async (t) => {
+    isolate(t);
+    const outside = tempDir(t, 'athanor-outside-');
+    writeFileSync(join(outside, 'other.json'), JSON.stringify({ outsideKeyName: 1 }));
+    const repo = makeRepo(t);
+    symlinkSync(join(outside, 'other.json'), join(repo, 'athanor.json'), 'file');
+    const { result, calls } = await runIn(t, repo);
+    assertSetupError(result, calls, /athanor\.json at the repo root could not be read/);
+    assertNoLeak(result.message!, repo, 'outsideKeyName');
+    assert.equal(calls.length, 0, 'no Docker call at all');
+  });
 });
 
 test('J8 with no repo configuration the message names both forms', async (t) => {
