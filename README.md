@@ -229,13 +229,14 @@ configuration, which is not merged with it. Every run says so on stderr, such as
 
 In an outside configuration, `dockerfile`, `context` and each `inputs` entry is
 either a repo-relative string, as above, or `{ "config": "<path>" }`: a path
-under the folder that holds the configuration file.
+under the folder that holds the configuration file. That folder is the
+**configuration folder**, and a path in it is on the **configuration side**.
 
 ```json
 {
   "dockerfile": { "config": "image/Dockerfile" },
   "context": ".",
-  "inputs": ["package-lock.json", { "config": "image/npmrc" }],
+  "inputs": [{ "config": "image/npmrc" }],
   "commands": { "test": ["npm", "test"] }
 }
 ```
@@ -244,7 +245,7 @@ under the folder that holds the configuration file.
 | --- | --- | --- |
 | string | string or absent | The repo's tracked files, as above |
 | `config` | absent | Every file in the Dockerfile's folder, on the configuration side |
-| `config` | `config` | Every file in that folder, which must hold the Dockerfile |
+| `config` | `config` | Every file in the `context` folder, which must hold the Dockerfile |
 | `config` | string | The repo's tracked files under it, plus the Dockerfile at `.athanor-dockerfile` |
 | string | `config` | Refused |
 
@@ -542,7 +543,8 @@ Keep secrets out of the files a run sends: everything tracked in the repo (a
 file added with `git add -N` included) goes into the container, and with
 `--untracked` so does every untracked file git doesn't ignore. With a base, the commits from the merge base onward go too, with every file they hold, deleted ones included. Everything
 tracked under `context` plus each `inputs` file goes into the image build,
-which has network access; the repo's untracked files never do. With an
+which has network access; the repo's untracked files never do, unless a path
+on the configuration side takes them. With an
 [outside configuration](#an-outside-configuration), every file in a context on
 the configuration side goes into the build, as does each file it names there. With a remote engine, an operator can also choose the
 files a copy to `--output` brings back.

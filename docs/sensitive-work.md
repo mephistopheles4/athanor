@@ -26,11 +26,14 @@
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
   (out of scope: a repo's own code). With an outside configuration (`--config`
-  or `ATHANOR_CONFIG`), a configuration-side context or path also sends the build
-  files no repo tracks, every file under the context but `.git` entries
-  (ADR 0039; out of scope: files on the machine are the machine's). With `--untracked`, the untracked files git doesn't
-  ignore go into the container too, so a secret in one the ignore list misses
-  goes with them; they never reach the build. With a remote engine or builder, those copies go to that
+  or `ATHANOR_CONFIG`), a context or path on the configuration side also sends
+  the build files that no repo tracks: every file under such a context but
+  `.git` entries (ADR 0039; out of scope: files on the machine are the
+  machine's). With
+  `--untracked`, the untracked files git doesn't ignore go into the container
+  too, so a secret in one the ignore list misses goes with them; they never
+  reach the build unless a configuration-side path takes them. With a remote
+  engine or builder, those copies go to that
   machine when the machine configuration allows it (accepted class "A shared or remote engine, and the network"), and a
   remote builder can ask this machine for the
   owner's registry credentials (accepted class "A shared or remote engine, and the network"). A file added with `git add -N`
@@ -85,7 +88,8 @@
   entries, `--output`, and every entry name and header in a copied tar are
   checked too (M10, M11, M13). An outside configuration's configuration-side
   paths must stay inside its folder after links, go through no `.git` entry, and
-  name regular files, read with no filter (ADR 0039; OC7, OC9, OC15). The engine endpoint and every builder node are
+  name a regular file, or for `context` a folder; files are read with no filter
+  (ADR 0039; OC7, OC9, OC15). The engine endpoint and every builder node are
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
   ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.

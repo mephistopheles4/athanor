@@ -81,7 +81,7 @@ test('OC6 a string path is in the tested repo, the object form is in the configu
   for (const shape of shapes) {
     await t.test(`an outside configuration with context ${JSON.stringify(shape)}`, async (t) => {
       const bad = sideConfig(t, { dockerfile: 'test/Dockerfile', context: shape });
-      await refused(t, repo, bad.file, /context/);
+      await refused(t, repo, bad.file, /context must be a repo-relative path string, or \{ "config"/);
     });
   }
 });
@@ -166,6 +166,7 @@ test('OC8 each combination of dockerfile and context gives its result, and a tak
     { name: 'both inputs at one path', config: { dockerfile: 'test/Dockerfile', inputs: ['extra/deps.lock', inConfig('extra/deps.lock')] }, repo: { 'extra/deps.lock': 'x\n' }, says: /"extra\/deps\.lock".*already/ },
     { name: 'a configuration input under a repo file', config: { dockerfile: 'test/Dockerfile', context: '.', inputs: [inConfig('extra/deps.lock')] }, repo: { extra: 'x\n' }, says: /"extra\/deps\.lock".*already/ },
     { name: 'a configuration input where the context has a folder', config: { dockerfile: 'test/Dockerfile', context: '.', inputs: [inConfig('flat')] }, repo: { 'flat/x': 'x\n' }, side: { flat: 'y\n' }, says: /"flat".*already/ },
+    { name: 'a repo input under a configuration context file', config: { dockerfile: inConfig('image/Dockerfile'), inputs: ['lib/tool.sh/x'] }, repo: { 'lib/tool.sh/x': 'x\n' }, says: /"lib\/tool\.sh\/x".*already/ },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
@@ -207,9 +208,11 @@ test('OC9 the tag follows configuration-side content, no repo filter runs on tho
 test('OC15 a configuration-side context never puts a .git entry in the tree', async (t) => {
   isolate(t);
   const repo = bareRepo(t);
-  const { file } = sideConfig(t, { dockerfile: inConfig('Dockerfile') }, {
+  const { folder, file } = sideConfig(t, { dockerfile: inConfig('Dockerfile') }, {
     Dockerfile: 'FROM alpine\n', '.git/config': 'secret\n', 'sub/.GIT/HEAD': 'secret\n', 'nested/.git': 'gitdir: x\n', 'sub/kept': 'k\n', '.gitignore': 'g\n',
   });
+  // A link inside .git ends the run if athanor reads that folder at all.
+  symlinkSync(tempDir(t, 'athanor-elsewhere-'), join(folder, '.git', 'link'), 'junction');
   const { result, calls } = await runWith(t, repo, file);
   assert.equal(result.outcome, 'pass', JSON.stringify(result));
   assert.deepEqual(tarNames(buildTar(calls)), ['.gitignore', 'Dockerfile', 'config.json', 'sub/kept']);
@@ -222,7 +225,12 @@ test('OC15 a configuration-side context never puts a .git entry in the tree', as
   for (const [i, row] of rows.entries()) {
     await t.test(`a configured path inside .git, row ${i + 1}`, async (t) => {
       const bad = sideConfig(t, row, { Dockerfile: 'FROM alpine\n', '.git/Dockerfile': 'FROM x\n', '.git/config': 'secret\n' });
-      await refused(t, repo, bad.file, /\.git/);
+      await refused(t, repo, bad.file, /goes through a \.git entry/);
     });
   }
+  await t.test('a configured path that a link leads into .git', async (t) => {
+    const bad = sideConfig(t, { dockerfile: inConfig('alias/Dockerfile') }, { '.git/Dockerfile': 'FROM x\n' });
+    symlinkSync(join(bad.folder, '.git'), join(bad.folder, 'alias'), 'junction');
+    await refused(t, repo, bad.file, /goes through a \.git entry/);
+  });
 });

@@ -89,7 +89,7 @@ test('OC3 the flag wins over ATHANOR_CONFIG, an empty variable counts as unset, 
   const env = { DOCKER_HOST: 'tcp://203.0.113.1:2376' };
   const rows = [
     { name: 'the variable alone', args: [], set: variable.file, line: /using the configuration from ATHANOR_CONFIG\./ },
-    { name: 'the flag over the variable', args: ['--config', flag.file], set: variable.file, line: /using the configuration from --config\./ },
+    { name: 'the flag over the variable', args: ['--config', flag.file], set: join(variable.folder, 'gone.json'), line: /using the configuration from --config\./ },
     { name: 'a relative flag path is taken from the current folder', args: ['--config', relative(repo, flag.file)], set: '', line: /using the configuration from --config\./ },
     { name: 'a relative variable path too', args: [], set: relative(repo, variable.file), line: /using the configuration from ATHANOR_CONFIG\./ },
     { name: 'an empty variable counts as unset', args: [], set: '', line: /There is no repo configuration/ },

@@ -69,7 +69,7 @@ export function insideConfigFolder(folder: string, value: string, key: string, w
   }
   const real = realpathSync.native(target);
   if (!isInside(realFolder, real)) {
-    throw new AthanorError(`${named} in ${where} is outside the configuration folder: it leads through a link to a place outside it.`);
+    throw new AthanorError(`${named} in ${where} is outside the configuration folder: it leads through a link to a place outside it. Put it inside that folder, or name another path.`);
   }
   const rel = relative(realFolder, real).split(sep).join('/');
   noGit(rel);
@@ -80,7 +80,7 @@ export function insideConfigFolder(folder: string, value: string, key: string, w
   return rel === '' ? '.' : rel;
 }
 
-// True when child (repo-relative, forward slashes) is the folder itself or under it.
+// True when child (relative to the same root, forward slashes) is the folder itself or under it.
 export function isUnder(folder: string, child: string): boolean {
   if (folder === '.') return true;
   return child === folder || child.startsWith(folder + '/');

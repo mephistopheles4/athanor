@@ -61,16 +61,16 @@
   both. A run with both exits 125.
 - **Outside configuration.** A file named by `--config` or `ATHANOR_CONFIG`,
   read instead of the repo configuration (ADR 0039).
-- **Configuration folder.** The outside configuration's folder, where its
-  `{ "config": … }` paths start.
+- **Configuration folder.** The outside configuration's folder (the
+  configuration side), where its `{ "config": … }` paths start.
 - **Run configuration.** What a run needs from the repo or outside configuration
   and the machine configuration: the build settings, the command, the limits,
   the time limit, the command's outputs, the copy-out size cap
   (`maxOutputMegabytes`, machine only) and the Docker endpoint settings
   (`allowPlainTcp` and `allowRemoteDocker`, machine only). A command's own
-  limits come before the repo's and the machine's. Its paths are checked to
-  stay inside their folder, its limits are held to the machine's ceilings where the machine
-  configuration sets them, and
+  limits come before the configuration's and the machine's.
+  Its paths are checked to stay inside allowed folders, its limits are held
+  to the machine's ceilings where the machine configuration sets them, and
   each value keeps the file it came from, so a message names the file to fix.
   One table says which keys a repo may set and which only the machine may set.
 - **Container settings.** What reaches the container, worked out from the run

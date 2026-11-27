@@ -1,6 +1,6 @@
 # 0039. An outside configuration is a second source of build files
 
-Date: 2026-11-27 · Status: accepted · Source: the spec in `docs/spec/0001-outside-configuration.md` and the owner's decisions on ATH-11; extends 0006 and 0010
+Date: 2026-11-27 · Status: accepted · Source: the spec in `docs/spec/0001-outside-configuration.md` and the owner's decisions on ATH-11; amends 0006 and 0038 for an outside configuration, and extends 0010
 
 athanor read its configuration only from the repo it tests, so it could not run
 on a repo whose owner can't or won't add the file. The owner chose a permissive

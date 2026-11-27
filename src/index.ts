@@ -30,7 +30,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface RunOptions {
   // The folder to run in, inside the repo to test (default: the current folder).
   cwd?: string;
-  // A command name from the repo configuration's commands, or `command` to give one.
+  // A command name from the configuration's commands, or `command` to give one.
   name?: string;
   command?: string[];
   // Arguments for the named command, which must set "args": true. Not with `command`.

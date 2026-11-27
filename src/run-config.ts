@@ -458,7 +458,7 @@ function checkRepoValues(config: Record<string, unknown>, place: string, lead: s
     throw new AthanorError(`In ${place}, context must be a repo-relative path string${objectForm}.`);
   }
   if (config.inputs !== undefined && (!Array.isArray(config.inputs) || !config.inputs.every((p) => isBuildPath(p, outside)))) {
-    throw new AthanorError(`In ${place}, inputs must be a list of repo-relative paths, such as ["package-lock.json"]${objectForm}.`);
+    throw new AthanorError(`In ${place}, inputs must be a list of repo-relative paths, such as ["package-lock.json"]${outside ? '; each entry may also be { "config": "<path>" }, for a file in the configuration folder' : ''}.`);
   }
   if (!isObject(config.commands) || Object.keys(config.commands).length === 0) {
     throw new AthanorError(`In ${place}, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);

@@ -474,14 +474,14 @@ export async function buildContext(
     }
     if (sideDockerfile !== undefined) {
       if (await taken(root, inputEnv, dockerfileInContext)) {
-        throw new AthanorError(`athanor puts the configuration folder's Dockerfile at "${dockerfileInContext}" in the build context, where a file is already. Rename that file.`);
+        throw new AthanorError(`athanor puts the configuration folder's Dockerfile at "${dockerfileInContext}" in the build context, where a file or folder already is. Rename it.`);
       }
       await addSide(await sideEntry(root, scratch, configFolder, sideDockerfile, dockerfileInContext));
     }
     for (const input of inputs) {
       if (typeof input !== 'string') {
         if (await taken(root, inputEnv, input.config)) {
-          throw new AthanorError(`The inputs file "${showName(input.config)}" from the configuration folder would land on "${showName(input.config)}" in the build context, where a file is already. Rename one of them.`);
+          throw new AthanorError(`The inputs file "${showName(input.config)}" from the configuration folder would land on "${showName(input.config)}" in the build context, where a file or folder already is. Rename one of them.`);
         }
         await addSide(await sideEntry(root, scratch, configFolder, input.config, input.config));
         continue;
@@ -498,9 +498,8 @@ export async function buildContext(
       if (entries.length > 1 || tracked.slice(tracked.indexOf('\t') + 1) !== input) {
         throw new AthanorError(`The inputs entry "${input}" is a folder. List each file the build needs in inputs.`);
       }
-      const held = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });
-      if (held.trim() !== '') {
-        throw new AthanorError(`The inputs file "${input}" would land on "${input}" in the build context, where a file under context already is. Rename one of them.`);
+      if (await taken(root, inputEnv, input)) {
+        throw new AthanorError(`The inputs file "${input}" would land on "${input}" in the build context, where a file or folder already is. Rename one of them.`);
       }
       const blob = (await git(['hash-object', '-w', `--path=${input}`, '--', input], { cwd: root, env: inputEnv, what: `read the inputs file "${input}"` })).trim();
       // The mode git records; Windows reports no executable bits.

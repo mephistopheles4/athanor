@@ -56,6 +56,8 @@ if (files.length === 0) {
   console.log(`result: ${tier} fail`);
   process.exit(2);
 }
+// A configuration the machine names must not reach a test.
+delete process.env.ATHANOR_CONFIG;
 const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--test', '--test-concurrency=1', ...files], { stdio: 'inherit', shell: false });
 child.on('exit', (code) => {
   console.log(`result: ${tier} ${code === 0 ? 'pass' : 'fail'}`);

@@ -122,7 +122,7 @@ export function parseArgs(argv: string[]): Parsed {
   if (command === 'serve') {
     if (names.length !== 1) {
       throw new AthanorError(names.length === 0
-        ? 'athanor serve needs the name of one server from the repo configuration, such as athanor serve dev.'
+        ? 'athanor serve needs the name of one server from the configuration, such as athanor serve dev.'
         : `athanor serve takes one server name, but got ${names.length}: ${names.join(', ')}. Give one name, such as athanor serve dev.`);
     }
   }
