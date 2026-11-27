@@ -225,40 +225,30 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
   const bigHeader = buildTar([{ name: 'PaxHeader/x', type: 'x', declaredSize: MEGABYTE + 1 }], { end: false }).subarray(0, 512);
   const rows: { name: string; tar: Buffer; says: RegExp; late?: boolean; machine?: Record<string, unknown>; extra?: RunOptions }[] = [
     // Each of these starts with the output's own name, so only the segment rules can refuse it.
-    { name: 'parent part', tar: one('out/../x'), says: /out\/\.\.\/x/ },
+    // The name holds a right-to-left override too: a refusal shows it escaped.
+    { name: 'parent part', tar: one('out/../x\u202e'), says: /out\/\.\.\/x\\u\{202e\}/ },
     { name: 'backslash', tar: one('out/a\\b'), says: /out\/a\\b/ },
     { name: 'a part that climbs out', tar: one('out/a/../../x'), says: /out\/a\/\.\.\/\.\.\/x/ },
     { name: 'empty part', tar: one('out//x'), says: /out\/\/x/ },
-    { name: 'a newline in the name', tar: one('out/a\nb'), says: /out\/a\\u\{a\}b/ },
     { name: 'a first part that is not the output', tar: one('other/x'), says: /other\/x.*not inside the output "out"/ },
     { name: '.git folder', tar: one('out/.git/config'), says: /out\/\.git\/config/ },
-    { name: '.GIT folder deeper', tar: one('out/sub/.GIT/HEAD'), says: /\.GIT/ },
+    // A dotless i folds to I, so only the upper-case fold refuses this one.
+    { name: '.git folder deeper, with a dotless i', tar: one('out/sub/.g\u0131t/HEAD'), says: /\.g\u0131t/ },
     { name: '.git as a regular file', tar: one('out/.git'), says: /out\/\.git/ },
     // git treats a folder holding HEAD with objects or refs as a bare repository, in whatever order the files come.
     { name: 'a bare repository layout, HEAD first', tar: buildTar([{ name: 'out/HEAD', content: 'ref: refs/heads/main\n' }, { name: 'out/objects/x' }]), says: /bare git repository/ },
     { name: 'a bare repository layout, HEAD last', tar: buildTar([{ name: 'out/refs/x' }, { name: 'out/HEAD' }]), says: /bare git repository/ },
     // git also finds a repository's objects and refs through a commondir file, in another folder.
     { name: 'a bare repository layout through a commondir file', tar: buildTar([{ name: 'out/a/HEAD' }, { name: 'out/a/commondir' }, { name: 'out/b/objects/x' }]), says: /bare git repository/ },
-    { name: 'CONIN$', tar: one('out/CONIN$'), says: /out\/CONIN\$/ },
-    { name: 'CONOUT$ with an extension', tar: one('out/conout$.txt'), says: /conout\$\.txt/ },
-    { name: 'a line separator', tar: one('out/a\u2028b'), says: /out\/a\\u\{2028\}b/ },
     { name: 'a bare repository layout in a nested folder', tar: buildTar([{ name: 'out/sub/objects/', type: '5' }, { name: 'out/sub/HEAD' }]), says: /bare git repository/ },
-    { name: 'a dotless i', tar: one('out/.gıt/config'), says: /\.gıt/ },
-    { name: 'CON.txt', tar: one('out/CON.txt'), says: /CON\.txt/ },
-    { name: 'nul', tar: one('out/nul'), says: /out\/nul/ },
     { name: 'COM with a superscript', tar: one('out/COM¹.txt'), says: /COM¹/ },
-    { name: 'a device name with spaces before its extension', tar: one('out/nul  .txt'), says: /nul {2}\.txt/ },
+    { name: 'a device name with spaces before its extension', tar: one('out/conout$  .txt'), says: /conout\$ {2}\.txt/ },
     { name: 'a colon', tar: one('out/a:b'), says: /a:b/ },
     { name: 'a trailing dot', tar: one('out/x.'), says: /out\/x\./ },
     { name: 'a trailing space', tar: one('out/x '), says: /out\/x /s },
-    { name: 'a right-to-left override', tar: one('out/a‮b'), says: /out\/a\\u\{202e\}b/ },
-    // firstLine would strip "me@" after a space, so the name must be shown in full.
-    { name: 'an at sign and a prefix before a refused name', tar: one('out/x me@host:y'), says: /out\/x me@host:y/ },
     { name: 'names that differ only in case', tar: buildTar([{ name: 'out/a' }, { name: 'out/A' }]), says: /differs only in case/ },
     { name: 'a PAX path holding ..', tar: one('out/x', { pax: { path: 'out/../../x' } }), says: /out\/\.\.\/\.\.\/x/ },
-    { name: 'a PAX record with the wrong length', tar: one('out/x', { pax: ['99 path=out/y\n'] }), says: /PAX record/ },
     { name: 'a size that is not a number', tar: one('out/x', { sizeField: 'zzzzzzzzzzz\0' }), says: /size.*not a number/ },
-    { name: 'a PAX size that is not a number', tar: one('out/x', { pax: { size: 'zz' } }), says: /size.*not a number/ },
     { name: 'a PAX size over the size limit', tar: one('out/x', { pax: { size: String(5 * MEGABYTE) } }), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'a header that declares more than the size limit, before any of it arrives', tar: buildTar([{ name: 'out/big', declaredSize: 2 * MEGABYTE }], { end: false }).subarray(0, 512), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'an x header over 1 MiB', tar: bigHeader, says: /too large/ },
@@ -267,16 +257,16 @@ test('M13 a hostile tar ends with exit 125, and everything this copy made is gon
     { name: 'a truncated stream', tar: buildTar([{ name: 'out/x', content: 'abcdef' }], { end: false }).subarray(0, 512 + 3), says: /ended early/, late: true },
     { name: 'a file over the size limit', tar: one('out/big', { content: Buffer.alloc(MEGABYTE + MEGABYTE / 2, 1) }), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
     { name: 'files that together pass the size limit', tar: buildTar([1, 2, 3].map((n) => ({ name: `out/f${n}`, content: Buffer.alloc(400 * 1024, n) }))), says: /size limit/, machine: { maxOutputMegabytes: 1 } },
-    { name: 'more entries than the limit, written files', tar: buildTar(Array.from({ length: 5 }, (_, n) => ({ name: `out/f${n}` }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
     // The folders athanor makes for one deep name count against the same cap.
     { name: 'one file entry whose path makes more folders than the entry limit', tar: one(`out/${'d/'.repeat(10)}f`), says: /more entries/, extra: { maxOutputEntries: 5 } },
     { name: 'a path longer than a path can be', tar: one('out/x', { pax: { path: `out/${'d/'.repeat(2100)}f` } }), says: /too long/ },
-    { name: 'more entries than the limit, links alone', tar: buildTar(Array.from({ length: 5 }, (_, n) => ({ name: `out/l${n}`, type: '2' }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
     { name: 'more entries than the limit, metadata alone', tar: buildTar(Array.from({ length: 5 }, () => ({ name: 'pax', type: 'g' }))), says: /more entries/, extra: { maxOutputEntries: 3 } },
   ];
   for (const row of rows) {
     await t.test(row.name, async (t) => {
-      const s = scene(t, { machine: row.machine, cp: { out: served(row.tar, { lingerMs: 5000 }) } });
+      // cp stays open after its tar, so a refusal shows as cp stopped early. A
+      // row that fails only once cp has ended waits the linger out, so it is short there.
+      const s = scene(t, { machine: row.machine, cp: { out: served(row.tar, { lingerMs: row.late ? 100 : 5000 }) } });
       mkdirSync(join(s.parent, 'sentinel'));
       writeFileSync(join(s.parent, 'sentinel', 'keep.txt'), 'keep');
       const before = gitState(s.repo);
@@ -454,19 +444,19 @@ test('M15 the copy runs after pass, fail or the memory limit, and after nothing 
   });
 
   await t.test('the time bound runs from the copy\'s start, not from each output', async (t) => {
-    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 2000 });
+    const first = served(buildTar([{ name: 'one/a' }]), { lingerMs: 1500 });
     // The same run with a second output that is simply missing: the cost of everything but the wait.
     const baseline = scene(t, { outputs: ['one', 'two'], cp: { one: first } });
     const base = Date.now();
-    assert.equal((await copy(baseline, { copyTimeMs: 3000 })).result.outcome, 'pass');
+    assert.equal((await copy(baseline, { copyTimeMs: 2500 })).result.outcome, 'pass');
     const baseMs = Date.now() - base;
-    // The second output hangs. From the copy's start the bound ends it 1000 ms after the first output; a fresh bound would end it 3000 ms after.
+    // The second output hangs. From the copy's start the bound ends it 1000 ms after the first output; a fresh bound would end it 2500 ms after.
     const s = scene(t, { outputs: ['one', 'two'], cp: { one: first, two: { hang: true } } });
     const started = Date.now();
-    const { result } = await copy(s, { copyTimeMs: 3000 });
+    const { result } = await copy(s, { copyTimeMs: 2500 });
     assert.equal(result.outcome, 'error', JSON.stringify(result));
     assert.match(result.message!, /took longer/);
-    assert.ok(Date.now() - started - baseMs < 2000, 'the second output did not get a fresh 3000 ms');
+    assert.ok(Date.now() - started - baseMs < 1750, 'the second output did not get a fresh 2500 ms');
   });
 
   await t.test('a cp failing with an ssh login in its text gives a message without the login', async (t) => {

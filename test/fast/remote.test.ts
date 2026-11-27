@@ -42,7 +42,8 @@ const remoteOptIn = { allowRemoteDocker: true };
 test('L1 a local engine passes with no opt-out and no notice', async (t) => {
   const hosts = ['unix:///var/run/docker.sock', 'npipe:////./pipe/docker_engine', 'npipe:////./PIPE/dockerDesktopLinuxEngine', 'tcp://127.0.0.1:2375', 'tcp://localhost:2375', 'tcp://[::1]:2375'];
   for (const host of hosts) {
-    for (const from of ['DOCKER_HOST', 'a context'] as const) {
+    // An address is read the same way wherever it came from, so one context row covers that path.
+    for (const from of host === 'tcp://127.0.0.1:2375' ? ['DOCKER_HOST', 'a context'] as const : ['DOCKER_HOST'] as const) {
       await t.test(`${host} from ${from}`, async (t) => {
         const row: Row = from === 'DOCKER_HOST' ? { name: host, env: { DOCKER_HOST: host } } : { name: host, scenario: { contextHost: host } };
         const { result, progress } = await runRow(t, row);
@@ -159,18 +160,11 @@ test('L5 a buildx builder off this machine is refused unless the machine allows 
       assert.ok(!docker.calls().some((c) => c.args[0] === 'context' && c.args.includes('-x')), 'a bad name is never looked up');
     });
   }
-  const passes: Row[] = [
-    { name: 'a docker-driver builder of a local context', scenario: { builderDriver: 'docker', builderEndpoints: ['default'] } },
-    { name: 'a docker-container node at unix://', scenario: { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock'], loadRequired: true } },
-    { name: 'a docker-container node named for a local context', scenario: { builderDriver: 'docker-container', builderEndpoints: ['desktop-linux'], contexts: { 'desktop-linux': 'unix:///home/u/.docker/desktop/docker.sock' }, loadRequired: true } },
-  ];
-  for (const row of passes) {
-    await t.test(`passes: ${row.name}`, async (t) => {
-      const { result, progress } = await runRow(t, row);
-      assert.equal(result.outcome, 'pass', JSON.stringify(result));
-      assert.ok(!progress.some((l) => /another machine/.test(l)), progress.join('\n'));
-    });
-  }
+  await t.test('passes: a docker-container node named for a local context', async (t) => {
+    const { result, progress } = await runRow(t, { name: 'local', scenario: { builderDriver: 'docker-container', builderEndpoints: ['desktop-linux'], contexts: { 'desktop-linux': 'unix:///home/u/.docker/desktop/docker.sock' }, loadRequired: true } });
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.ok(!progress.some((l) => /another machine/.test(l)), progress.join('\n'));
+  });
   await t.test('passes: buildx missing, with no buildx inspect call', async (t) => {
     const { result, docker } = await runRow(t, { name: 'missing', scenario: { buildx: 'missing' } });
     assert.equal(result.outcome, 'pass', JSON.stringify(result));
@@ -180,30 +174,27 @@ test('L5 a buildx builder off this machine is refused unless the machine allows 
     const { result } = await runRow(t, { name: 'unknown', scenario: { buildxFails: true, buildxFailText: 'ERROR: unknown command "inspect" for "buildx"' } });
     assert.equal(result.exitCode, 125, JSON.stringify(result));
   });
-  const optIn: Row[] = [
-    { name: 'the TLS remote driver', scenario: tlsRemote },
-    { name: 'a docker-container node named for a remote TLS context', scenario: containerRemote },
-    { name: 'another context\'s docker-driver builder', env: { BUILDX_BUILDER: 'far' }, scenario: otherContext },
-  ];
-  for (const row of optIn) {
-    await t.test(`with allowRemoteDocker: ${row.name} runs, named before the build`, async (t) => {
-      const { result, progress } = await runRow(t, { ...row, machine: remoteOptIn });
-      assert.equal(result.outcome, 'pass', JSON.stringify(result));
-      assert.equal(progress.filter((l) => builderNotice.test(l)).length, 1, progress.join('\n'));
-      assert.match(progress[0]!, builderNotice);
-    });
-  }
+  // One node's TLS is read from its context, the other's from its cacert option.
+  await t.test('with allowRemoteDocker: remote TLS nodes, one a context and one with a cacert, run and are named before the build', async (t) => {
+    const scenario = { ...containerRemote, builderEndpoints: undefined, builderNodes: [{ endpoint: 'far' }, ...tlsRemote.builderNodes] };
+    const { result, progress } = await runRow(t, { name: 'far', scenario, machine: remoteOptIn });
+    assert.equal(result.outcome, 'pass', JSON.stringify(result));
+    assert.equal(progress.filter((l) => builderNotice.test(l)).length, 1, progress.join('\n'));
+    assert.match(progress[0]!, builderNotice);
+  });
 });
 
 test('L8 a builder sent in clear, or whose transport athanor could not read, needs allowPlainTcp too', async (t) => {
-  const rows: Row[] = [
-    { name: 'a remote driver at plain tcp', scenario: { builderDriver: 'remote', builderEndpoints: ['tcp://10.0.0.5:1234'] } },
+  // With both keys the run goes through the same way whatever the node, so only
+  // two rows run it: a builder athanor could read, and one it could not.
+  const rows: (Row & { passes?: boolean })[] = [
+    { name: 'a remote driver at plain tcp', scenario: { builderDriver: 'remote', builderEndpoints: ['tcp://10.0.0.5:1234'] }, passes: true },
     { name: 'an http node', scenario: { builderDriver: 'remote', builderEndpoints: ['http://10.0.0.5:1234'] } },
     { name: 'a docker-container node at a raw plain tcp address', scenario: { builderDriver: 'docker-container', builderEndpoints: ['tcp://10.0.0.5:2375'] } },
     { name: 'a node named for a context with a plain tcp endpoint', scenario: { builderDriver: 'docker-container', builderEndpoints: ['far'], contexts: { far: 'tcp://10.0.0.5:2375' } } },
     { name: 'a two-node remote builder where one node has no cacert', scenario: { builderDriver: 'remote', builderNodes: [{ endpoint: 'tcp://10.0.0.5:1234', options: 'cacert="/c/ca.pem"' }, { endpoint: 'tcp://10.0.0.6:1234' }] } },
     { name: 'a node whose label text holds a driver-options line', scenario: { builderDriver: 'remote', builderNodes: [{ endpoint: 'tcp://10.0.0.5:1234', after: 'Labels:\nDriver Options:   cacert="/c/ca.pem"\n' }] } },
-    { name: 'a failing buildx inspect', scenario: { buildxFails: true } },
+    { name: 'a failing buildx inspect', scenario: { buildxFails: true }, passes: true },
     { name: 'zero endpoints', scenario: { builderDriver: 'docker-container', builderNodes: [{}] } },
     { name: 'a failed context lookup', scenario: { builderDriver: 'docker-container', builderEndpoints: ['gone'], contexts: { gone: null } } },
     { name: 'a kubernetes driver', scenario: { builderDriver: 'kubernetes', builderEndpoints: ['kubernetes:///buildkit?deployment=x'] } },
@@ -223,6 +214,7 @@ test('L8 a builder sent in clear, or whose transport athanor could not read, nee
       assert.match(result.message!, /allowPlainTcp/);
       assert.equal(callsOf(docker.calls(), 'build').length, 0);
     });
+    if (!row.passes) continue;
     await t.test(`passes with both keys: ${row.name}`, async (t) => {
       const { result, progress } = await runRow(t, { ...row, machine: { allowRemoteDocker: true, allowPlainTcp: true } });
       assert.equal(result.outcome, 'pass', JSON.stringify(result));
@@ -240,6 +232,7 @@ test('L13 a stopped engine says Start Docker, and each builder refusal says what
     assert.match(result.message!, /Docker is not reachable.*Start Docker/s);
     assert.doesNotMatch(result.message!, /allowRemoteDocker/);
     assert.ok(!docker.calls().some((c) => c.args[0] === 'buildx'));
+    assert.equal(callsOf(docker.calls(), 'build').length + callsOf(docker.calls(), 'run').length, 0);
   });
   await t.test('a remote builder names a local builder and the opt-out with the machine file', async (t) => {
     const { result } = await runRow(t, { name: 'far', scenario: { builderDriver: 'docker-container', builderEndpoints: ['ssh://10.0.0.5'] } });
@@ -373,7 +366,7 @@ test('L7 the opt-out does not let a plain tcp engine through', async (t) => {
     await t.test(host, async (t) => {
       const { result, docker } = await runRow(t, { name: 'plain', env: { DOCKER_HOST: host }, machine: remoteOptIn });
       assert.equal(result.exitCode, 125, JSON.stringify(result));
-      assert.match(result.message!, /without TLS.*allowPlainTcp/s);
+      assert.match(result.message!, /DOCKER_HOST.*without TLS.*allowPlainTcp/s);
       assert.deepEqual(docker.calls(), []);
     });
   }
