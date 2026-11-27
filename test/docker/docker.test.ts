@@ -704,3 +704,24 @@ test('E12 After the caller dies: a hard-killed serve leaves nothing after the ne
   await next.result;
   assert.deepEqual(serverContainers(prefix), []);
 });
+
+test('OC9 a real build takes configuration-side files, and changing one changes the image tag', async (t) => {
+  isolate(t);
+  const repo = makeRepo(t);
+  const folder = tempDir(t, 'athanor-config-');
+  const file = join(folder, 'athanor.json');
+  mkdirSync(join(folder, 'image'));
+  writeFileSync(join(folder, 'image', 'Dockerfile'), `${FIXTURE['test/Dockerfile']}COPY note /note\n`);
+  writeFileSync(join(folder, 'image', 'note'), 'first\n');
+  writeFileSync(file, JSON.stringify({ dockerfile: { config: 'image/Dockerfile' }, commands: { test: ['sh', '-c', 'cat /note; stat -c %a /note'] } }));
+  const first = await runReal(t, repo, { config: { file, from: 'flag' } });
+  assert.equal(first.result.outcome, 'pass', JSON.stringify(first.result) + first.stderr);
+  assert.equal(first.stdout, 'first\n644\n');
+  const again = await runReal(t, repo, { config: { file, from: 'flag' } });
+  assert.equal(again.result.image!.tag, first.result.image!.tag);
+  assert.equal(again.result.image!.built, false);
+  writeFileSync(join(folder, 'image', 'note'), 'second\n');
+  const changed = await runReal(t, repo, { config: { file, from: 'flag' } });
+  assert.notEqual(changed.result.image!.tag, first.result.image!.tag);
+  assert.equal(changed.stdout, 'second\n644\n');
+});

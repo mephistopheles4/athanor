@@ -4,7 +4,8 @@
 import { existsSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
-import { readMachineConfig, resolveRunLimit, resolveRunConfig, resolveServerLimit, DEFAULTS } from './run-config.js';
+import { readMachineConfig, resolveRunLimit, resolveRunConfig, resolveServerLimit, loadConfiguration, sourceLine, DEFAULTS } from './run-config.js';
+import type { ConfigFile, ConfigReport } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, snapshot, buildContext, resolveBase, packBase } from './git.js';
 import type { ResolvedBase } from './git.js';
 import { stateFolder, markUse, Interrupted, settleImage } from './image.js';
@@ -21,7 +22,7 @@ import type { OutputTarget } from './copy-out.js';
 
 export { AthanorError };
 export { BOOT, BOOT_BASE_SHA1, BOOT_BASE_SHA256 } from './container-settings.js';
-export type { Outcome, Sink };
+export type { Outcome, Sink, ConfigFile, ConfigReport };
 
 const TAG_PATTERN = /^athanor:([0-9a-f]{32})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -29,7 +30,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface RunOptions {
   // The folder to run in, inside the repo to test (default: the current folder).
   cwd?: string;
-  // A command name from the repo configuration's commands, or `command` to give one.
+  // A command name from the configuration's commands, or `command` to give one.
   name?: string;
   command?: string[];
   // Arguments for the named command, which must set "args": true. Not with `command`.
@@ -42,6 +43,8 @@ export interface RunOptions {
   // A branch or tag whose history from the merge base onward rides in the
   // snapshot (ADR 0032). Overrides the named command's base key.
   base?: string;
+  // A configuration file to read instead of the repo's own (ADR 0039).
+  config?: ConfigFile;
   signal?: AbortSignal;
   onProgress?: (line: string) => void;
   stdout?: Sink | null;
@@ -72,6 +75,8 @@ export interface RunResult {
   // Set when a base is carried (ADR 0032): its full ref name, its tip and the
   // merge base, as full ids.
   base?: { ref: string; tip: string; mergeBase: string };
+  // Set when an outside configuration was used (ADR 0039).
+  config?: ConfigReport;
   waitedMs?: number;
   slot?: number;
   ranMs?: number;
@@ -193,7 +198,12 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const machine = readMachineConfig(home);
   const { limit } = resolveRunLimit(env, machine);
   const root = await repoRoot(cwd);
-  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames, base: options.base });
+  const configuration = loadConfiguration(root, options.config);
+  if (configuration.outside !== undefined) {
+    partial.config = configuration.outside;
+    onProgress(sourceLine(configuration.outside));
+  }
+  const config = resolveRunConfig(root, machine, { name, command: override, args, extraNames, base: options.base }, configuration);
   const { limits, command } = config;
   // The --output checks, before any Docker call (ADR 0023).
   let target: OutputTarget | undefined;

@@ -7,7 +7,8 @@ import { statSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { AthanorError, EXIT } from './errors.js';
-import { readMachineConfig, resolveServerConfig, resolveServerLimit } from './run-config.js';
+import { readMachineConfig, resolveServerConfig, resolveServerLimit, loadConfiguration, sourceLine } from './run-config.js';
+import type { ConfigFile, ConfigReport } from './run-config.js';
 import { repoRoot, makeScratch, clearStale, buildContext } from './git.js';
 import { stateFolder, markUse, Interrupted, settleImage } from './image.js';
 import type { ImageBuild } from './image.js';
@@ -29,8 +30,10 @@ export type ServeOutcome = 'stopped' | 'exited' | 'memory' | 'error';
 export interface ServeOptions {
   // The folder to serve from, inside the repo (default: the current folder).
   cwd?: string;
-  // The server's name, from the repo configuration's servers.
+  // The server's name, from the configuration's servers.
   name: string;
+  // A configuration file to read instead of the repo's own (ADR 0039).
+  config?: ConfigFile;
   // The host port to publish on, instead of one Docker picks.
   port?: number;
   signal?: AbortSignal;
@@ -55,6 +58,8 @@ export interface Serving {
   url: string;
   port: number;
   lock: number;
+  // Set when an outside configuration was used (ADR 0039).
+  config?: ConfigReport;
 }
 
 export interface ServeResult {
@@ -125,7 +130,10 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
   const machine = readMachineConfig(home);
   const { limit } = resolveServerLimit(machine);
   const root = await repoRoot(cwd);
-  const config = resolveServerConfig(root, machine, name);
+  const configuration = loadConfiguration(root, options.config);
+  const { outside } = configuration;
+  if (outside !== undefined) onProgress(sourceLine(outside));
+  const config = resolveServerConfig(root, machine, name, configuration);
 
   const { notices, driver, pinned } = await prepareDocker(docker, env, config.docker, { localOnly: true });
   for (const notice of notices) onProgress(notice);
@@ -201,7 +209,7 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
       root, workdir, writable: config.writable, limits: config.limits,
     });
     return await runServer({
-      docker, env: pinned, container, containerPort: config.port, name, lock, signal, stdout, stderr, onServing,
+      docker, env: pinned, container, containerPort: config.port, name, lock, signal, stdout, stderr, onServing, outside,
       portWaitMs: options.portWaitMs ?? PORT_WAIT_MS, portPollMs: options.portPollMs ?? 500,
       started: () => { removeContainer = true; },
     }, partial);
@@ -254,6 +262,7 @@ interface RunServer {
   stdout: Sink | null;
   stderr: Sink | null;
   onServing?: (s: Serving) => void;
+  outside?: ConfigReport;
   portWaitMs: number;
   portPollMs: number;
   // Called as `docker run` starts, so the container is removed on every path after.
@@ -311,7 +320,7 @@ async function runServer(o: RunServer, partial: ServeResult): Promise<ServeResul
       const url = `http://127.0.0.1:${port}/`;
       o.lock.update({ port });
       Object.assign(partial, { url, port });
-      o.onServing?.({ server: o.name, url, port, lock: o.lock.server });
+      o.onServing?.({ server: o.name, url, port, lock: o.lock.server, ...(o.outside !== undefined ? { config: o.outside } : {}) });
     }
 
     const ended = await proc.done;

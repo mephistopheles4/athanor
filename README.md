@@ -207,6 +207,66 @@ that needs one of the eight, such as `MKNOD` or `NET_RAW`, fails with a
 permission error, and no configuration gives one back yet. If your tests need one of them, open
 an issue naming the capability.
 
+## An outside configuration
+
+For a repo you can't or won't add athanor's configuration to, put it in a file
+of your own and name that file:
+
+```bash
+athanor run --config ../athanor-site.json test
+athanor serve dev --config ../athanor-site.json
+```
+
+`ATHANOR_CONFIG` names it too. The flag wins over the variable, and an empty
+variable counts as unset. A relative path starts at the current folder. `status`
+and `prune` don't take the flag.
+
+The file holds one JSON object with the keys of a repo configuration, and the
+machine configuration limits it the same way. It may sit anywhere, inside the
+repo included, and needs no git. It is used instead of the repo's own
+configuration, which is not merged with it. Every run says so on stderr, such as
+`athanor: using the configuration from ATHANOR_CONFIG, not the repo's athanor.json.`
+
+In an outside configuration, `dockerfile`, `context` and each `inputs` entry is
+either a repo-relative string, as above, or `{ "config": "<path>" }`: a path
+under the folder that holds the configuration file. That folder is the
+**configuration folder**, and a path in it is on the **configuration side**.
+
+```json
+{
+  "dockerfile": { "config": "image/Dockerfile" },
+  "context": ".",
+  "inputs": [{ "config": "image/apt-packages.txt" }],
+  "commands": { "test": ["npm", "test"] }
+}
+```
+
+| `dockerfile` | `context` | The build context |
+| --- | --- | --- |
+| string | string or absent | The repo's tracked files, as above |
+| `config` | absent | Every file in the Dockerfile's folder, on the configuration side |
+| `config` | `config` | Every file in the `context` folder, which must hold the Dockerfile |
+| `config` | string | The repo's tracked files under it, plus the Dockerfile at `.athanor-dockerfile` |
+| string | `config` | Refused |
+
+- A context on the configuration side takes **every file** under its folder,
+  ignored or untracked ones included, but nothing named `.git`. Give it a folder
+  of its own.
+- Keep secrets out of configuration-side files. What the Dockerfile copies stays
+  in the image and the build cache, and the tested repo's code can read what is
+  in the image when tests or a server run.
+- A path may not leave the configuration folder, through a link or otherwise, and
+  a configuration folder inside `.git` takes no `config` path. A link inside such a context, or any entry that is not a file or a folder, is
+  refused.
+- athanor sends these files without git filters, each as a plain file (mode
+  `100644`, so not executable). Their content keys the image as the repo's does.
+- An input from the configuration side keeps its path relative to that folder. A
+  path already taken in the build context is refused.
+- With `--json`, the run's result, and serve's `serving` line, have a `config`
+  field: `file` (the absolute path), `from` (`flag` or `environment`) and, when
+  the repo has a configuration of its own, `replaced` (`athanor.json` or
+  `package.json`).
+
 ## Use
 
 ```bash
@@ -486,7 +546,10 @@ Keep secrets out of the files a run sends: everything tracked in the repo (a
 file added with `git add -N` included) goes into the container, and with
 `--untracked` so does every untracked file git doesn't ignore. With a base, the commits from the merge base onward go too, with every file they hold, deleted ones included. Everything
 tracked under `context` plus each `inputs` file goes into the image build,
-which has network access; untracked files never do. With a remote engine, an operator can also choose the
+which has network access; the repo's untracked files never do, unless a path
+on the configuration side takes them. With an
+[outside configuration](#an-outside-configuration), every file in a context on
+the configuration side goes into the build, as does each file it names there. With a remote engine, an operator can also choose the
 files a copy to `--output` brings back.
 
 ## What athanor doesn't protect you from
@@ -510,6 +573,14 @@ full class.
   build. Keep relative entries out of your PATH, and on Windows use it only on
   repos you would run on your machine. Out of scope: a repo's own code, in the
   threat model's
+  [Scope](docs/threat-model.md#scope).
+- **What an outside configuration sends.** A context on the configuration side
+  puts every file under its folder into the image build, which has the network:
+  secrets, ignored files and all, but nothing named `.git`. Keep that folder to
+  what the build needs, and read the source line on each run: `ATHANOR_CONFIG`
+  left set applies to every repo you then run athanor in. The configuration file
+  and its Dockerfile decide what runs, so use only ones you trust. Out of scope:
+  files on your machine are the machine's, in the threat model's
   [Scope](docs/threat-model.md#scope).
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or

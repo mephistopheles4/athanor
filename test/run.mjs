@@ -57,6 +57,8 @@ if (files.length === 0) {
   console.log(`result: ${tier} fail`);
   process.exit(2);
 }
+// A configuration the machine names must not reach a test.
+delete process.env.ATHANOR_CONFIG;
 // Test files run side by side, one per CPU: each file is its own process, and
 // every test has its own state folder and lock name prefix, so none share a
 // lock, a port or a folder. Tests within a file still run one at a time.
