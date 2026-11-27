@@ -42,7 +42,8 @@ export const isGitEntry = (name: string): boolean => name.toLowerCase() === '.gi
 
 // A path given relative to the configuration folder, as a path relative to it
 // with forward slashes ('.' for the folder), checked to be there, to stay inside
-// after links and junctions, to be of its kind, and to lie in no .git folder.
+// after links and junctions, to be of its kind, and to lie in no .git folder,
+// the configuration folder included.
 export function insideConfigFolder(folder: string, value: string, key: string, where: string, kind: 'file' | 'folder'): string {
   const named = `${key} "${showName(value)}"`;
   if (isAbsolute(value)) {
@@ -60,6 +61,8 @@ export function insideConfigFolder(folder: string, value: string, key: string, w
   } catch {
     throw new AthanorError(`The configuration folder of ${where} could not be read. Make it a folder you can read, then run again.`);
   }
+  // The folder itself may not lie in a .git folder either.
+  noGit(realFolder);
   const target = resolve(realFolder, value);
   if (!isInside(realFolder, target)) {
     throw new AthanorError(`${named} in ${where} is outside the configuration folder. Every { "config": ... } path must stay inside the folder that holds the configuration file.`);

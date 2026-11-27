@@ -87,9 +87,9 @@
   sets `args`, and are passed as literal arguments (M5, M6). The `outputs`
   entries, `--output`, and every entry name and header in a copied tar are
   checked too (M10, M11, M13). An outside configuration's configuration-side
-  paths must stay inside its folder after links, go through no `.git` entry, and
-  name a regular file, or for `context` a folder; files are read with no filter
-  (ADR 0039; OC7, OC9, OC15). The engine endpoint and every builder node are
+  paths must stay inside its folder after links, go through no `.git` entry, with
+  the folder itself in none, and name a regular file, or for `context` a folder;
+  files are read with no filter (ADR 0039; OC7, OC9, OC15). The engine endpoint and every builder node are
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
   ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.

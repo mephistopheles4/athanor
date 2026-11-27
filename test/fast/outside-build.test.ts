@@ -228,6 +228,11 @@ test('OC15 a configuration-side context never puts a .git entry in the tree', as
       await refused(t, repo, bad.file, /goes through a \.git entry/);
     });
   }
+  await t.test('a configuration folder that lies inside .git', async (t) => {
+    const outer = tempDir(t, 'athanor-config-');
+    writeFiles(outer, { '.git/own/Dockerfile': 'FROM x\n', '.git/own/config.json': JSON.stringify({ commands, dockerfile: inConfig('Dockerfile') }) });
+    await refused(t, repo, join(outer, '.git', 'own', 'config.json'), /goes through a \.git entry/);
+  });
   await t.test('a configured path that a link leads into .git', async (t) => {
     const bad = sideConfig(t, { dockerfile: inConfig('alias/Dockerfile') }, { '.git/Dockerfile': 'FROM x\n' });
     symlinkSync(join(bad.folder, '.git'), join(bad.folder, 'alias'), 'junction');

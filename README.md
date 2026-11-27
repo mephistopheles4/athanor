@@ -236,7 +236,7 @@ under the folder that holds the configuration file. That folder is the
 {
   "dockerfile": { "config": "image/Dockerfile" },
   "context": ".",
-  "inputs": [{ "config": "image/npmrc" }],
+  "inputs": [{ "config": "image/apt-packages.txt" }],
   "commands": { "test": ["npm", "test"] }
 }
 ```
@@ -252,8 +252,11 @@ under the folder that holds the configuration file. That folder is the
 - A context on the configuration side takes **every file** under its folder,
   ignored or untracked ones included, but nothing named `.git`. Give it a folder
   of its own.
-- A path may not leave the configuration folder, through a link or otherwise. A
-  link inside such a context, or any entry that is not a file or a folder, is
+- Keep secrets out of configuration-side files. What the Dockerfile copies stays
+  in the image and the build cache, and the tested repo's code can read what is
+  in the image when tests or a server run.
+- A path may not leave the configuration folder, through a link or otherwise, and
+  a configuration folder inside `.git` takes no `config` path. A link inside such a context, or any entry that is not a file or a folder, is
   refused.
 - athanor sends these files without git filters, each as a plain file (mode
   `100644`, so not executable). Their content keys the image as the repo's does.

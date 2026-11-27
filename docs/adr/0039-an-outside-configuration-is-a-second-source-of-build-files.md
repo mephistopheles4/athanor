@@ -19,8 +19,8 @@ files that sit beside it.
   each `inputs` entry is a repo-relative string, as before, or
   `{ "config": "<path>" }`: a path under the **configuration folder**, the
   folder that holds the file as named. After links and junctions it must stay
-  inside that folder, and it may not go through a `.git` entry. The repo
-  configuration does not take the object form.
+  inside that folder, and it may not go through a `.git` entry, and the folder itself may not
+  lie in one. The repo configuration does not take the object form.
 - **Where they go.** A configuration-side context is the build context itself. A
   configuration-side Dockerfile with a repo context goes to
   `.athanor-dockerfile` at the context's root. A configuration-side input keeps
@@ -48,6 +48,7 @@ files that sit beside it.
   tree's own `text`, `eol`, `ident` and `working-tree-encoding` attributes
   (0020), to configuration-side files too: a `.gitattributes` file in the tree
   can change what the build receives.
-- Nothing new reaches the test container.
+- The test container takes no new option or variable. A file the build copies
+  into the image is in it, where the tested repo's code can read it.
 - A variable left set applies to every repo athanor then runs in. The source
   line is how a user sees it.
