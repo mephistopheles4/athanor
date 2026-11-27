@@ -1,8 +1,8 @@
 // git owns the tar stream of a commit (spec on issue 8, candidate 3): where
 // its pinned settings live, and that they hold against a hostile global git
-// config. The archive runs in athanor's own git folder in a clean environment
-// (ADR 0020), so it reads neither the repo's config nor the global one; only
-// that folder and the -c pins apply.
+// config. The archive runs in athanor's own git folder
+// (ADR 0020), so it reads no repo config; the -c pins hold against the global
+// one.
 // One top-level test per acceptance claim, and one for the stream's pins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,8 +20,11 @@ test('T11 the tar streams keep their pinned line endings and file modes against 
     files: { '.gitattributes': '* text\n', 'test/.gitattributes': '* text\n', 'test/lf.sh': 'one\ntwo\n', 'run.sh': 'a\nb\n' },
   });
   // Settings that would give CRLF and group-writable files if a pin were lost.
-  const global = join(tempDir(t), 'gitconfig');
-  writeFileSync(global, '[core]\n\tautocrlf = true\n\teol = crlf\n[tar]\n\tumask = 0002\n');
+  const folder = tempDir(t);
+  const attributes = join(folder, 'attributes');
+  writeFileSync(attributes, '* text eol=crlf\n');
+  const global = join(folder, 'gitconfig');
+  writeFileSync(global, `[core]\n\tautocrlf = true\n\teol = crlf\n\tattributesFile = ${attributes.replace(/\\/g, '/')}\n[tar]\n\tumask = 0002\n`);
   const saved = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM };
   Object.assign(process.env, { GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: '1' });
   t.after(() => {

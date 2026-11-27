@@ -21,8 +21,9 @@
   setting, hook or remote (ADR 0032).
 - **Archive step.** The `git archive` that turns the snapshot's or the build
   context's tree into a tar stream. It runs in athanor's own git folder, with
-  no host git config and no content filter (ADR 0020). The git calls that make
-  those trees come before it and still use the host's git config.
+  no content filter and with its line endings, attributes file and file modes
+  pinned (ADR 0020). The git calls that make those trees come before it. Both
+  use the host's git config.
 - **Slot.** One of the machine's N places for a running container. A run holds
   slot n by holding its OS lock: the named pipe (Windows) or abstract socket
   (Linux) `athanor-slot-<n>`, or on macOS port 47300 + n on 127.0.0.1 (ADR

@@ -221,8 +221,8 @@ athanor exposes on the network, and release and CI.
   two-factor approval.
 
 athanor's own guards hold no boundary above, and only the owner's spec loosens
-one (issue 84): no shell (ADR 0002); git and docker by full path and the clean
-archive environment (ADR 0020); the configuration file checks (test J6);
+one (issue 84): no shell (ADR 0002); the archive step's content filter block
+and pins (ADR 0020); the configuration file checks (test J6);
 configured paths kept in the repo (test C17); holder answers shown, not
 trusted (ADR 0004); a named base checked apart from the repo's settings and
 the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the

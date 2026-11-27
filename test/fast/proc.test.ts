@@ -2,10 +2,8 @@
 // multibyte character split across chunks comes back as written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { symlinkSync } from 'node:fs';
-import { basename, delimiter, dirname, join, parse, sep } from 'node:path';
-import { tmpdir } from 'node:os';
-import { call, findProgram, programNames } from '#dist/proc.js';
+import { join } from 'node:path';
+import { call } from '#dist/proc.js';
 import { AthanorError } from '#dist/errors.js';
 import { tempDir } from '../helpers.ts';
 
@@ -20,54 +18,12 @@ test('I22 captured output with a multibyte character split across chunks comes b
   assert.equal(ended.stderr, 'é');
 });
 
-// G8 (H2 on issue 20): git and docker start by a full path from one of PATH's
-// absolute entries, never from the working folder or a relative entry, and on
-// Windows only by a name Windows can start. node itself stands in for the
-// program, so the test runs nothing and plants nothing.
-test('G8 a program is found only in PATH\'s absolute entries, never in the working folder or a relative entry', () => {
-  const dir = dirname(process.execPath);
-  const name = parse(process.execPath).name;
-  const elsewhere = tmpdir();
-  const skipped = (path: string, cwd: string) => assert.throws(() => findProgram(name, { path, cwd }),
+// G8: git and docker start by name, and one that PATH does not hold is named in
+// a plain message. A missing working folder is not reported that way.
+test('G8 a program PATH does not hold ends in a plain message', async (t) => {
+  const name = 'athanor-no-such-program';
+  await assert.rejects(call([name]),
     (error: unknown) => error instanceof AthanorError && error.message === `${name} was not found on PATH. Install it, or add its folder to PATH, then run again.`);
-  const windows = process.platform === 'win32';
-  // The working folder holds node and is on PATH as an absolute entry: skipped,
-  // however the entry spells it.
-  skipped(dir, dir);
-  skipped(dir + sep, dir);
-  if (windows) skipped(dir.toUpperCase(), dir);
-  // A relative entry naming node's folder from the working folder: skipped.
-  skipped(['.', '', basename(dir)].join(delimiter), dirname(dir));
-  // On Windows, entries that hang off a drive or its current folder are
-  // relative too: skipped.
-  if (windows) {
-    const { root } = parse(dir);
-    skipped(root.slice(0, 2) + basename(dir), dirname(dir));
-    skipped(dir.slice(root.length - 1), dirname(dir));
-  }
-  // The names tried in each folder: on Windows, a name with no extension only
-  // with .com, then .exe, since Windows cannot start it as given.
-  assert.deepEqual(programNames('git'), windows ? ['git.com', 'git.exe'] : ['git']);
-  assert.deepEqual(programNames('git.exe'), ['git.exe']);
-  // An absolute entry after the skipped ones: the full path to node.
-  assert.equal(findProgram(name, { path: ['.', '', basename(dir), dir].join(delimiter), cwd: elsewhere }), join(dir, basename(process.execPath)));
-});
-
-// MC7 (spec on ATH-7): the working folder is skipped however a PATH entry
-// reaches it, so folders are compared by what they are, not how they are spelled.
-test('MC7 a PATH entry that is the working folder through a link, or on macOS in another case, is skipped', { skip: process.platform === 'win32' && 'Windows compares the spelling, without case' }, (t) => {
-  const dir = dirname(process.execPath);
-  const name = parse(process.execPath).name;
-  const link = join(tempDir(t), 'link');
-  symlinkSync(dir, link);
-  const skipped = (path: string, cwd: string) => assert.throws(() => findProgram(name, { path, cwd }),
-    (error: unknown) => error instanceof AthanorError && /was not found on PATH/.test(error.message));
-  skipped(link, dir);
-  skipped(dir, link);
-  if (process.platform === 'darwin') {
-    assert.notEqual(dir.toUpperCase(), dir);
-    skipped(dir.toUpperCase(), dir);
-  }
-  // From another working folder, the same link is an ordinary entry.
-  assert.equal(findProgram(name, { path: link, cwd: tmpdir() }), join(link, basename(process.execPath)));
+  const ended = await call([name], { cwd: join(tempDir(t), 'gone') });
+  assert.equal(ended.code, null);
 });

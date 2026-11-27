@@ -28,9 +28,9 @@ function fakeAthanor(dir: string): string {
   return dir;
 }
 
-function runHook(input: unknown, path: string, cwd?: string): string {
+function runHook(input: unknown, path: string): string {
   const env = { ...process.env, PATH: path, Path: path };
-  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, cwd, encoding: 'utf8', shell: false });
+  const r = spawnSync(process.execPath, [hook], { input: JSON.stringify(input), env, encoding: 'utf8', shell: false });
   assert.equal(r.status, 0, 'the hook always exits 0');
   assert.equal(r.stderr, '');
   return r.stdout;
@@ -59,10 +59,6 @@ test('H2 everything else passes in silence: no athanor, the docker tier, a named
   const path = fakeAthanor(tempDir(t));
   const none = tempDir(t);
   assert.equal(runHook(call('node test/run.mjs fast'), none), '', 'athanor missing');
-  // A relative entry that would find an athanor from the working folder is never searched.
-  const here = tempDir(t);
-  fakeAthanor(join(here, 'rel'));
-  assert.equal(runHook(call('node test/run.mjs fast'), 'rel', here), '', 'a relative PATH entry is not searched');
   for (const command of [
     'node test/run.mjs docker',
     "node test/run.mjs fast --host-fallback='docker is stopped'",

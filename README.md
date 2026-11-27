@@ -263,12 +263,14 @@ files it left out. It never changes your working tree, index, refs or stash
 list; it writes outside the state folder only into an `--output` folder.
 
 The files reach the container and the image build as committed: athanor pins
-their line endings and file modes, and applies your repo's own
-`.gitattributes` settings for `text`, `eol`, `ident` and
-`working-tree-encoding`. The step that packs them into a tar stream
-(`git archive`) runs no git content filter and does not read your global or
-system git configuration, so a Git LFS file arrives as its pointer file. The git calls that record uncommitted work still run with your git
-configuration, clean filters included
+their line endings and file modes, leaves out your own git attributes file,
+and applies your repo's own `.gitattributes` settings for `text`, `eol`,
+`ident` and `working-tree-encoding`. The step that packs them into a tar
+stream (`git archive`) runs no git content filter, so a Git LFS file arrives
+as its pointer file. It reads your git configuration and `GIT_*` variables
+(never `GIT_COMMON_DIR` or `GIT_WORK_TREE`), so a setting there, or a system
+attributes file, can change the files. The git calls that record uncommitted
+work run with your git configuration too, clean filters included
 ([issue 42](https://github.com/mephistopheles4/athanor/issues/42)). With Git
 LFS, its clean filter can copy uncommitted files, and with `--untracked`
 untracked ones, into the repo's `.git/lfs` folder, where they stay.
@@ -564,7 +566,8 @@ full class.
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
-  (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
+  (see [Use](#use)). The step that packs your files reads your git settings, so
+  one there can change what the container and the build get. In a repo with a clean filter such as Git LFS, commit
   work before a run, or know that the filter sees it. Out of scope: your git
   configuration is the machine's.
 - **What a copied file holds.** With `--output`, a report the test code wrote

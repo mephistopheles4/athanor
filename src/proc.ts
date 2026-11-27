@@ -1,8 +1,7 @@
 // Child processes, always from an argument array with shell: false (ADR 0002).
 import { spawn } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
-import { delimiter, extname, join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { Readable, Writable } from 'node:stream';
 import { AthanorError } from './errors.js';
 
@@ -31,91 +30,11 @@ export interface Started {
   done: Promise<Ended>;
 }
 
-const windows = process.platform === 'win32';
-
-// Whether a path is absolute from the root of a drive or share. On Windows,
-// "\x" hangs off whichever drive is current, so it does not count.
-function absolute(path: string): boolean {
-  return windows ? /^([a-z]:[\\/]|[\\/]{2}[^\\/])/i.test(path) : path.startsWith('/');
-}
-
-// The same folder, whatever its trailing separator. Windows compares the
-// spelling without its case. Elsewhere two folders are the same when they are
-// one file on disk, so a link, or a disk that ignores case or Unicode form (as
-// macOS does), cannot spell the working folder another way. When either cannot
-// be read, the spellings are compared.
-function sameFolder(a: string, b: string): boolean {
-  const [x, y] = [resolve(a), resolve(b)];
-  if (windows) return x.toLowerCase() === y.toLowerCase();
-  try {
-    // As big integers, so a large inode number is not rounded.
-    const [s, t] = [statSync(x, { bigint: true }), statSync(y, { bigint: true })];
-    return s.dev === t.dev && s.ino === t.ino;
-  } catch {
-    return x === y;
-  }
-}
-
-function isProgram(file: string): boolean {
-  try {
-    if (!statSync(file).isFile()) return false;
-    if (!windows) accessSync(file, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// The file names a program is looked for by in each PATH folder. Windows
-// cannot start a file with no extension, so there a name without one is tried
-// with .com, then .exe, as Node itself would; never .cmd or .bat, which need a
-// shell. A name with an extension is tried as given.
-export function programNames(name: string): string[] {
-  return windows && extname(name) === '' ? [`${name}.com`, `${name}.exe`] : [name];
-}
-
-// The full path of a program named without a folder, found in PATH's absolute
-// entries only (ADR 0020): never in the working folder or a relative entry,
-// which Windows would otherwise search first.
-export function findProgram(name: string, { path = process.env.PATH ?? '', cwd = process.cwd() }: { path?: string; cwd?: string } = {}): string {
-  const names = programNames(name);
-  for (const raw of path.split(delimiter)) {
-    const entry = windows ? raw.replace(/^"(.*)"$/, '$1') : raw;
-    const folder = resolve(cwd, entry);
-    if (!absolute(entry) || sameFolder(folder, cwd)) continue;
-    for (const each of names) {
-      const file = join(folder, each);
-      if (isProgram(file)) return file;
-    }
-  }
-  throw new AthanorError(`${name} was not found on PATH. Install it, or add its folder to PATH, then run again.`);
-}
-
-// Each name is looked up once per process, so every later start of it runs
-// the same file.
-const found = new Map<string, string>();
-
-function hasFolder(program: string): boolean {
-  return windows ? /[\\/]|^[a-z]:/i.test(program) : program.includes('/');
-}
-
-function programPath(program: string): string {
-  if (hasFolder(program)) return program;
-  let file = found.get(program);
-  if (file === undefined) {
-    file = findProgram(program);
-    found.set(program, file);
-  }
-  return file;
-}
-
-// Start argv[0] with argv.slice(1). A name without a folder starts by the full
-// path findProgram gives; a path passes through unchanged.
+// Start argv[0] with argv.slice(1).
 export function start(argv: string[], { cwd, env, stdin = 'ignore', capture = true, onStdout, onStderr }: StartOptions = {}): Started {
-  const program = programPath(argv[0]);
   // stdout and stderr are always piped, so neither is null; Node's types
   // cannot tell that while stdin is either.
-  const child = spawn(program, argv.slice(1), {
+  const child = spawn(argv[0], argv.slice(1), {
     cwd,
     env: env ?? process.env,
     stdio: [stdin, 'pipe', 'pipe'],
@@ -142,11 +61,18 @@ export function start(argv: string[], { cwd, env, stdin = 'ignore', capture = tr
   return { child, done };
 }
 
-// Run argv to the end and return how it ended.
-export function call(argv: string[], options: StartOptions & { input?: string } = {}): Promise<Ended> {
+// Run argv to the end and return how it ended. A program named without a
+// folder that PATH does not hold ends in a plain message. A missing working
+// folder fails to spawn the same way, and is left to the caller.
+export async function call(argv: string[], options: StartOptions & { input?: string } = {}): Promise<Ended> {
   const { child, done } = start(argv, options);
   if (options.input !== undefined) child.stdin?.end(options.input);
-  return done;
+  const ended = await done;
+  const missing = (ended.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+  if (missing && !/[\\/]/.test(argv[0]) && existsSync(options.cwd ?? '.')) {
+    throw new AthanorError(`${argv[0]} was not found on PATH. Install it, or add its folder to PATH, then run again.`);
+  }
+  return ended;
 }
 
 // Pipe a tar stream from one child (git) into another (Docker). If the
