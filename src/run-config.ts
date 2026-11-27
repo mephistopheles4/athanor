@@ -3,9 +3,9 @@
 // path-checked and ceiling-checked, with the source of each value, so every
 // message names the file to fix.
 import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, dirname } from 'node:path';
 import { AthanorError } from './errors.js';
-import { insideRepo, isUnder } from './paths.js';
+import { insideRepo, insideConfigFolder, isUnder } from './paths.js';
 import { checkOutputs, showName } from './copy-out.js';
 import { MAC_MOST_LOCKS } from './slots.js';
 
@@ -179,10 +179,15 @@ export function baseNameProblem(name: string): string | null {
 
 const BASE_HINT = 'Name a remote-tracking branch or a tag, such as origin/main.';
 
+// A build path: a string is a repo-relative path in the tested repo, and the
+// object form, which only an outside configuration takes, a path in the
+// configuration folder (ADR 0039).
+export type BuildPath = string | { config: string };
+
 interface RepoValues {
-  dockerfile: string;
-  context?: string;
-  inputs?: string[];
+  dockerfile: BuildPath;
+  context?: BuildPath;
+  inputs?: BuildPath[];
   commands: Record<string, string[] | CommandObject>;
   servers?: Record<string, ServerObject>;
   memory?: string;
@@ -203,8 +208,10 @@ export interface Limits {
 type LimitKey = keyof Limits;
 
 export interface RunConfig {
-  // Repo-relative paths with forward slashes, each checked to stay inside the repo.
-  build: { dockerfile: string; context: string; inputs: string[]; dockerfileInContext: string };
+  // Paths with forward slashes: a string is relative to the repo, the object
+  // form to configFolder, which is set when the configuration is an outside
+  // one. Each is checked to stay inside its folder.
+  build: { dockerfile: BuildPath; context: BuildPath; inputs: BuildPath[]; dockerfileInContext: string; configFolder?: string };
   // The dockerfile as the configuration spells it, for progress messages.
   dockerfileAsSet: string;
   // The argument array that runs: the command's argv, then the caller's arguments.
@@ -325,6 +332,8 @@ export interface Configuration {
   place: string;
   // Set when the configuration is an outside one.
   outside?: ConfigReport;
+  // The outside configuration file's folder.
+  folder?: string;
 }
 
 // The outside configuration when one is named, and the repo's own otherwise.
@@ -356,9 +365,9 @@ function readOutsideConfig(root: string, { file, from, given }: ConfigFile): Con
     throw new AthanorError(`${lead} is not valid JSON. Fix it, then run again.`);
   }
   if (!isObject(config)) throw new AthanorError(`${lead} must hold one JSON object, such as { "dockerfile": "test/Dockerfile", "commands": { "test": ["npm", "test"] } }. Fix it, then run again.`);
-  const values = checkRepoValues(config, place, lead);
+  const values = checkRepoValues(config, place, lead, true);
   const replaced = replacedConfig(root);
-  return { source: { kind: 'outside', file }, values, place, outside: { file, from, ...(replaced !== undefined ? { replaced } : {}) } };
+  return { source: { kind: 'outside', file }, values, place, folder: dirname(file), outside: { file, from, ...(replaced !== undefined ? { replaced } : {}) } };
 }
 
 // The repo configuration an outside one stands in for. A package.json that
@@ -419,22 +428,37 @@ function readRepoConfig(root: string): Configuration {
   return { source, values: checkRepoValues(config, place, lead), place };
 }
 
-// The checks on the repo configuration object, whichever place it came from.
-// `lead` is the place as it starts a sentence.
-function checkRepoValues(config: Record<string, unknown>, place: string, lead: string): RepoValues {
+const isPathString = (v: unknown): boolean => typeof v === 'string' && v !== '';
+const isObjectForm = (v: unknown): boolean => isObject(v) && Object.hasOwn(v, 'config');
+const isBuildPath = (v: unknown, outside: boolean): boolean =>
+  isPathString(v) || (outside && isObjectForm(v) && Object.keys(v as object).length === 1 && isPathString((v as { config: unknown }).config));
+
+// The checks on a configuration object, whichever place it came from. `lead` is
+// the place as it starts a sentence. Only an outside one takes the object form
+// of a build path.
+function checkRepoValues(config: Record<string, unknown>, place: string, lead: string, outside = false): RepoValues {
   for (const k of Object.keys(config)) {
     if (!REPO_KEYS.includes(k as Key)) {
       throw new AthanorError(`${lead} has an unknown key "${showName(k)}". Its keys are: ${REPO_KEYS.join(', ')}.`);
     }
   }
-  if (typeof config.dockerfile !== 'string' || config.dockerfile === '') {
-    throw new AthanorError(`"dockerfile" is required in ${place}: the repo-relative path of the Dockerfile.`);
+  if (!outside) {
+    for (const k of ['dockerfile', 'context', 'inputs'] as const) {
+      const value = config[k];
+      if (k === 'inputs' ? Array.isArray(value) && value.some(isObjectForm) : isObjectForm(value)) {
+        throw new AthanorError(`"${k}" in ${place} must be a repo-relative path; { "config": ... } works only in an outside configuration.`);
+      }
+    }
   }
-  if (config.context !== undefined && (typeof config.context !== 'string' || config.context === '')) {
-    throw new AthanorError(`In ${place}, context must be a repo-relative path string.`);
+  const objectForm = outside ? ', or { "config": "<path>" } for one in the configuration folder' : '';
+  if (!isBuildPath(config.dockerfile, outside)) {
+    throw new AthanorError(`"dockerfile" is required in ${place}: the repo-relative path of the Dockerfile${objectForm}.`);
   }
-  if (config.inputs !== undefined && (!Array.isArray(config.inputs) || !config.inputs.every((p) => typeof p === 'string' && p !== ''))) {
-    throw new AthanorError(`In ${place}, inputs must be a list of repo-relative paths, such as ["package-lock.json"].`);
+  if (config.context !== undefined && !isBuildPath(config.context, outside)) {
+    throw new AthanorError(`In ${place}, context must be a repo-relative path string${objectForm}.`);
+  }
+  if (config.inputs !== undefined && (!Array.isArray(config.inputs) || !config.inputs.every((p) => isBuildPath(p, outside)))) {
+    throw new AthanorError(`In ${place}, inputs must be a list of repo-relative paths, such as ["package-lock.json"]${objectForm}.`);
   }
   if (!isObject(config.commands) || Object.keys(config.commands).length === 0) {
     throw new AthanorError(`In ${place}, commands must map names to argument arrays, such as { "test": ["npm", "test"] }.`);
@@ -510,20 +534,52 @@ interface Picked {
   source: Source;
 }
 
-// The build part of the configuration: the Dockerfile, its context and the
-// inputs, as repo-relative paths with forward slashes.
-function resolveBuild(root: string, repo: RepoValues, where: string): RunConfig['build'] {
-  const dockerfile = insideRepo(root, repo.dockerfile, 'dockerfile', where);
-  const context = repo.context !== undefined
-    ? insideRepo(root, repo.context, 'context', where)
-    : (dockerfile.includes('/') ? dockerfile.slice(0, dockerfile.lastIndexOf('/')) : '.');
-  const inputs = (repo.inputs ?? []).map((p) => insideRepo(root, p, 'inputs', where));
+// Where the Dockerfile goes in a build context from the tested repo when it
+// comes from the configuration folder.
+export const SIDE_DOCKERFILE = '.athanor-dockerfile';
+
+const parentOf = (path: string): string => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '.');
+
+// A Dockerfile's path inside its context, both from the same folder.
+function within(context: string, dockerfile: string, shown: string, shownContext: string, where: string): string {
   if (!isUnder(context, dockerfile)) {
-    throw new AthanorError(`The Dockerfile "${repo.dockerfile}" is outside the context folder "${context}". Move it into the context, or widen the context in ${where}.`);
+    throw new AthanorError(`The Dockerfile "${shown}" is outside the context folder "${shownContext}". Move it into the context, or widen the context in ${where}.`);
   }
-  const dockerfileInContext = context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
-  return { dockerfile, context, inputs, dockerfileInContext };
+  return context === '.' ? dockerfile : dockerfile.slice(context.length + 1);
 }
+
+// The build part of the configuration: the Dockerfile, its context and the
+// inputs, as paths with forward slashes, each from the tested repo or from the
+// configuration folder (ADR 0039).
+function resolveBuild(root: string, { values: repo, place: where, folder }: Configuration): RunConfig['build'] {
+  const side = (path: { config: string }, key: string, kind: 'file' | 'folder'): { config: string } =>
+    ({ config: insideConfigFolder(folder as string, path.config, key, where, kind) });
+  const place = (path: BuildPath, key: string, kind: 'file' | 'folder'): BuildPath =>
+    (typeof path === 'string' ? insideRepo(root, path, key, where) : side(path, key, kind));
+  const dockerfile = place(repo.dockerfile, 'dockerfile', 'file');
+  const given = repo.context !== undefined ? place(repo.context, 'context', 'folder') : undefined;
+  const inputs = (repo.inputs ?? []).map((p) => place(p, 'inputs', 'file'));
+  const shown = showName(typeof repo.dockerfile === 'string' ? repo.dockerfile : repo.dockerfile.config);
+  let context: BuildPath;
+  let dockerfileInContext: string;
+  if (typeof dockerfile === 'string') {
+    if (given !== undefined && typeof given !== 'string') {
+      throw new AthanorError(`In ${where}, context is in the configuration folder, but the Dockerfile "${shown}" is in the tested repo, and a repo Dockerfile can't be inside a context in the configuration folder. Give dockerfile as { "config": "<path>" }, or context as a repo path.`);
+    }
+    context = given ?? parentOf(dockerfile);
+    dockerfileInContext = within(context as string, dockerfile, shown, context as string, where);
+  } else if (typeof given === 'string') {
+    context = given;
+    dockerfileInContext = SIDE_DOCKERFILE;
+  } else {
+    context = given ?? { config: parentOf(dockerfile.config) };
+    dockerfileInContext = within((context as { config: string }).config, dockerfile.config, shown, (context as { config: string }).config, where);
+  }
+  return { dockerfile, context, inputs, dockerfileInContext, ...(folder !== undefined ? { configFolder: folder } : {}) };
+}
+
+// The Dockerfile as progress messages show it.
+const shownDockerfile = (path: BuildPath): string => (typeof path === 'string' ? path : `${showName(path.config)} in the configuration folder`);
 
 // Per-run limits: the command's (or server's) own, then the repo's, then the
 // machine file, then the defaults, each held to the machine's ceilings. cpus
@@ -645,11 +701,11 @@ export function resolveServerConfig(root: string, machine: MachineConfig, name: 
     throw new AthanorError(`There is no server named "${showName(name)}" in ${where}. ${names.length > 0 ? `Its servers are: ${names.join(', ')}.` : 'It declares no servers; add a "servers" key, as the README shows.'}`);
   }
   const own = servers[name] as ServerObject;
-  const build = resolveBuild(root, repo, where);
+  const build = resolveBuild(root, configuration);
   const { limits } = resolveLimits(['memory', 'cpus', 'processes'], machine, repo, repoSource, { values: own as Partial<Record<LimitKey, unknown>>, label: `servers.${showName(name)}` }, where);
   return {
     build,
-    dockerfileAsSet: repo.dockerfile,
+    dockerfileAsSet: shownDockerfile(repo.dockerfile),
     argv: own.argv,
     port: own.port,
     writable: own.writable ?? [],
@@ -668,7 +724,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
   // or the repo configuration for a default.
   const placeOf = (source: Source): string => (source.kind === 'machine' ? `the machine configuration file ${source.file}` : where);
 
-  const build = resolveBuild(root, repo, where);
+  const build = resolveBuild(root, configuration);
 
   const commandName = request.name ?? 'test';
   // Own keys only, so a name such as "constructor" is not found on the prototype.
@@ -718,7 +774,7 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
 
   return {
     build,
-    dockerfileAsSet: repo.dockerfile,
+    dockerfileAsSet: shownDockerfile(repo.dockerfile),
     command,
     limits,
     timeLimitSeconds: limits.timeoutMinutes * 60,

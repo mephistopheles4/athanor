@@ -1,12 +1,15 @@
 // Snapshots and build contexts, made without writing the repo (ADR 0006, 0007).
 // Every git call in a run uses a copy of the index and a per-run object folder
 // whose alternates file names the repo's own object store.
-import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, renameSync, utimesSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, lstatSync, readFileSync, renameSync, utimesSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
+import { isGitEntry } from './paths.js';
+import { showName } from './copy-out.js';
+import type { RunConfig } from './run-config.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -104,7 +107,7 @@ async function git(args: string[], { cwd, env, what, next = 'Fix what git report
 const firstLine = (text: unknown): string => String(text).trim().split('\n')[0]?.trim() ?? '';
 
 // A git call fed `input` on stdin, which the run's abort signal ends.
-async function gitFed(args: string[], { cwd, env, input, what, signal }: { cwd: string; env: Env; input: string; what: string; signal?: AbortSignal }): Promise<string> {
+async function gitFed(args: string[], { cwd, env, input, what, signal }: { cwd: string; env: Env; input: string | Buffer; what: string; signal?: AbortSignal }): Promise<string> {
   const started = start(['git', ...args], { cwd, env, stdin: 'pipe' });
   const kill = () => { started.child.kill(); };
   if (signal?.aborted) kill();
@@ -375,27 +378,114 @@ function onDisk(step: () => void): void {
   }
 }
 
-// The build context: tracked files under `context` at their working-tree
-// state, plus each input at its repo-relative path under the context root.
+// Every file under a folder of the configuration folder, as paths relative to
+// it, but for any .git entry. A link, or anything else that is neither a regular
+// file nor a folder, ends the run (ADR 0039).
+function sideFiles(configFolder: string, folder: string, under = ''): string[] {
+  const found: string[] = [];
+  const base = folder === '.' ? '' : `${folder}/`;
+  let names: string[];
+  try {
+    names = readdirSync(join(configFolder, folder, under)).sort();
+  } catch (error) {
+    throw unreadable(`${base}${under}` || '.', error);
+  }
+  for (const name of names) {
+    if (isGitEntry(name)) continue;
+    const path = under === '' ? name : `${under}/${name}`;
+    let stat;
+    try {
+      stat = lstatSync(join(configFolder, folder, path));
+    } catch (error) {
+      throw unreadable(`${base}${path}`, error);
+    }
+    if (stat.isDirectory()) found.push(...sideFiles(configFolder, folder, path));
+    else if (stat.isFile()) found.push(path);
+    else throw new AthanorError(`"${showName(`${base}${path}`)}" in the configuration folder is not a regular file or folder (a link, say). Replace it with one, or move it out of the context.`);
+  }
+  return found;
+}
+
+// The error's code and never its path, which holds the account name.
+function unreadable(path: string, error: unknown): AthanorError {
+  const code = (error as NodeJS.ErrnoException).code ?? 'an unknown error';
+  return new AthanorError(`"${showName(path)}" in the configuration folder could not be read (${code}). Make it one you can read, then run again.`);
+}
+
+// A configuration-side file, read once and written to the run's object folder
+// with no filters, as an index entry of mode 100644.
+async function sideEntry(root: string, scratch: Scratch, configFolder: string, file: string, path: string): Promise<string> {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(join(configFolder, file));
+  } catch (error) {
+    throw unreadable(file, error);
+  }
+  const blob = (await gitFed(['hash-object', '-w', '--no-filters', '--stdin'], { cwd: root, env: scratch.archiveEnv, input: bytes, what: `store "${showName(file)}" from the configuration folder` })).trim();
+  return `100644 ${blob}\t${path}\0`;
+}
+
+// Whether a path in the tree is taken: by a file there, by files under it, or by
+// a file where one of its folders would be.
+async function taken(root: string, env: Env, path: string): Promise<boolean> {
+  const parts = path.split('/');
+  for (let n = parts.length; n > 0; n--) {
+    const prefix = parts.slice(0, n).join('/');
+    const held = (await git(['ls-files', '-z', '--', prefix], { cwd: root, env, what: 'check a path in the build context' })).split('\0').filter(Boolean);
+    if (n === parts.length ? held.length > 0 : held.includes(prefix)) return true;
+  }
+  return false;
+}
+
+// The build context: the files under `context`, which are the repo's tracked
+// files at their working-tree state, or every file of a configuration-side
+// folder; plus a configuration-side Dockerfile for a repo context, and each
+// input at its path under the context root.
 export async function buildContext(
   root: string,
   scratch: Scratch,
-  { context, inputs, dockerfileInContext }: { context: string; inputs: string[]; dockerfileInContext: string },
+  { dockerfile, context, inputs, dockerfileInContext, configFolder = '' }: Omit<RunConfig['build'], 'dockerfile'> & { dockerfile?: RunConfig['build']['dockerfile'] },
 ): Promise<BuildContext> {
   const env = scratch.env(true);
-  const contextPath = context === '.' ? '.' : context;
-  await git(['add', '-u', '--', contextPath], { cwd: root, env, what: 'read the context folder' });
-  const writeArgs = context === '.' ? ['write-tree'] : ['write-tree', `--prefix=${context}/`];
-  const contextTree = await call(['git', ...writeArgs], { cwd: root, env });
-  if (contextTree.code !== 0) {
-    throw new AthanorError(`The context folder "${context}" has no tracked files. Add the files the image build needs to git.`);
+  let tree = '';
+  if (typeof context === 'string') {
+    await git(['add', '-u', '--', context], { cwd: root, env, what: 'read the context folder' });
+    const writeArgs = context === '.' ? ['write-tree'] : ['write-tree', `--prefix=${context}/`];
+    const contextTree = await call(['git', ...writeArgs], { cwd: root, env });
+    if (contextTree.code !== 0) {
+      throw new AthanorError(`The context folder "${context}" has no tracked files. Add the files the image build needs to git.`);
+    }
+    tree = contextTree.stdout.trim();
   }
-  let tree = contextTree.stdout.trim();
-  if (inputs.length > 0) {
+  const sideDockerfile = typeof context === 'string' && typeof dockerfile === 'object' ? dockerfile.config : undefined;
+  if (typeof context !== 'string' || sideDockerfile !== undefined || inputs.length > 0) {
     const inputEnv = scratch.env(false);
     const indexEnv = scratch.env(true);
-    await git(['read-tree', tree], { cwd: root, env: inputEnv, what: 'read the context tree' });
+    await git(['read-tree', ...(tree === '' ? ['--empty'] : [tree])], { cwd: root, env: inputEnv, what: 'read the context tree' });
+    const addSide = async (entries: string): Promise<void> => {
+      await gitFed(['update-index', '-z', '--index-info'], { cwd: root, env: inputEnv, input: entries, what: 'add the configuration folder\'s files to the build context' });
+    };
+    if (typeof context !== 'string') {
+      const entries: string[] = [];
+      for (const path of sideFiles(configFolder, context.config)) {
+        entries.push(await sideEntry(root, scratch, configFolder, context.config === '.' ? path : `${context.config}/${path}`, path));
+      }
+      await addSide(entries.join(''));
+    }
+    if (sideDockerfile !== undefined) {
+      if (await taken(root, inputEnv, dockerfileInContext)) {
+        throw new AthanorError(`athanor puts the configuration folder's Dockerfile at "${dockerfileInContext}" in the build context, where a file is already. Rename that file.`);
+      }
+      await addSide(await sideEntry(root, scratch, configFolder, sideDockerfile, dockerfileInContext));
+    }
     for (const input of inputs) {
+      if (typeof input !== 'string') {
+        if (await taken(root, inputEnv, input.config)) {
+          throw new AthanorError(`The inputs file "${showName(input.config)}" from the configuration folder would land on "${showName(input.config)}" in the build context, where a file is already. Rename one of them.`);
+        }
+        await addSide(await sideEntry(root, scratch, configFolder, input.config, input.config));
+        continue;
+      }
       // Only files git tracks reach the build: never an ignored or untracked one.
       // -z, so a name git would quote (such as one with an accent) comes back as written.
       const entries = (await git(['ls-files', '-s', '-z', '--', input], { cwd: root, env: indexEnv, what: `check the inputs file "${input}"` }))
@@ -408,8 +498,8 @@ export async function buildContext(
       if (entries.length > 1 || tracked.slice(tracked.indexOf('\t') + 1) !== input) {
         throw new AthanorError(`The inputs entry "${input}" is a folder. List each file the build needs in inputs.`);
       }
-      const taken = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });
-      if (taken.trim() !== '') {
+      const held = await git(['ls-files', '--', input], { cwd: root, env: inputEnv, what: 'check an input' });
+      if (held.trim() !== '') {
         throw new AthanorError(`The inputs file "${input}" would land on "${input}" in the build context, where a file under context already is. Rename one of them.`);
       }
       const blob = (await git(['hash-object', '-w', `--path=${input}`, '--', input], { cwd: root, env: inputEnv, what: `read the inputs file "${input}"` })).trim();
