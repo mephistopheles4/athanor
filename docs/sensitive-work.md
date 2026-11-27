@@ -84,14 +84,15 @@
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
   ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.
-  git settings, attributes, templates and `GIT_*` variables inherited from the
-  host are kept out of the archive step (ADR 0020); the git calls that record
-  the work still use them (accepted class "What athanor records, shows and leaves behind").
+  The archive step runs no content filter, pins its line endings, global
+  attributes file and file modes, and takes no `GIT_COMMON_DIR` or `GIT_WORK_TREE`
+  (ADR 0020; G2, G5, T11); the host's other git settings reach it, as they do
+  the git calls that record the work (accepted class "What athanor records, shows and leaves behind").
   A base name is checked before git sees it (no leading `-`, no revision
   syntax, no control or format character), then resolved, with the ambiguity
   check pinned on, to one branch, remote-tracking branch or tag (a command's
-  `base` to the last two), in ADR 0020's clean environment with the repo's own
-  config still read, replace refs off (on git 2.32 to 2.41 the repo's own
+  `base` to the last two), in a clean environment (no inherited `GIT_*`
+  variable, no global or system config) with the repo's own config still read, replace refs off (on git 2.32 to 2.41 the repo's own
   config may turn them back on, issue 72), grafts off, and lazy fetching off on
   git 2.45 and later. The name git resolves to gets the same control-set check. A
   shallow or partial clone, and a snapshot holding the reserved path, are
