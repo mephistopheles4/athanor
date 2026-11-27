@@ -25,9 +25,15 @@
 - **Secrets.** athanor stores no secret of its own. A secret committed to the
   repo goes into the container with the snapshot, and into the build if it is
   under `context` or listed in `inputs`; the build has the network
-  (out of scope: a repo's own code). With `--untracked`, the untracked files git doesn't
-  ignore go into the container too, so a secret in one the ignore list misses
-  goes with them; they never reach the build. With a remote engine or builder, those copies go to that
+  (out of scope: a repo's own code). With an outside configuration (`--config`
+  or `ATHANOR_CONFIG`), a context or path on the configuration side also sends
+  the build files that no repo tracks: every file under such a context but
+  `.git` entries (ADR 0039; out of scope: files on the machine are the
+  machine's). With
+  `--untracked`, the untracked files git doesn't ignore go into the container
+  too, so a secret in one the ignore list misses goes with them; they never
+  reach the build unless a configuration-side path takes them. With a remote
+  engine or builder, those copies go to that
   machine when the machine configuration allows it (accepted class "A shared or remote engine, and the network"), and a
   remote builder can ask this machine for the
   owner's registry credentials (accepted class "A shared or remote engine, and the network"). A file added with `git add -N`
@@ -74,13 +80,16 @@
   cache; the README names the commands that do. Each released version's
   provenance is signed by npm through Sigstore (the supply-chain bullet above;
   ADR 0019).
-- **Input validation.** Repo configuration, machine configuration,
+- **Input validation.** Repo configuration, outside configuration, machine configuration,
   environment values, CLI arguments, command names and configured paths are
   each validated before use, and a bad value exits 125 with a plain message
   (C17, C18, C24, C31, N4). A named command's arguments are accepted only when it
   sets `args`, and are passed as literal arguments (M5, M6). The `outputs`
   entries, `--output`, and every entry name and header in a copied tar are
-  checked too (M10, M11, M13). The engine endpoint and every builder node are
+  checked too (M10, M11, M13). An outside configuration's configuration-side
+  paths must stay inside its folder after links, go through no `.git` entry, with
+  the folder itself in none, and name a regular file, or for `context` a folder;
+  files are read with no filter (ADR 0039; OC7, OC9, OC15). The engine endpoint and every builder node are
   checked for locality and plain tcp, read as Docker reads them (a value with
   no "://" is tcp; a pipe in one exact form), and pinned for the run (ADR 0013,
   ADR 0021; L1, L2, L5, L8, L10). Holder answers are shown as reported, never as checked facts.
