@@ -239,23 +239,18 @@ macOS and `%USERPROFILE%` on Windows, and `athanor-reports` must exist already; 
 makes only the last folder:
 
 - Pick a parent under your user profile and outside any folder a sync client
-  mirrors. On Windows the folder inherits its parent's access rules. On Linux
-  and macOS, athanor refuses a parent whose group or other write bit is set
-  unless it has the sticky bit, since it cannot tell a private group (a umask of
-  0002 makes one) from a shared one: run `chmod go-w` on the parent.
+  mirrors. On Windows the folder inherits its parent's access rules; on Linux
+  and macOS your umask sets its mode.
 - A folder inside the repo shows up as untracked files, so add it to
   `.gitignore`.
 - A folder is complete only when the run's result reports `outputs`: a run
   killed hard in the middle of a copy can leave a partial folder. With
   `--json`, the result's `outputs` field reports the copy: `dir`, `files`,
-  `bytes`, `skipped` (links, devices and the files Windows acts on) and
+  `bytes`, `skipped` (links and devices) and
   `missing` (declared paths the container did not have).
 
 athanor copies regular files and folders, checks every name, and refuses the
-whole copy on a bad one, or on a folder laid out as a bare git repository
-(`HEAD` with `objects`, `refs` or `commondir`); links and devices are skipped, and so are
-the files Windows acts on when it shows a folder (`desktop.ini`, `.lnk`, `.url`
-and the like). A copy reads at
+whole copy on a bad one; links and devices are skipped. A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
 ends the run with exit 125 and the test's own exit in `testExitCode`; after a
 memory run, `testExitCode` is athanor's 137, not the test's, and
@@ -349,7 +344,7 @@ What the container gets:
   dependencies. The server can't write the tree, and athanor never does.
 - **A fresh volume for each `writable` folder.** The folder holds the image's
   content, not the host's, and is new on every start. It must exist on the
-  host as a folder, not a link (athanor never creates it; `mkdir` it), and
+  host as a folder (athanor never creates it; `mkdir` it), and
   the image must have it as a folder the image's user can write: add
   `RUN mkdir -p <path>` after `USER` and `WORKDIR`, or `COPY --chown`; a folder
   an earlier line made as root needs that line moved after `USER`, or a
@@ -573,13 +568,12 @@ full class.
   configuration is the machine's.
 - **What a copied file holds.** With `--output`, a report the test code wrote
   lands on your machine as written, and athanor checks names and types, never
-  content. Opening it, or a viewer previewing it, does what it holds. athanor
-  skips the file names that make Windows sign in to a place a file names when
-  the folder is shown (`desktop.ini`, `.lnk`, `.url`, theme files and others),
-  but not a spelling it does not know. It refuses a folder laid out as a bare
-  git repository, but not every layout git might read as one: set
+  content. Opening it, or a viewer previewing it, does what it holds. Showing
+  the folder can be enough: Windows may sign in to a place that a
+  `desktop.ini`, `.lnk`, `.url` or theme file names. A copied folder can also
+  be laid out as a bare git repository: set
   `safe.bareRepository=explicit` in your git configuration so git does not
-  treat a copied folder as a repository. Open
+  treat it as one. Open
   outputs from a repo you trust to build. Out of scope, a repo's own code;
   from a remote engine, accepted class "A shared or remote engine, and the
   network".
@@ -594,10 +588,9 @@ full class.
   engine, is the accepted class "A shared or remote engine, and the network".
 - **Who can change the `--output` parent.** On Windows the folder inherits its
   parent's access rules, and under a parent other accounts can change, on any
-  platform, they can read the copy or redirect a write while it runs. Pick a
-  parent under your user profile. On Linux and macOS, athanor refuses a parent
-  that other accounts can write unless it has the sticky bit. Out of scope: other
-  accounts on the machine are the machine's.
+  platform, they can read the copy or redirect a write while it runs. athanor
+  does not check the parent: pick one under your user profile. Out of scope:
+  other accounts on the machine are the machine's.
 - **Your account name in messages.** Any message about the machine
   configuration file (a refusal, a bad value, an unknown key, a value above a
   ceiling) names it by its full path, and a git error from a named base's

@@ -90,12 +90,11 @@ likewise, and a local address that leads elsewhere.
   Docker client adds before the list is updated, nor for the image build,
   which has the network and gets the proxy settings as build arguments.
 - **athanor** checks what `--output` copies back: names as text, regular files
-  and folders only, exclusive creates, size, count and time caps, cleanup on
-  error, file names Windows acts on when it shows a folder skipped, and a folder
-  laid out as a bare git repository refused (ADR 0023). It does not hold for a spelling or layout it
-  does not know, and never checks content: a copied file carries no
-  Mark-of-the-Web, and opening or previewing it does what it holds. A remote
-  operator chooses what the copy holds. The README advises
+  and folders only, exclusive creates, size, count and time caps, and cleanup on
+  error (ADR 0023). It never checks content: a copied file carries no
+  Mark-of-the-Web, and showing, opening or previewing it does what it holds,
+  such as a `desktop.ini` or a folder laid out as a bare git repository. A
+  remote operator chooses what the copy holds. The README advises
   `safe.bareRepository=explicit`.
 
 **Residual:** the class "A shared or remote engine, and the network". It rests
@@ -224,8 +223,7 @@ athanor's own guards hold no boundary above, and only the owner's spec loosens
 one (issue 84): no shell (ADR 0002); git and docker by full path and the clean
 archive environment (ADR 0020); the configuration file checks (test J6);
 configured paths kept in the repo (test C17); holder answers shown, not
-trusted (ADR 0004); the `--output` parent check (the copy-out test "a parent
-others can change"); a named base checked apart from the repo's settings and
+trusted (ADR 0004); a named base checked apart from the repo's settings and
 the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
 run container's capability flags, `no-new-privileges` and limits (ADR 0016,
 ADR 0009). The agent
