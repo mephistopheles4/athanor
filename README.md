@@ -239,8 +239,9 @@ macOS and `%USERPROFILE%` on Windows, and `athanor-reports` must exist already; 
 makes only the last folder:
 
 - Pick a parent under your user profile and outside any folder a sync client
-  mirrors. On Windows the folder inherits its parent's access rules; on Linux
-  and macOS your umask sets its mode.
+  mirrors. On Windows the folder inherits its parent's access rules. On Linux
+  and macOS your umask sets its mode, which often lets other accounts read it:
+  pick a parent only you can open, or run with a umask of 077.
 - A folder inside the repo shows up as untracked files, so add it to
   `.gitignore`.
 - A folder is complete only when the run's result reports `outputs`: a run
@@ -579,7 +580,8 @@ full class.
   network".
 - **Plain files in the `--output` folder.** Copied outputs are ordinary files,
   with nothing encrypting them. They rely on your disk encryption and the
-  folder's access rules; keep the folder where only you can read it. Out of
+  folder's access rules, and athanor sets no private mode on it; keep the folder
+  where only you can read it. Out of
   scope: files left on the machine are the machine's.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote

@@ -164,7 +164,7 @@ async function serveInner(options: ServeOptions, partial: ServeResult): Promise<
       if (problem === 'missing') missing.push(path);
     }
     if (missing.length > 0) {
-      throw new AthanorError(`The writable folder${missing.length === 1 ? '' : 's'} ${missing.map((p) => `"${showName(p)}"`).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in the repo, and athanor never writes your working tree. Make ${missing.length === 1 ? 'it' : 'them'} first, such as mkdir -p ${missing.map(showName).join(' ')}, then run again.`);
+      throw new AthanorError(`The writable folder${missing.length === 1 ? '' : 's'} ${missing.map((p) => `"${showName(p)}"`).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in the repo, and athanor never writes your working tree. Make ${missing.length === 1 ? 'it' : 'them'} first, such as mkdir -p ${missing.map(showName).join(' ')}, then run again. A link that leads nowhere counts as missing: remove it first.`);
     }
 
     // And in the image, a folder its own user can write: a volume on a folder

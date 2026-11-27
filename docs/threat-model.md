@@ -92,8 +92,9 @@ likewise, and a local address that leads elsewhere.
 - **athanor** checks what `--output` copies back: names as text, regular files
   and folders only, exclusive creates, size, count and time caps, and cleanup on
   error (ADR 0023). It never checks content: a copied file carries no
-  Mark-of-the-Web, and showing, opening or previewing it does what it holds,
-  such as a `desktop.ini` or a folder laid out as a bare git repository. A
+  Mark-of-the-Web, and opening or previewing it does what it holds. Windows may
+  act on a `desktop.ini` or a link file when it shows the folder, and git run
+  in a copied folder laid out as a bare repository may treat it as one. A
   remote operator chooses what the copy holds. The README advises
   `safe.bareRepository=explicit`.
 
