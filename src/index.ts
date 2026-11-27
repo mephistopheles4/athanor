@@ -9,7 +9,7 @@ import { repoRoot, makeScratch, clearStale, snapshot, buildContext, resolveBase,
 import type { ResolvedBase } from './git.js';
 import { stateFolder, markUse, Interrupted, settleImage } from './image.js';
 import type { ImageBuild } from './image.js';
-import { prepareDocker, recheckDocker, clearSlotContainer, listSlotContainers, listServerContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
+import { prepareDocker, clearSlotContainer, listSlotContainers, listServerContainers, listAthanorImages, removeImage, removeContainer } from './docker.js';
 import type { DockerCommand } from './docker.js';
 import { acquire, ask, askServer } from './slots.js';
 import type { Slot } from './slots.js';
@@ -206,10 +206,9 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
   const timeLimitSeconds = options.timeLimitSeconds ?? config.timeLimitSeconds;
   const graceSeconds = options.graceSeconds ?? 60;
 
-  const { driver, notices, checked } = await prepareDocker(docker, env, config.docker);
+  const { driver, notices, pinned } = await prepareDocker(docker, env, config.docker);
   for (const notice of notices) onProgress(notice);
   // Every Docker call from here on runs with the checked context and builder pinned.
-  const pinned = checked.env;
   // A docker-container builder keeps its result in the build cache unless told to load it.
   const buildOptions = driver === 'docker-container' ? ['--load'] : [];
 
@@ -259,9 +258,6 @@ async function runInner(options: RunOptions, partial: SoFar): Promise<RunResult>
     if (await settleImage(image, () => onProgress(`the test image ${ctx.tag} is no longer in Docker (a prune may have removed it while this run waited); building it again.`))) {
       partial.image.built = true;
     }
-    // A context or builder edited in place while this run waited would change
-    // where the pinned names lead; checked as late as possible before the run.
-    await recheckDocker(docker, checked);
     // The base's pack, built once the slot is held, so its copy of the history
     // sits in the state folder for as short a time as the run allows (ADR 0032).
     let added: string[] = [];

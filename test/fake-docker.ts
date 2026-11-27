@@ -25,14 +25,6 @@ const pinned = {
   hasPath: Object.keys(process.env).some((k) => k.toUpperCase() === 'PATH'),
 };
 const record = (extra: Record<string, unknown> = {}): void => appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, env: pinned, ...extra }) + '\n');
-// How many earlier calls had these first two arguments, so a scenario can
-// answer differently after the first check (a context edited while a run waits).
-function seen(a: string, b: string, named: boolean): number {
-  const log = join(dir, 'calls.jsonl');
-  if (!existsSync(log)) return 0;
-  return readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).args as string[])
-    .filter((c) => c[0] === a && c[1] === b && (c.length > 2) === named).length;
-}
 const fileFor = (base: string, name: string | undefined): string => join(base, encodeURIComponent(String(name)) + '.json');
 const readJson = (path: string): any => JSON.parse(readFileSync(path, 'utf8'));
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -135,7 +127,6 @@ async function main() {
   if (a === 'context' && b === 'inspect') {
     // The name, when given, comes after "--".
     const named = args[2] === '--' ? args[3] : args[2];
-    const earlier = seen(a, b, named !== undefined);
     record();
     if (named !== undefined && scenario.contexts?.[named] === null) {
       console.error(`context "${named}" does not exist`);
@@ -146,7 +137,7 @@ async function main() {
     const fromHost = named === 'default' && scenario.contexts?.default === undefined && process.env.DOCKER_HOST ? process.env.DOCKER_HOST : undefined;
     const entry = fromHost ?? (named !== undefined && scenario.contexts?.[named] !== undefined
       ? scenario.contexts[named]
-      : earlier > 0 && scenario.contextHostLater !== undefined ? scenario.contextHostLater : scenario.contextHost ?? 'unix:///var/run/docker.sock');
+      : scenario.contextHost ?? 'unix:///var/run/docker.sock');
     const host = typeof entry === 'string' ? entry : entry.host;
     // A name with no entry of its own is the default context, TLS material included.
     const tls = typeof entry === 'string' ? (scenario.contexts?.[named ?? ''] === undefined ? scenario.contextTls : undefined) : entry.tls;
@@ -167,7 +158,6 @@ async function main() {
     return 0;
   }
   if (a === 'buildx' && b === 'inspect') {
-    const earlier = seen(a, b, false);
     record();
     if (scenario.engineDown) {
       console.error('ERROR: Cannot connect to the Docker daemon. Is the docker daemon running?');
@@ -180,9 +170,7 @@ async function main() {
     const driver = scenario.builderDriver ?? 'docker';
     // A node is an endpoint, or { endpoint, options, after } with its driver
     // options line and raw lines printed after its status, as buildx prints labels.
-    const listed = earlier > 0 && scenario.builderNodesLater !== undefined
-      ? scenario.builderNodesLater
-      : scenario.builderNodes ?? scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
+    const listed = scenario.builderNodes ?? scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
     // The shape of real `docker buildx inspect` output, one block per node.
     const nodes = listed.map((n: any, i: number) => {
       const node = typeof n === 'string' ? { endpoint: n } : n;

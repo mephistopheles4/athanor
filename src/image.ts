@@ -1,6 +1,6 @@
 // The test image and the state folder, shared by run and serve: find the image
 // or build it from the committed build context (ADR 0006).
-import { mkdirSync, existsSync, utimesSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdirSync, existsSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
@@ -15,8 +15,7 @@ export function stateFolder(): string {
   const home = process.env.ATHANOR_HOME !== undefined && process.env.ATHANOR_HOME !== ''
     ? process.env.ATHANOR_HOME
     : join(homedir(), '.athanor');
-  mkdirSync(home, { recursive: true, mode: 0o700 });
-  if (process.platform !== 'win32') chmodSync(home, 0o700);
+  mkdirSync(home, { recursive: true });
   return home;
 }
 

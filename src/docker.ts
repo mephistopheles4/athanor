@@ -137,18 +137,6 @@ export interface DockerOptions {
   machineFile?: string;
 }
 
-// What prepareDocker checked, for the check again once the run holds its slot.
-export interface Checked {
-  // The run's environment with the pin merged over it: every later Docker
-  // call runs with it.
-  env: NodeJS.ProcessEnv;
-  engine: string;
-  // Undefined when buildx is missing and the classic builder runs in the engine.
-  builder?: string;
-}
-
-const engineSeen = (e: { host: string; tlsVerified: boolean }): string => JSON.stringify([e.host, e.tlsVerified]);
-
 // athanor uses the Docker engine and builder on this machine, or on another
 // one when the machine configuration allows it (ADR 0021), and never plain tcp
 // unless the machine configuration allows that too (ADR 0013). It checks that
@@ -161,7 +149,7 @@ export async function prepareDocker(
   { allowPlainTcp = false, allowRemoteDocker = false, machineFile = 'config.json' }: DockerOptions = {},
   // athanor serve (issue 35): an engine off this machine is refused, whatever allowRemoteDocker says.
   { localOnly = false }: { localOnly?: boolean } = {},
-): Promise<{ driver: string | null; notices: string[]; checked: Checked; local: boolean }> {
+): Promise<{ driver: string | null; notices: string[]; pinned: NodeJS.ProcessEnv; local: boolean }> {
   const notices: string[] = [];
   const endpoint = await engineEndpoint(docker, env);
   const local = isLocal(endpoint.host);
@@ -188,18 +176,7 @@ export async function prepareDocker(
   const builder = await checkBuilder(docker, pinned, { allowPlainTcp, allowRemoteDocker, machineFile }, endpoint);
   if (builder.notice) notices.push(builder.notice);
   if (builder.name !== undefined) pinned.BUILDX_BUILDER = builder.name;
-  return { driver: builder.driver, notices, checked: { env: pinned, engine: engineSeen(endpoint), builder: builder.seen }, local };
-}
-
-// The engine and builder read again under the pin, once the run holds its
-// slot: a context or builder edited in place while the run waited would change
-// where the pinned names lead (ADR 0021).
-export async function recheckDocker(docker: DockerCommand, checked: Checked): Promise<void> {
-  const endpoint = await engineEndpoint(docker, checked.env);
-  const builder = checked.builder === undefined ? undefined : (await resolveBuilder(docker, checked.env, endpoint)).seen;
-  if (engineSeen(endpoint) !== checked.engine || builder !== checked.builder) {
-    throw new AthanorError('The Docker engine or the buildx builder changed while the run waited for a slot, so athanor cannot be sure where the snapshot would go. Check your Docker context and builder, then run again.');
-  }
+  return { driver: builder.driver, notices, pinned, local };
 }
 
 interface BuilderNode {
@@ -252,9 +229,6 @@ function readBuilder(stdout: string): { name: string; driver: string; nodes: Bui
   return { name, driver, nodes };
 }
 
-// Docker's context-name pattern; anything else is never passed to `context inspect`.
-const CONTEXT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.+-]+$/;
-
 async function namedContext(docker: DockerCommand, env: NodeJS.ProcessEnv, name: string): Promise<{ host: string; tlsVerified: boolean } | null> {
   const r = await call([...docker, 'context', 'inspect', '--', name], { env });
   if (r.code !== 0) return null;
@@ -278,9 +252,8 @@ const isEnginesOwn = (read: { driver: string; nodes: BuilderNode[] }, engine: En
   read.driver === 'docker' && read.nodes.length === 1 && read.nodes[0]?.endpoint === (engine.context ?? 'default');
 
 // The builder as `buildx inspect` shows it, each node's endpoint resolved to
-// where it leads (null when athanor cannot tell), and all of it as one string
-// to compare on the check again. The engine's own builder leads to the engine
-// as already checked, TLS setting included.
+// where it leads (null when athanor cannot tell). The engine's own builder
+// leads to the engine as already checked, TLS setting included.
 async function resolveBuilder(docker: DockerCommand, env: NodeJS.ProcessEnv, engine: Endpoint) {
   const inspect = await call([...docker, 'buildx', 'inspect'], { env });
   const read = inspect.code === 0 ? readBuilder(inspect.stdout) : null;
@@ -289,10 +262,9 @@ async function resolveBuilder(docker: DockerCommand, env: NodeJS.ProcessEnv, eng
   for (const node of read?.nodes ?? []) {
     if (own) targets.push({ host: engine.host, tlsVerified: engine.tlsVerified });
     else if (node.endpoint.includes('://')) targets.push({ host: node.endpoint, tlsVerified: node.cacert });
-    else targets.push(CONTEXT_NAME.test(node.endpoint) ? await namedContext(docker, env, node.endpoint) : null);
+    else targets.push(await namedContext(docker, env, node.endpoint));
   }
-  const seen = JSON.stringify(read ? [read.name, read.driver, read.nodes, targets] : null);
-  return { inspect, read, targets, own, seen };
+  return { inspect, read, targets, own };
 }
 
 // The buildx builder gets the build context, so it is held to the engine's
@@ -304,7 +276,7 @@ async function checkBuilder(
   env: NodeJS.ProcessEnv,
   { allowPlainTcp, allowRemoteDocker, machineFile }: Required<DockerOptions>,
   engine: Endpoint,
-): Promise<{ driver: string | null; name?: string; notice?: string; seen?: string }> {
+): Promise<{ driver: string | null; name?: string; notice?: string }> {
   // Asking buildx for its version contacts nothing; without buildx the classic
   // builder runs in the engine, which is already checked.
   const present = await call([...docker, 'buildx', 'version'], { env });
@@ -313,7 +285,7 @@ async function checkBuilder(
     ? `BUILDX_BUILDER ("${shownValue(env.BUILDX_BUILDER)}")`
     : 'the active buildx builder';
   const optIn = `"allowRemoteDocker": true in the machine configuration (${machineFile})`;
-  const { inspect, read, targets, own, seen } = await resolveBuilder(docker, env, engine);
+  const { inspect, read, targets, own } = await resolveBuilder(docker, env, engine);
   if (!read) {
     const why = inspect.code !== 0 ? `docker buildx inspect failed (${firstLine(inspect.stderr) || `exit ${inspect.code}`})` : 'docker buildx inspect gave output athanor cannot read';
     if (!allowRemoteDocker || !allowPlainTcp) {
@@ -326,7 +298,6 @@ async function checkBuilder(
       driver: null,
       name,
       notice: `using a buildx builder athanor could not inspect (from ${setting}): your build context may go to another machine${name === undefined ? ', and athanor cannot pin it for this run' : ''}.`,
-      seen,
     };
   }
 
@@ -355,10 +326,10 @@ async function checkBuilder(
   const notice = away !== null && !own
     ? `using a buildx builder on another machine, ${shownValue(read.name)} (${shownValue(read.driver)}, ${shownValue(away)}): your build context goes there.`
     : undefined;
-  return { driver: read.driver, name: read.name, notice, seen };
+  return { driver: read.driver, name: read.name, notice };
 }
 
-// The env arguments below are a run's pinned environment (Checked.env); status
+// The env arguments below are a run's pinned environment (prepareDocker); status
 // and prune pass none and use Docker as configured.
 export async function imageExists(docker: DockerCommand, tag: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
   const r = await call([...docker, 'image', 'inspect', tag], { env });

@@ -8,7 +8,6 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '#dist/index.js';
 import type { RunOptions, RunResult } from '#dist/index.js';
-import { ask } from '#dist/slots.js';
 import { makeRepo, isolate, fake, uniquePrefix, baseConfig, callsOf } from '../helpers.ts';
 import type { Fake } from '../helpers.ts';
 
@@ -146,7 +145,6 @@ test('L5 a buildx builder off this machine is refused unless the machine allows 
     { name: 'a docker-container node named for a context with a remote endpoint', scenario: containerRemote },
     { name: 'a docker-driver builder whose node names another context with a remote endpoint', env: { BUILDX_BUILDER: 'far' }, scenario: otherContext },
     { name: 'a node named for a context whose lookup fails', scenario: { builderDriver: 'docker-container', builderEndpoints: ['gone'], contexts: { gone: null } } },
-    { name: 'a node name that fails the context-name pattern', scenario: { builderDriver: 'docker-container', builderEndpoints: ['-x'] } },
     { name: 'a docker-container builder with no endpoint line', scenario: { builderDriver: 'docker-container', builderNodes: [{}] } },
     { name: 'a failing buildx inspect', scenario: { buildxFails: true } },
     { name: 'a header Error line', scenario: { builderHeaderError: 'failed to find node' } },
@@ -157,7 +155,6 @@ test('L5 a buildx builder off this machine is refused unless the machine allows 
       const { result, docker } = await runRow(t, row);
       assert.equal(result.exitCode, 125, JSON.stringify(result));
       assert.equal(callsOf(docker.calls(), 'build').length, 0);
-      assert.ok(!docker.calls().some((c) => c.args[0] === 'context' && c.args.includes('-x')), 'a bad name is never looked up');
     });
   }
   await t.test('passes: a docker-container node named for a local context', async (t) => {
@@ -299,8 +296,8 @@ test('L10 every Docker call after the context is read keeps the checked context 
   assert.deepEqual(calls[0]!.args, ['context', 'inspect']);
   const later = calls.slice(1);
   assert.ok(later.some((c) => c.args[0] === 'build') && later.some((c) => c.args[0] === 'run'));
-  // The builder's name is pinned once the first check has read it: from the
-  // first call that is not part of that check.
+  // The builder's name is pinned once the check has read it: from the first
+  // call that is not part of that check.
   const checkDone = calls.findIndex((c) => !['context', 'version', 'buildx'].includes(c.args[0]!));
   assert.ok(checkDone > 0);
   for (const [i, c] of later.entries()) {
@@ -308,26 +305,6 @@ test('L10 every Docker call after the context is read keeps the checked context 
     if (i + 1 >= checkDone) assert.equal(c.env?.builder, 'local-builder', c.args.join(' '));
     assert.equal(c.env?.tlsVerify, '1', c.args.join(' '));
     assert.equal(c.env?.hasPath, true, c.args.join(' '));
-  }
-});
-
-test('L11 a context or builder that changes while the run waits for its slot ends the run before docker run', async (t) => {
-  const rows: Row[] = [
-    // With buildx missing, only the engine is compared.
-    { name: 'the pinned context now points at another machine', scenario: { contextHostLater: 'ssh://10.0.0.5', buildx: 'missing' }, machine: remoteOptIn },
-    { name: 'the pinned builder now has a node on another machine', scenario: { builderDriver: 'docker-container', builderEndpoints: ['unix:///var/run/docker.sock'], builderNodesLater: ['ssh://10.0.0.5'], loadRequired: true }, machine: remoteOptIn },
-  ];
-  for (const row of rows) {
-    await t.test(row.name, async (t) => {
-      const prefix = uniquePrefix();
-      const { result, docker } = await runRow(t, row, { prefix });
-      assert.equal(result.exitCode, 125, JSON.stringify(result));
-      assert.equal(result.outcome, 'error');
-      assert.match(result.message!, /changed while the run waited/);
-      assert.equal(callsOf(docker.calls(), 'run').length, 0);
-      assert.equal(result.slot, 1, 'the run had its slot');
-      assert.equal((await ask(prefix, 1)).held, false, 'the slot is free');
-    });
   }
 });
 
