@@ -9,6 +9,8 @@ import { stripTypeScriptTypes } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import type { TestContext } from 'node:test';
 import { run } from '#dist/index.js';
+import { testPrograms } from '#dist/proc.js';
+import { fakeDocker as fakeDockerProgram } from './fake-docker.ts';
 import type { RunResult } from '#dist/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -142,12 +144,24 @@ export interface TarEntry { name: string; type: string; mode: string; content: s
 
 export type Fake = ReturnType<typeof fake>;
 
+// The fake runs in the test's own process (ATH-14): its Docker command is a
+// name the core's process starter hands to fakeDocker, so a call starts no
+// process. A build that leaves a grandchild holding its output open is
+// something only a process can do, so that scenario gets the fake as a process.
+let programs = 0;
 export function fake(t: TestContext, scenario: Record<string, unknown> = {}) {
   const dir = tempDir(t, 'athanor-fake-');
   writeFileSync(join(dir, 'scenario.json'), JSON.stringify(scenario));
+  let docker = [process.execPath, strippedFake(), dir];
+  if (!scenario.buildGrandchild) {
+    const name = `athanor-fake-docker-${process.pid}-${++programs}`;
+    testPrograms.set(name, (argv, io) => fakeDockerProgram({ argv, ...io }));
+    t.after?.(() => { testPrograms.delete(name); });
+    docker = [name, dir];
+  }
   return {
     dir,
-    docker: [process.execPath, strippedFake(), dir],
+    docker,
     setScenario: (s: Record<string, unknown>) => writeFileSync(join(dir, 'scenario.json'), JSON.stringify(s)),
     addContainer: (name: string, labels: Record<string, string>, image = 'athanor:old') => {
       mkdirSync(join(dir, 'containers'), { recursive: true });

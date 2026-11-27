@@ -9,394 +9,426 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { TarEntry } from './helpers.ts';
 
-const [dir, ...args] = process.argv.slice(2) as [string, ...string[]];
-// The scenario file is JSON written by the test; its keys are read as they come.
-const scenario: Record<string, any> = existsSync(join(dir, 'scenario.json')) ? JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8')) : {};
-const imagesDir = join(dir, 'images');
-const containersDir = join(dir, 'containers');
-mkdirSync(imagesDir, { recursive: true });
-mkdirSync(containersDir, { recursive: true });
 
-// The pin athanor sets, and two values it must pass through unchanged (ADR 0021).
-const pinned = {
-  context: process.env.DOCKER_CONTEXT,
-  builder: process.env.BUILDX_BUILDER,
-  tlsVerify: process.env.DOCKER_TLS_VERIFY,
-  hasPath: Object.keys(process.env).some((k) => k.toUpperCase() === 'PATH'),
-};
-const record = (extra: Record<string, unknown> = {}): void => appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, env: pinned, ...extra }) + '\n');
-const fileFor = (base: string, name: string | undefined): string => join(base, encodeURIComponent(String(name)) + '.json');
-const readJson = (path: string): any => JSON.parse(readFileSync(path, 'utf8'));
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+// What one call of the fake reads and writes: a process's own, or, in the
+// test's own process (ATH-14), the streams of the stand-in child.
+export interface FakeIO {
+  argv: string[];
+  env: NodeJS.ProcessEnv;
+  stdin: NodeJS.ReadableStream;
+  stdout: { write(chunk: string | Uint8Array, done?: () => void): unknown };
+  stderr: { write(chunk: string | Uint8Array, done?: () => void): unknown };
+  // Aborted when the caller kills the call.
+  signal?: AbortSignal;
+}
 
-function readStdin(): Promise<Buffer> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    process.stdin.on('data', (c) => chunks.push(c));
-    process.stdin.on('end', () => resolve(Buffer.concat(chunks)));
+export async function fakeDocker(io: FakeIO): Promise<number> {
+  const killed = (): boolean => io.signal?.aborted === true;
+  const console = {
+    log: (s: unknown): void => void io.stdout.write(`${String(s)}\n`),
+    error: (s: unknown): void => void io.stderr.write(`${String(s)}\n`),
+  };
+  const [dir, ...args] = io.argv as [string, ...string[]];
+  // The scenario file is JSON written by the test; its keys are read as they come.
+  const scenario: Record<string, any> = existsSync(join(dir, 'scenario.json')) ? JSON.parse(readFileSync(join(dir, 'scenario.json'), 'utf8')) : {};
+  const imagesDir = join(dir, 'images');
+  const containersDir = join(dir, 'containers');
+  mkdirSync(imagesDir, { recursive: true });
+  mkdirSync(containersDir, { recursive: true });
+
+  // The pin athanor sets, and two values it must pass through unchanged (ADR 0021).
+  const pinned = {
+    context: io.env.DOCKER_CONTEXT,
+    builder: io.env.BUILDX_BUILDER,
+    tlsVerify: io.env.DOCKER_TLS_VERIFY,
+    hasPath: Object.keys(io.env).some((k) => k.toUpperCase() === 'PATH'),
+  };
+  // A killed call records nothing more, as a killed process could not.
+  const record = (extra: Record<string, unknown> = {}): void => { if (!killed()) appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, env: pinned, ...extra }) + '\n'); };
+  const fileFor = (base: string, name: string | undefined): string => join(base, encodeURIComponent(String(name)) + '.json');
+  const readJson = (path: string): any => JSON.parse(readFileSync(path, 'utf8'));
+  // A wait that a kill ends early, as a killed process stops waiting.
+  const sleep = (ms: number): Promise<void> => new Promise((r) => {
+    if (killed()) return r();
+    const timer = setTimeout(r, ms);
+    io.signal?.addEventListener('abort', () => { clearTimeout(timer); r(); }, { once: true });
   });
-}
 
-// A small tar reader: returns [{ name, type, content }] for regular files and folders.
-function readTar(buffer: Buffer): TarEntry[] {
-  const entries: TarEntry[] = [];
-  let offset = 0;
-  let longName: string | null = null;
-  while (offset + 512 <= buffer.length) {
-    const header = buffer.subarray(offset, offset + 512);
-    if (header.every((b) => b === 0)) break;
-    const field = (start: number, length: number): string => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
-    const size = parseInt(field(124, 12).trim() || '0', 8);
-    const type = field(156, 1) || '0';
-    const prefix = field(345, 155);
-    let name = prefix ? `${prefix}/${field(0, 100)}` : field(0, 100);
-    const body = buffer.subarray(offset + 512, offset + 512 + size);
-    offset += 512 + Math.ceil(size / 512) * 512;
-    if (type === 'x') {
-      const match = /\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
-      if (match) longName = match[1] as string;
-      continue;
-    }
-    if (type === 'g') continue;
-    if (longName) { name = longName; longName = null; }
-    entries.push({ name, type, mode: field(100, 8).trim(), content: type === '0' ? body.toString('base64') : undefined });
+  function readStdin(): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      io.stdin.on('data', (c) => chunks.push(c));
+      io.stdin.on('end', () => resolve(Buffer.concat(chunks)));
+    });
   }
-  return entries;
-}
 
-// The ID a container has: 64 hex digits, from its name.
-const idOf = (name: string): string => createHash('sha256').update(name).digest('hex');
-// The container a name or an ID points at, or the name as given.
-function nameOf(ref: string | undefined): string | undefined {
-  if (ref !== undefined && /^[0-9a-f]{64}$/.test(ref)) {
-    for (const f of readdirSync(containersDir)) {
-      const c = readJson(join(containersDir, f));
-      if (idOf(c.name) === ref) return c.name;
+  // A small tar reader: returns [{ name, type, content }] for regular files and folders.
+  function readTar(buffer: Buffer): TarEntry[] {
+    const entries: TarEntry[] = [];
+    let offset = 0;
+    let longName: string | null = null;
+    while (offset + 512 <= buffer.length) {
+      const header = buffer.subarray(offset, offset + 512);
+      if (header.every((b) => b === 0)) break;
+      const field = (start: number, length: number): string => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
+      const size = parseInt(field(124, 12).trim() || '0', 8);
+      const type = field(156, 1) || '0';
+      const prefix = field(345, 155);
+      let name = prefix ? `${prefix}/${field(0, 100)}` : field(0, 100);
+      const body = buffer.subarray(offset + 512, offset + 512 + size);
+      offset += 512 + Math.ceil(size / 512) * 512;
+      if (type === 'x') {
+        const match = /\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
+        if (match) longName = match[1] as string;
+        continue;
+      }
+      if (type === 'g') continue;
+      if (longName) { name = longName; longName = null; }
+      entries.push({ name, type, mode: field(100, 8).trim(), content: type === '0' ? body.toString('base64') : undefined });
     }
+    return entries;
   }
-  return ref;
-}
 
-function option(name: string): string | undefined {
-  const i = args.indexOf(name);
-  return i === -1 ? undefined : args[i + 1];
-}
-
-// The `run` options athanor uses. Any other option is a typo in the container's
-// options, so the fake refuses it. The image is the first argument after them.
-const RUN_FLAGS = new Set(['-i', '--init']);
-// A repeated option (`-e`, `--cap-add`) keeps only its last value in the parsed
-// options; a check on one reads the raw arguments.
-const RUN_VALUED = new Set([
-  '--pull', '--log-driver', '--name', '--label', '--network', '--memory', '--memory-swap',
-  '--cpus', '--pids-limit', '--security-opt', '--cap-drop', '--cap-add', '-e',
-]);
-
-// A serve run (the server label) or the check container (--entrypoint) takes
-// these too; a plain run still refuses them, so a stray one in run's options is caught.
-const SERVE_FLAGS = new Set(['--rm']);
-const SERVE_VALUED = new Set(['-p', '--mount', '-w', '--entrypoint']);
-const isServeForm = (runArgs: string[]): boolean => runArgs.some((a) => a.startsWith('athanor.server=')) || runArgs.includes('--entrypoint');
-
-function parseRun(runArgs: string[]): { error: string } | { options: Map<string, string>; image: string } {
-  const options = new Map<string, string>();
-  const serveForm = isServeForm(runArgs);
-  let i = 0;
-  for (; i < runArgs.length && (runArgs[i] as string).startsWith('-'); i++) {
-    const name = runArgs[i] as string;
-    if (RUN_FLAGS.has(name) || (serveForm && SERVE_FLAGS.has(name))) continue;
-    if (!RUN_VALUED.has(name) && !(serveForm && SERVE_VALUED.has(name))) return { error: `fake docker: unknown run option ${name}` };
-    if (i + 1 >= runArgs.length || (runArgs[i + 1] as string).startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
-    options.set(name, runArgs[++i] as string);
-  }
-  if (i >= runArgs.length) return { error: 'fake docker: run has no image' };
-  return { options, image: runArgs[i] as string };
-}
-
-async function main() {
-  const [a, b] = args;
-  if (a === 'version') {
-    record();
-    if (scenario.engineDown) {
-      console.error(scenario.engineDownText ?? 'Cannot connect to the Docker daemon. Is the docker daemon running?');
-      return 1;
-    }
-    console.log('29.8.2');
-    return 0;
-  }
-  if (a === 'context' && b === 'inspect') {
-    // The name, when given, comes after "--".
-    const named = args[2] === '--' ? args[3] : args[2];
-    record();
-    if (named !== undefined && scenario.contexts?.[named] === null) {
-      console.error(`context "${named}" does not exist`);
-      return 1;
-    }
-    // A context is a host, or { host, tls } for one with TLS material.
-    // As real Docker does: with DOCKER_HOST set, the "default" context is DOCKER_HOST.
-    const fromHost = named === 'default' && scenario.contexts?.default === undefined && process.env.DOCKER_HOST ? process.env.DOCKER_HOST : undefined;
-    const entry = fromHost ?? (named !== undefined && scenario.contexts?.[named] !== undefined
-      ? scenario.contexts[named]
-      : scenario.contextHost ?? 'unix:///var/run/docker.sock');
-    const host = typeof entry === 'string' ? entry : entry.host;
-    // A name with no entry of its own is the default context, TLS material included.
-    const tls = typeof entry === 'string' ? (scenario.contexts?.[named ?? ''] === undefined ? scenario.contextTls : undefined) : entry.tls;
-    console.log(JSON.stringify([{
-      Name: named ?? 'fake',
-      Endpoints: { docker: { Host: host, SkipTLSVerify: scenario.contextSkipTls === true } },
-      TLSMaterial: tls ?? {},
-    }]));
-    return 0;
-  }
-  if (a === 'buildx' && b === 'version') {
-    record();
-    if (scenario.buildx === 'missing') {
-      console.error("docker: 'buildx' is not a docker command.");
-      return 1;
-    }
-    console.log('github.com/docker/buildx v0.29.1 fake');
-    return 0;
-  }
-  if (a === 'buildx' && b === 'inspect') {
-    record();
-    if (scenario.engineDown) {
-      console.error('ERROR: Cannot connect to the Docker daemon. Is the docker daemon running?');
-      return 1;
-    }
-    if (scenario.buildxFails) {
-      console.error(scenario.buildxFailText ?? 'ERROR: no builder found');
-      return 1;
-    }
-    const driver = scenario.builderDriver ?? 'docker';
-    // A node is an endpoint, or { endpoint, options, after } with its driver
-    // options line and raw lines printed after its status, as buildx prints labels.
-    const listed = scenario.builderNodes ?? scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
-    // The shape of real `docker buildx inspect` output, one block per node.
-    const nodes = listed.map((n: any, i: number) => {
-      const node = typeof n === 'string' ? { endpoint: n } : n;
-      const endpoint = node.endpoint === undefined ? '' : `Endpoint:         ${node.endpoint}\n`;
-      const options = node.options === undefined ? '' : `Driver Options:   ${node.options}\n`;
-      const repeat = node.repeatEndpoint ? `Endpoint:         ${node.repeatEndpoint}\n` : '';
-      return `Name:             fake${i}\n${endpoint}${options}Status:           running\n${repeat}${node.after ?? ''}`;
-    }).join('\n');
-    const error = scenario.builderHeaderError ? `Error:         ${scenario.builderHeaderError}\n` : '';
-    console.log(`Name:          ${scenario.builderName ?? 'fake'}\nDriver:        ${driver}\nLast Activity: 2026-10-19 20:31:02 +0000 UTC\n${error}\nNodes:\n${nodes}`);
-    return 0;
-  }
-  if (a === 'image' && b === 'inspect') {
-    record();
-    const tag = args.at(-1);
-    if (existsSync(fileFor(imagesDir, tag))) {
-      // The WORKDIR read: --format '{{json .Config.WorkingDir}}'.
-      if (args[2] === '--format') console.log(JSON.stringify(scenario.workdir ?? '/home/node/work'));
-      else console.log('[{}]');
-      return 0;
-    }
-    console.error(`Error response from daemon: No such image: ${tag}`);
-    return 1;
-  }
-  if (a === 'port') {
-    // docker port <name> <port>/tcp: the published address, or nothing yet.
-    record();
-    const path = fileFor(containersDir, args[1]);
-    if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args[1]}`); return 1; }
-    if (scenario.portNever) { console.error('Error: No public port is published'); return 1; }
-    const state = readJson(path);
-    console.log(scenario.portAnswer ?? `127.0.0.1:${state.hostPort ?? 40000 + (parseInt(idOf(state.name).slice(0, 4), 16) % 20000)}`);
-    return 0;
-  }
-  if (a === 'build') {
-    const input = await readStdin();
-    const entries = readTar(input);
-    record({ tar: entries });
-    if (scenario.buildGrandchild) {
-      // Like the buildx plugin: a child that keeps this process's output open.
-      spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: ['ignore', 'inherit', 'inherit'], shell: false });
-    }
-    if (scenario.buildHangMs) await sleep(scenario.buildHangMs);
-    if (scenario.buildFails) { console.error('ERROR: failed to solve: process did not complete successfully'); return 1; }
-    if (scenario.loadRequired && !args.includes('--load')) {
-      console.error('WARNING: No output specified with docker-container driver. Build result will only remain in the build cache.');
-      return 0;
-    }
-    writeFileSync(fileFor(imagesDir, option('-t')), JSON.stringify({ tag: option('-t') }));
-    console.error('#1 building fake image');
-    return 0;
-  }
-  if (a === 'container' && b === 'inspect') {
-    record();
-    const path = fileFor(containersDir, args.at(-1));
-    if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args.at(-1)}`); return 1; }
-    console.log(JSON.stringify(readJson(path).labels ?? {}));
-    return 0;
-  }
-  if (a === 'rm') {
-    record();
-    const path = fileFor(containersDir, nameOf(args.at(-1)));
-    if (scenario.rmFails) { console.error('Error response from daemon: cannot remove container: permission denied'); return 1; }
-    if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args.at(-1)}`); return 1; }
-    rmSync(path, { force: true });
-    console.log(args.at(-1));
-    return 0;
-  }
-  if (a === 'inspect') {
-    record();
-    const path = fileFor(containersDir, nameOf(args.at(-1)));
-    if (scenario.inspectFails || !existsSync(path)) { console.error(`Error: No such object: ${args.at(-1)}`); return 1; }
-    const state = readJson(path);
-    console.log(`${state.exitCode ?? 0} ${state.oom ? 'true' : 'false'} ${idOf(state.name)}`);
-    return 0;
-  }
-  if (a === 'cp') {
-    // docker cp <id>:<path> -   Serves scenario.cp[<path under the work folder>]:
-    // { tar: base64 } served whole, { missing }, { fails: text }, or { hang }.
-    // After the tar it stays open for lingerMs, and logs a finished line only on
-    // a normal exit, so a test can tell that athanor killed it early.
-    record();
-    const spec = args[1] ?? '';
-    const colon = spec.indexOf(':');
-    const id = spec.slice(0, colon);
-    const path = spec.slice(colon + 1);
-    if (!existsSync(fileFor(containersDir, nameOf(id)))) { console.error(`Error response from daemon: No such container: ${id}`); return 1; }
-    const work = (scenario.run?.work ?? ['/root/work'])[0] as string;
-    const entry = scenario.cp?.[path.startsWith(work + '/') ? path.slice(work.length + 1) : path];
-    if (!entry || entry.missing) { console.error(`Error response from daemon: Could not find the file ${path} in container ${id}`); return 1; }
-    if (entry.fails) {
-      // With a tar, the bytes are sent first and the failure follows.
-      if (entry.tar) await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
-      console.error(entry.fails);
-      return 1;
-    }
-    if (entry.hang) { await sleep(60000); return 1; }
-    await new Promise<void>((resolve) => process.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
-    if (entry.lingerMs) await sleep(entry.lingerMs);
-    appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, finished: true }) + '\n');
-    return 0;
-  }
-  if (a === 'ps') {
-    record();
-    // The label filter names the label to list by: athanor.slot, or athanor.server.
-    const key = (args[args.indexOf('--filter') + 1] ?? 'label=athanor.slot').replace(/^label=/, '');
-    for (const f of readdirSync(containersDir)) {
-      const c = readJson(join(containersDir, f));
-      if (c.labels?.[key] !== undefined) console.log(`${c.name}\t${c.labels[key]}\t${c.image}`);
-    }
-    return 0;
-  }
-  if (a === 'images') {
-    record();
-    for (const f of readdirSync(imagesDir)) console.log(readJson(join(imagesDir, f)).tag);
-    return 0;
-  }
-  if (a === 'rmi') {
-    record();
-    rmSync(fileFor(imagesDir, args.at(-1)), { force: true });
-    console.log(`Untagged: ${args.at(-1)}`);
-    return 0;
-  }
-  if (a === 'run') {
-    const parsed = parseRun(args.slice(1));
-    if ('error' in parsed) {
-      record();
-      console.error(parsed.error);
-      return 125;
-    }
-    const { image } = parsed;
-    if (parsed.options.has('--entrypoint')) {
-      // The check container (issue 35): prints the writable paths the scenario
-      // lists as missing, writes no container file, and exits 0.
-      record();
-      const paths = args.slice(args.indexOf('athanor') + 1);
-      for (const p of paths) if ((scenario.missingWritable ?? []).some((m: string) => p.endsWith('/' + m))) console.log(p);
-      return scenario.checkFails ? 125 : 0;
-    }
-    // The open stdin keeps the fake alive, so it ends the process itself.
-    if ((parsed.options.get('--label') ?? '').startsWith('athanor.server=')) process.exit(await serveRun(parsed.options, image));
-    const name = parsed.options.get('--name');
-    const labelArg = parsed.options.get('--label');
-    const labels = labelArg ? { [labelArg.split('=')[0]]: labelArg.split('=')[1] } : {};
-    const path = fileFor(containersDir, name);
-    const plan = { exitCode: 0, marker: true, ...(scenario.run ?? {}) };
-    if (plan.runFails) {
-      record();
-      console.error('docker: Error response from daemon: Conflict.');
-      return 125;
-    }
-    writeFileSync(path, JSON.stringify({ name, labels, image, running: true }));
-    // The boot script's work line, just before the marker; plan.work lists the lines to print.
-    const workLines = (plan.work ?? ['/root/work']).map((w: string) => `athanor-work ${w}\n`).join('');
-    if (plan.skipStdin) {
-      // Exit without reading the snapshot, closing the pipe under git archive.
-      record();
-      if (plan.marker) process.stderr.write(workLines + 'athanor-boot-ok\n');
-      finish(path, plan.exitCode, false);
-      process.exit(plan.exitCode);
-    }
-    // When the run began, before the snapshot is read, so a test can time a run from here.
-    const at = Date.now();
-    const input = await readStdin();
-    record({ at, tar: readTar(input) });
-    if (plan.tarFails) { console.error('tar: short read'); finish(path, 2, false); return 2; }
-    if (plan.marker) process.stderr.write(workLines + 'athanor-boot-ok\n');
-    if (plan.stdout) process.stdout.write(plan.stdout);
-    if (plan.stderr) process.stderr.write(plan.stderr);
-    if (plan.hangMs) {
-      const until = Date.now() + plan.hangMs;
-      while (Date.now() < until) {
-        if (!existsSync(path)) return 137; // removed with rm -f
-        await sleep(25);
+  // The ID a container has: 64 hex digits, from its name.
+  const idOf = (name: string): string => createHash('sha256').update(name).digest('hex');
+  // The container a name or an ID points at, or the name as given.
+  function nameOf(ref: string | undefined): string | undefined {
+    if (ref !== undefined && /^[0-9a-f]{64}$/.test(ref)) {
+      for (const f of readdirSync(containersDir)) {
+        const c = readJson(join(containersDir, f));
+        if (idOf(c.name) === ref) return c.name;
       }
     }
-    if (!existsSync(path)) return 137;
-    finish(path, plan.exitCode, plan.oom === true);
-    return plan.exitCode;
+    return ref;
   }
-  record();
-  console.error(`fake docker: unhandled ${args.join(' ')}`);
-  return 1;
-}
 
-// A server container (issue 35): prints the marker at once, without reading
-// stdin to its end, and stays up until it is removed, its stdin ends, or the
-// scenario's serve plan ends it: { exitCode, exitAfterMs, startDelayMs, oom, runFails, runFailText, marker, stdout, stderr }.
-async function serveRun(options: Map<string, string>, image: string): Promise<number> {
-  const name = options.get('--name');
-  const labelArg = options.get('--label') as string;
-  const labels = { [labelArg.split('=')[0] as string]: labelArg.split('=')[1] };
-  const path = fileFor(containersDir, name);
-  const plan = { marker: true, ...(scenario.serve ?? {}) };
-  if (plan.runFails) {
+  function option(name: string): string | undefined {
+    const i = args.indexOf(name);
+    return i === -1 ? undefined : args[i + 1];
+  }
+
+  // The `run` options athanor uses. Any other option is a typo in the container's
+  // options, so the fake refuses it. The image is the first argument after them.
+  const RUN_FLAGS = new Set(['-i', '--init']);
+  // A repeated option (`-e`, `--cap-add`) keeps only its last value in the parsed
+  // options; a check on one reads the raw arguments.
+  const RUN_VALUED = new Set([
+    '--pull', '--log-driver', '--name', '--label', '--network', '--memory', '--memory-swap',
+    '--cpus', '--pids-limit', '--security-opt', '--cap-drop', '--cap-add', '-e',
+  ]);
+
+  // A serve run (the server label) or the check container (--entrypoint) takes
+  // these too; a plain run still refuses them, so a stray one in run's options is caught.
+  const SERVE_FLAGS = new Set(['--rm']);
+  const SERVE_VALUED = new Set(['-p', '--mount', '-w', '--entrypoint']);
+  const isServeForm = (runArgs: string[]): boolean => runArgs.some((a) => a.startsWith('athanor.server=')) || runArgs.includes('--entrypoint');
+
+  function parseRun(runArgs: string[]): { error: string } | { options: Map<string, string>; image: string } {
+    const options = new Map<string, string>();
+    const serveForm = isServeForm(runArgs);
+    let i = 0;
+    for (; i < runArgs.length && (runArgs[i] as string).startsWith('-'); i++) {
+      const name = runArgs[i] as string;
+      if (RUN_FLAGS.has(name) || (serveForm && SERVE_FLAGS.has(name))) continue;
+      if (!RUN_VALUED.has(name) && !(serveForm && SERVE_VALUED.has(name))) return { error: `fake docker: unknown run option ${name}` };
+      if (i + 1 >= runArgs.length || (runArgs[i + 1] as string).startsWith('-')) return { error: `fake docker: run option ${name} needs a value` };
+      options.set(name, runArgs[++i] as string);
+    }
+    if (i >= runArgs.length) return { error: 'fake docker: run has no image' };
+    return { options, image: runArgs[i] as string };
+  }
+
+  async function main() {
+    const [a, b] = args;
+    if (a === 'version') {
+      record();
+      if (scenario.engineDown) {
+        console.error(scenario.engineDownText ?? 'Cannot connect to the Docker daemon. Is the docker daemon running?');
+        return 1;
+      }
+      console.log('29.8.2');
+      return 0;
+    }
+    if (a === 'context' && b === 'inspect') {
+      // The name, when given, comes after "--".
+      const named = args[2] === '--' ? args[3] : args[2];
+      record();
+      if (named !== undefined && scenario.contexts?.[named] === null) {
+        console.error(`context "${named}" does not exist`);
+        return 1;
+      }
+      // A context is a host, or { host, tls } for one with TLS material.
+      // As real Docker does: with DOCKER_HOST set, the "default" context is DOCKER_HOST.
+      const fromHost = named === 'default' && scenario.contexts?.default === undefined && io.env.DOCKER_HOST ? io.env.DOCKER_HOST : undefined;
+      const entry = fromHost ?? (named !== undefined && scenario.contexts?.[named] !== undefined
+        ? scenario.contexts[named]
+        : scenario.contextHost ?? 'unix:///var/run/docker.sock');
+      const host = typeof entry === 'string' ? entry : entry.host;
+      // A name with no entry of its own is the default context, TLS material included.
+      const tls = typeof entry === 'string' ? (scenario.contexts?.[named ?? ''] === undefined ? scenario.contextTls : undefined) : entry.tls;
+      console.log(JSON.stringify([{
+        Name: named ?? 'fake',
+        Endpoints: { docker: { Host: host, SkipTLSVerify: scenario.contextSkipTls === true } },
+        TLSMaterial: tls ?? {},
+      }]));
+      return 0;
+    }
+    if (a === 'buildx' && b === 'version') {
+      record();
+      if (scenario.buildx === 'missing') {
+        console.error("docker: 'buildx' is not a docker command.");
+        return 1;
+      }
+      console.log('github.com/docker/buildx v0.29.1 fake');
+      return 0;
+    }
+    if (a === 'buildx' && b === 'inspect') {
+      record();
+      if (scenario.engineDown) {
+        console.error('ERROR: Cannot connect to the Docker daemon. Is the docker daemon running?');
+        return 1;
+      }
+      if (scenario.buildxFails) {
+        console.error(scenario.buildxFailText ?? 'ERROR: no builder found');
+        return 1;
+      }
+      const driver = scenario.builderDriver ?? 'docker';
+      // A node is an endpoint, or { endpoint, options, after } with its driver
+      // options line and raw lines printed after its status, as buildx prints labels.
+      const listed = scenario.builderNodes ?? scenario.builderEndpoints ?? [scenario.builderEndpoint ?? 'default'];
+      // The shape of real `docker buildx inspect` output, one block per node.
+      const nodes = listed.map((n: any, i: number) => {
+        const node = typeof n === 'string' ? { endpoint: n } : n;
+        const endpoint = node.endpoint === undefined ? '' : `Endpoint:         ${node.endpoint}\n`;
+        const options = node.options === undefined ? '' : `Driver Options:   ${node.options}\n`;
+        const repeat = node.repeatEndpoint ? `Endpoint:         ${node.repeatEndpoint}\n` : '';
+        return `Name:             fake${i}\n${endpoint}${options}Status:           running\n${repeat}${node.after ?? ''}`;
+      }).join('\n');
+      const error = scenario.builderHeaderError ? `Error:         ${scenario.builderHeaderError}\n` : '';
+      console.log(`Name:          ${scenario.builderName ?? 'fake'}\nDriver:        ${driver}\nLast Activity: 2026-10-19 20:31:02 +0000 UTC\n${error}\nNodes:\n${nodes}`);
+      return 0;
+    }
+    if (a === 'image' && b === 'inspect') {
+      record();
+      const tag = args.at(-1);
+      if (existsSync(fileFor(imagesDir, tag))) {
+        // The WORKDIR read: --format '{{json .Config.WorkingDir}}'.
+        if (args[2] === '--format') console.log(JSON.stringify(scenario.workdir ?? '/home/node/work'));
+        else console.log('[{}]');
+        return 0;
+      }
+      console.error(`Error response from daemon: No such image: ${tag}`);
+      return 1;
+    }
+    if (a === 'port') {
+      // docker port <name> <port>/tcp: the published address, or nothing yet.
+      record();
+      const path = fileFor(containersDir, args[1]);
+      if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args[1]}`); return 1; }
+      if (scenario.portNever) { console.error('Error: No public port is published'); return 1; }
+      const state = readJson(path);
+      console.log(scenario.portAnswer ?? `127.0.0.1:${state.hostPort ?? 40000 + (parseInt(idOf(state.name).slice(0, 4), 16) % 20000)}`);
+      return 0;
+    }
+    if (a === 'build') {
+      const input = await readStdin();
+      const entries = readTar(input);
+      record({ tar: entries });
+      if (scenario.buildGrandchild) {
+        // Like the buildx plugin: a child that keeps this process's output open.
+        spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: ['ignore', 'inherit', 'inherit'], shell: false });
+      }
+      if (scenario.buildHangMs) await sleep(scenario.buildHangMs);
+      if (scenario.buildFails) { console.error('ERROR: failed to solve: process did not complete successfully'); return 1; }
+      if (scenario.loadRequired && !args.includes('--load')) {
+        console.error('WARNING: No output specified with docker-container driver. Build result will only remain in the build cache.');
+        return 0;
+      }
+      writeFileSync(fileFor(imagesDir, option('-t')), JSON.stringify({ tag: option('-t') }));
+      console.error('#1 building fake image');
+      return 0;
+    }
+    if (a === 'container' && b === 'inspect') {
+      record();
+      const path = fileFor(containersDir, args.at(-1));
+      if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args.at(-1)}`); return 1; }
+      console.log(JSON.stringify(readJson(path).labels ?? {}));
+      return 0;
+    }
+    if (a === 'rm') {
+      record();
+      const path = fileFor(containersDir, nameOf(args.at(-1)));
+      if (scenario.rmFails) { console.error('Error response from daemon: cannot remove container: permission denied'); return 1; }
+      if (!existsSync(path)) { console.error(`Error response from daemon: No such container: ${args.at(-1)}`); return 1; }
+      rmSync(path, { force: true });
+      console.log(args.at(-1));
+      return 0;
+    }
+    if (a === 'inspect') {
+      record();
+      const path = fileFor(containersDir, nameOf(args.at(-1)));
+      if (scenario.inspectFails || !existsSync(path)) { console.error(`Error: No such object: ${args.at(-1)}`); return 1; }
+      const state = readJson(path);
+      console.log(`${state.exitCode ?? 0} ${state.oom ? 'true' : 'false'} ${idOf(state.name)}`);
+      return 0;
+    }
+    if (a === 'cp') {
+      // docker cp <id>:<path> -   Serves scenario.cp[<path under the work folder>]:
+      // { tar: base64 } served whole, { missing }, { fails: text }, or { hang }.
+      // After the tar it stays open for lingerMs, and logs a finished line only on
+      // a normal exit, so a test can tell that athanor killed it early.
+      record();
+      const spec = args[1] ?? '';
+      const colon = spec.indexOf(':');
+      const id = spec.slice(0, colon);
+      const path = spec.slice(colon + 1);
+      if (!existsSync(fileFor(containersDir, nameOf(id)))) { console.error(`Error response from daemon: No such container: ${id}`); return 1; }
+      const work = (scenario.run?.work ?? ['/root/work'])[0] as string;
+      const entry = scenario.cp?.[path.startsWith(work + '/') ? path.slice(work.length + 1) : path];
+      if (!entry || entry.missing) { console.error(`Error response from daemon: Could not find the file ${path} in container ${id}`); return 1; }
+      if (entry.fails) {
+        // With a tar, the bytes are sent first and the failure follows.
+        if (entry.tar) await new Promise<void>((resolve) => io.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
+        console.error(entry.fails);
+        return 1;
+      }
+      if (entry.hang) { await sleep(60000); return 1; }
+      await new Promise<void>((resolve) => io.stdout.write(Buffer.from(entry.tar, 'base64'), () => resolve()));
+      if (entry.lingerMs) await sleep(entry.lingerMs);
+      if (!killed()) appendFileSync(join(dir, 'calls.jsonl'), JSON.stringify({ args, finished: true }) + '\n');
+      return 0;
+    }
+    if (a === 'ps') {
+      record();
+      // The label filter names the label to list by: athanor.slot, or athanor.server.
+      const key = (args[args.indexOf('--filter') + 1] ?? 'label=athanor.slot').replace(/^label=/, '');
+      for (const f of readdirSync(containersDir)) {
+        const c = readJson(join(containersDir, f));
+        if (c.labels?.[key] !== undefined) console.log(`${c.name}\t${c.labels[key]}\t${c.image}`);
+      }
+      return 0;
+    }
+    if (a === 'images') {
+      record();
+      for (const f of readdirSync(imagesDir)) console.log(readJson(join(imagesDir, f)).tag);
+      return 0;
+    }
+    if (a === 'rmi') {
+      record();
+      rmSync(fileFor(imagesDir, args.at(-1)), { force: true });
+      console.log(`Untagged: ${args.at(-1)}`);
+      return 0;
+    }
+    if (a === 'run') {
+      const parsed = parseRun(args.slice(1));
+      if ('error' in parsed) {
+        record();
+        console.error(parsed.error);
+        return 125;
+      }
+      const { image } = parsed;
+      if (parsed.options.has('--entrypoint')) {
+        // The check container (issue 35): prints the writable paths the scenario
+        // lists as missing, writes no container file, and exits 0.
+        record();
+        const paths = args.slice(args.indexOf('athanor') + 1);
+        for (const p of paths) if ((scenario.missingWritable ?? []).some((m: string) => p.endsWith('/' + m))) console.log(p);
+        return scenario.checkFails ? 125 : 0;
+      }
+      // The open stdin keeps the fake alive, so it ends the process itself.
+      if ((parsed.options.get('--label') ?? '').startsWith('athanor.server=')) return await serveRun(parsed.options, image);
+      const name = parsed.options.get('--name');
+      const labelArg = parsed.options.get('--label');
+      const labels = labelArg ? { [labelArg.split('=')[0]]: labelArg.split('=')[1] } : {};
+      const path = fileFor(containersDir, name);
+      const plan = { exitCode: 0, marker: true, ...(scenario.run ?? {}) };
+      if (plan.runFails) {
+        record();
+        console.error('docker: Error response from daemon: Conflict.');
+        return 125;
+      }
+      writeFileSync(path, JSON.stringify({ name, labels, image, running: true }));
+      // The boot script's work line, just before the marker; plan.work lists the lines to print.
+      const workLines = (plan.work ?? ['/root/work']).map((w: string) => `athanor-work ${w}\n`).join('');
+      if (plan.skipStdin) {
+        // Exit without reading the snapshot, closing the pipe under git archive.
+        record();
+        if (plan.marker) io.stderr.write(workLines + 'athanor-boot-ok\n');
+        finish(path, plan.exitCode, false);
+        return plan.exitCode;
+      }
+      // When the run began, before the snapshot is read, so a test can time a run from here.
+      const at = Date.now();
+      const input = await readStdin();
+      record({ at, tar: readTar(input) });
+      if (plan.tarFails) { console.error('tar: short read'); finish(path, 2, false); return 2; }
+      if (plan.marker) io.stderr.write(workLines + 'athanor-boot-ok\n');
+      if (plan.stdout) io.stdout.write(plan.stdout);
+      if (plan.stderr) io.stderr.write(plan.stderr);
+      if (plan.hangMs) {
+        const until = Date.now() + plan.hangMs;
+        while (Date.now() < until) {
+          if (killed() || !existsSync(path)) return 137; // killed, or removed with rm -f
+          await sleep(25);
+        }
+      }
+      if (!existsSync(path)) return 137;
+      finish(path, plan.exitCode, plan.oom === true);
+      return plan.exitCode;
+    }
     record();
-    console.error(plan.runFailText ?? 'docker: Error response from daemon: Conflict.');
-    return 125;
+    console.error(`fake docker: unhandled ${args.join(' ')}`);
+    return 1;
   }
-  const published = options.get('-p') ?? '';
-  const hostPort = /^127\.0\.0\.1:(\d+):/.exec(published)?.[1];
-  record({ at: Date.now() });
-  let stdinEnded = false;
-  process.stdin.on('data', () => {});
-  process.stdin.on('end', () => { stdinEnded = true; });
-  // Real Docker takes a while to make the container and seed its volumes.
-  if (plan.startDelayMs) await sleep(plan.startDelayMs);
-  writeFileSync(path, JSON.stringify({ name, labels, image, running: true, ...(hostPort ? { hostPort: Number(hostPort) } : {}) }));
-  if (plan.marker) process.stderr.write('athanor-boot-ok\n');
-  if (plan.stdout) process.stdout.write(plan.stdout);
-  if (plan.stderr) process.stderr.write(plan.stderr);
-  const until = plan.exitAfterMs !== undefined ? Date.now() + plan.exitAfterMs : Infinity;
-  while (Date.now() < until) {
-    if (!existsSync(path)) return 137; // removed with rm -f
-    if (stdinEnded) { rmSync(path, { force: true }); return 137; }
-    await sleep(25);
+
+  // A server container (issue 35): prints the marker at once, without reading
+  // stdin to its end, and stays up until it is removed, its stdin ends, or the
+  // scenario's serve plan ends it: { exitCode, exitAfterMs, startDelayMs, oom, runFails, runFailText, marker, stdout, stderr }.
+  async function serveRun(options: Map<string, string>, image: string): Promise<number> {
+    const name = options.get('--name');
+    const labelArg = options.get('--label') as string;
+    const labels = { [labelArg.split('=')[0] as string]: labelArg.split('=')[1] };
+    const path = fileFor(containersDir, name);
+    const plan = { marker: true, ...(scenario.serve ?? {}) };
+    if (plan.runFails) {
+      record();
+      console.error(plan.runFailText ?? 'docker: Error response from daemon: Conflict.');
+      return 125;
+    }
+    const published = options.get('-p') ?? '';
+    const hostPort = /^127\.0\.0\.1:(\d+):/.exec(published)?.[1];
+    record({ at: Date.now() });
+    let stdinEnded = false;
+    io.stdin.on('data', () => {});
+    io.stdin.on('end', () => { stdinEnded = true; });
+    // Real Docker takes a while to make the container and seed its volumes.
+    if (plan.startDelayMs) await sleep(plan.startDelayMs);
+    writeFileSync(path, JSON.stringify({ name, labels, image, running: true, ...(hostPort ? { hostPort: Number(hostPort) } : {}) }));
+    if (plan.marker) io.stderr.write('athanor-boot-ok\n');
+    if (plan.stdout) io.stdout.write(plan.stdout);
+    if (plan.stderr) io.stderr.write(plan.stderr);
+    const until = plan.exitAfterMs !== undefined ? Date.now() + plan.exitAfterMs : Infinity;
+    while (Date.now() < until) {
+      if (killed() || !existsSync(path)) return 137; // killed, or removed with rm -f
+      if (stdinEnded) { rmSync(path, { force: true }); return 137; }
+      await sleep(25);
+    }
+    if (!existsSync(path)) return 137;
+    const code = plan.oom === true ? 137 : (plan.exitCode ?? 0);
+    finish(path, code, plan.oom === true);
+    return code;
   }
-  if (!existsSync(path)) return 137;
-  const code = plan.oom === true ? 137 : (plan.exitCode ?? 0);
-  finish(path, code, plan.oom === true);
-  return code;
+
+  function finish(path: string, exitCode: number, oom: boolean): void {
+    const state = readJson(path);
+    writeFileSync(path, JSON.stringify({ ...state, running: false, exitCode, oom }));
+  }
+
+  return await main();
 }
 
-function finish(path: string, exitCode: number, oom: boolean): void {
-  const state = readJson(path);
-  writeFileSync(path, JSON.stringify({ ...state, running: false, exitCode, oom }));
+// Run as a file, the open stdin would keep the process alive once the fake is done.
+if (import.meta.main) {
+  process.exitCode = await fakeDocker({ argv: process.argv.slice(2), env: process.env, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
+  process.stdin.destroy();
 }
-
-process.exitCode = await main();
