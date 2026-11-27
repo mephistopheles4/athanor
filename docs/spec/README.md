@@ -13,4 +13,4 @@ None yet.
 
 ## All specs
 
-None yet.
+- [0001-outside-configuration](0001-outside-configuration.md) — `--config` and `ATHANOR_CONFIG`: read athanor's configuration from a file outside the repo under test
