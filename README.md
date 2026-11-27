@@ -251,7 +251,7 @@ makes only the last folder:
   `missing` (declared paths the container did not have).
 
 athanor copies regular files and folders, checks every name, and refuses the
-whole copy on a bad one; links and devices are skipped. A copy reads at
+whole copy on a bad one; links, devices and FIFOs are skipped. A copy reads at
 most `maxOutputMegabytes`, 100 000 entries and 10 minutes. A copy that fails
 ends the run with exit 125 and the test's own exit in `testExitCode`; after a
 memory run, `testExitCode` is athanor's 137, not the test's, and

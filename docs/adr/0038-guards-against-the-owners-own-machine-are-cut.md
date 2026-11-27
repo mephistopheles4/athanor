@@ -1,13 +1,14 @@
 # 0038. Guards against the owner's own machine are cut
 
-Date: 2026-11-26 · Status: accepted · Source: ATH-9's plan and the owner's approval of it, relayed by the lead session; settles issue 84's candidates
+Date: 2026-11-26 · Status: accepted · Source: ATH-9's plan and the owner's relayed approval of it; settles issue 84's candidates
 
 ADR 0033 and ADR 0036 put the owner's machine out of scope, with its programs,
 accounts and agents, and the code of a repo it runs. Issue 84 listed the
 controls left with no reason under that scope, K1 to K10, for the owner to
 sort. Guards that protect only against that machine still cost tests and review
-on every change. The owner approved a plan that cuts them. Each cut can be
-reverted.
+on every change. The owner approved one plan that cuts them. This record takes
+that plan as the owner-decided spec that ADR 0033 and ADR 0036 ask for before a
+candidate is loosened. Each cut can be reverted.
 
 ## What is cut
 
@@ -27,7 +28,8 @@ record stands.
 - **Programs by full path (0020's amendment, 0024, 0037).** git and docker start
   by name, and the agent hook looks for athanor in relative PATH entries too. On
   Windows a program file in the repo or the working folder can start in place of
-  git or docker, on the host. A program PATH does not hold still ends in the
+  git or docker, on the host. So can one on any system when PATH holds a
+  relative entry such as `.`. A program missing from PATH still ends in the
   plain "not found on PATH" message.
 - **The second Docker check (0021).** The checked context and builder stay
   pinned for the run and are not read again once the slot is held. A builder
@@ -44,7 +46,8 @@ record stands.
   apply, so in a repo that has them the carried history can be missing commits.
   The boot script checks only that the base folder is there. Kept: the other
   name rules, the clean environment of the base's git calls, lazy fetching off,
-  the shallow and partial refusals, and what a command's `base` may name.
+  the shallow and partial refusals, and what a command's `base` may name. This
+  settles issue 72.
 - **A server's linked folder (0034).** `serve` no longer refuses a `writable`
   folder that is a link. A missing folder and a file are still refused.
 - **Configuration files and holder answers** (no record; tests J6 and C13). A
@@ -57,14 +60,13 @@ record stands.
 
 Among the guards that stay: no shell (ADR 0002), `--network none` and the rest
 of the run container's rules (ADR 0016), the limits and their ceilings, the
-refusal of an engine or builder off this machine (ADR 0013, ADR 0021), and a
-server's read-only mount and loopback port (ADR 0034).
+refusal of an engine or builder off this machine (ADR 0021) and of plain tcp
+(ADR 0013), and a server's read-only mount and loopback port (ADR 0034).
 
 The run's, the server's and the writable check's containers keep `--cap-drop
 ALL` with the six `--cap-add`, and `no-new-privileges`. The plan listed them as
-a cut that needed its own spec. The lead session picked to keep both and
-flagged that for the owner; cutting either needs the owner's answer to that
-spec and a new record.
+a cut that needs its own spec. They are kept: cutting either needs the owner's
+yes to that spec and a new record.
 
 ## Issue 84's candidates
 
@@ -74,11 +76,11 @@ spec and a new record.
 | K2 `--network none` | Kept |
 | K3 dropped capabilities | Kept, as above |
 | K4 `no-new-privileges` | Kept, as above |
-| K5 configuration file checks | Cut |
+| K5 configuration file checks | Cut in part: the regular-file and one-link checks |
 | K6 clean archive environment | Cut in part |
 | K7 programs by full path | Cut |
-| K8 holder answers skipped | The control-character filter is cut; the rest is kept |
-| K9 input validation | Kept; the context-name pattern and a base name's character check are cut |
+| K8 holder answers skipped | Cut in part: the control-character filter |
+| K9 input validation | Cut in part: the context-name pattern and a base name's character check |
 | K10 named base checks | Cut in part |
 
 ## The version numbers

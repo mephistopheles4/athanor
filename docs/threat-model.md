@@ -221,9 +221,9 @@ athanor exposes on the network, and release and CI.
   two-factor approval.
 
 athanor's own guards hold no boundary above, and only the owner's spec loosens
-one. ADR 0038 cut those that protected only against the machine and settled
-issue 84's candidates. Among those that stay: no shell (ADR 0002); the archive
-step's content filter block and pins (ADR 0020); configuration files and
+one (ADR 0038). Among those that stay: no shell (ADR 0002); the archive step's
+`-filter` on every path and its pinned line endings, file modes and global
+attributes file (ADR 0020); configuration files and
 configured paths kept in the repo (tests C17, J6); holder answers shown, not
 trusted (ADR 0004); a named base's git calls kept from the host's git settings,
 and the stale-run sweep (ADR 0032); serve's container guards (ADR 0034); and the
