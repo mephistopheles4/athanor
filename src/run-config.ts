@@ -1,11 +1,11 @@
 // The run configuration: everything a run needs from the repo configuration
 // and the machine configuration, path-checked and ceiling-checked, with the
 // source of each value, so every message names the file to fix.
-import { readFileSync, existsSync, lstatSync, realpathSync, openSync, fstatSync, closeSync, constants } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { AthanorError } from './errors.js';
 import { insideRepo, isUnder } from './paths.js';
-import { checkOutputs, hasControl, showName } from './copy-out.js';
+import { checkOutputs, showName } from './copy-out.js';
 import { MAC_MOST_LOCKS } from './slots.js';
 
 export const DEFAULTS = Object.freeze({
@@ -137,12 +137,11 @@ const SERVER_KEYS = ['argv', 'port', 'writable', 'memory', 'cpus', 'processes'];
 const COMMAND_KEYS =['argv', 'args', 'outputs', 'memory', 'cpus', 'timeoutMinutes', 'processes', 'base'];
 
 // Why a base name is refused before git sees it, or null when it may go on to
-// be resolved (ADR 0032). It must read as one plain ref name: never an option,
-// never revision syntax, and nothing a terminal would act on.
+// be resolved (ADR 0032). It must read as one plain ref name: never an option
+// and never revision syntax.
 export function baseNameProblem(name: string): string | null {
   if (name === '') return 'it is empty';
   if (name.startsWith('-')) return 'it starts with "-"';
-  if (hasControl(name)) return 'it holds a control character or an invisible formatting character';
   if (name.includes(' ')) return 'it holds a space';
   const syntax = name.match(/[~^:?*[\\]/);
   if (syntax) return `it holds "${syntax[0]}", which git reads as revision syntax`;
@@ -195,7 +194,7 @@ export interface RunConfig {
   // The base to carry, when one is named (ADR 0032): the name as given, whether
   // it came from a command's base key (which may name only a remote-tracking
   // branch or a tag), and the name as a message shows it, with where it was
-  // set. A name that passed the check holds no control character.
+  // set.
   base?: { name: string; fromKey: boolean; label: string };
 }
 
@@ -275,30 +274,14 @@ export function resolveRunLimit(env: NodeJS.ProcessEnv, machine: MachineConfig, 
   return { limit: DEFAULTS.maxRuns, source: 'default' };
 }
 
-// One configuration file at the repo root, as text. It must be a regular file
-// whose real path is inside the repo, so a link out, a device or a pipe is
-// never read. The real path is opened once, without following a link and
-// without waiting on a pipe, and the open handle is checked to be the file
-// that was checked, so a swap of the last name between the check and the read
-// is refused. A file with more than one hard link is refused too.
-// Whatever goes wrong, the message holds no file content, no system error text
-// and no host path.
+// One configuration file at the repo root, as text. Its real path must be inside
+// the repo. Whatever goes wrong, the message holds no file content, no system
+// error text and no host path.
 function readRootFile(root: string, file: string): string {
-  let fd: number | undefined;
   try {
-    const real = join(realpathSync.native(root), insideRepo(root, file, file, file));
-    const before = lstatSync(real, { bigint: true });
-    // A file with a second hard link may be the same data as a file outside the repo.
-    if (!before.isFile() || before.nlink > 1n) throw new Error('not a plain regular file');
-    // O_NOFOLLOW and O_NONBLOCK are not defined on Windows, where they count as 0.
-    fd = openSync(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const opened = fstatSync(fd, { bigint: true });
-    if (!opened.isFile() || opened.nlink > 1n || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error('not the file that was checked');
-    return readFileSync(fd, 'utf8');
+    return readFileSync(join(realpathSync.native(root), insideRepo(root, file, file, file)), 'utf8');
   } catch {
     throw new AthanorError(`${file} at the repo root could not be read. Make it a regular file inside the repo that you can read, then run again.`);
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -644,9 +627,9 @@ export function resolveRunConfig(root: string, machine: MachineConfig, request: 
     if (problem) {
       throw new AthanorError(`--base "${showName(request.base)}" is not a ref name athanor takes: ${problem}. Name a branch, a remote-tracking branch or a tag, such as origin/main.`);
     }
-    base = { name: request.base, fromKey: false, label: `--base "${request.base}"` };
+    base = { name: request.base, fromKey: false, label: `--base "${showName(request.base)}"` };
   } else if (own?.base !== undefined) {
-    base = { name: own.base, fromKey: true, label: `commands.${shownName}.base "${own.base}" in ${where}` };
+    base = { name: own.base, fromKey: true, label: `commands.${shownName}.base "${showName(own.base)}" in ${where}` };
   }
 
   const { limits, picked } = resolveLimits(['memory', 'cpus', 'timeoutMinutes', 'processes'], machine, repo, repoSource, own === undefined ? undefined : { values: own, label: `commands.${shownName}` }, where) as { limits: Limits; picked: Record<LimitKey, Picked> };

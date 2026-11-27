@@ -7,7 +7,6 @@ import { randomBytes, createHash } from 'node:crypto';
 import { call, start } from './proc.js';
 import type { Started } from './proc.js';
 import { AthanorError } from './errors.js';
-import { hasControl, showName } from './copy-out.js';
 
 type Env = NodeJS.ProcessEnv;
 
@@ -19,11 +18,12 @@ export interface Scratch {
   objectsEnv: Env;
   archiveEnv: Env;
   // The environment for every git call that resolves or carries a base (ADR
-  // 0032): the archive step's clean one, with replace refs and grafts off, no
-  // lazy fetch, and the run's object folder, so the snapshot's own objects are
-  // found. It sets no GIT_DIR: git finds the repo's refs from its root.
+  // 0032): a clean one (cleanGitEnv), with no lazy fetch, and the run's
+  // object folder, so the snapshot's own objects are found. It sets no GIT_DIR:
+  // git finds the repo's refs from its root.
   baseEnv: Env;
-  // An empty file, for the archive's global config and attributes file.
+  // An empty file: the archive's global attributes file, and the base's global
+  // config.
   emptyFile: string;
   // The repo's object format, sha1 or sha256.
   format: string;
@@ -80,10 +80,10 @@ const ARCHIVE_CONFIG = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
 const BUILD_ARCHIVE_CONFIG = ['-c', 'tar.umask=0022'];
 const SNAPSHOT_ARCHIVE_CONFIG = ['-c', 'tar.umask=0002'];
 
-// The environment for the archive step (ADR 0020): the inherited one with
-// every GIT_* variable removed (on Windows in any case, since Windows matches
-// variable names without regard to case), no global or system config and no
-// system attributes.
+// The clean environment of the base's git calls (ADR 0032): the inherited one
+// with every GIT_* variable removed (on Windows in any case, since Windows
+// matches variable names without regard to case), no global or system config
+// and no system attributes.
 function cleanGitEnv(emptyFile: string): Env {
   const gitVariable = process.platform === 'win32' ? /^git_/i : /^GIT_/;
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !gitVariable.test(name)));
@@ -149,21 +149,26 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
   const repoObjects = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'], { cwd: root, what: 'find the object store' })).trim();
   writeFileSync(join(objects, 'info', 'alternates'), resolve(repoObjects) + '\n');
   const realIndex = (await git(['rev-parse', '--path-format=absolute', '--git-path', 'index'], { cwd: root, what: 'find the index' })).trim();
-  // A git folder of athanor's own for every archive, made with no template in
-  // the clean environment, so its config holds only what init writes. Its
-  // info/attributes, which outranks the tree's .gitattributes, unsets
-  // export-ignore, export-subst and filter, so the archive holds exactly the
-  // tree and runs no content filter. The tree's text, eol, ident and
-  // working-tree-encoding attributes still apply (ADR 0020).
+  // A git folder of athanor's own for every archive. Its info/attributes, which
+  // outranks the tree's .gitattributes, unsets export-ignore, export-subst and
+  // filter, so the archive holds exactly the tree and runs no content filter.
+  // The tree's text, eol, ident and working-tree-encoding attributes still
+  // apply (ADR 0020).
   const emptyFile = join(dir, 'empty');
   writeFileSync(emptyFile, '');
-  const clean = cleanGitEnv(emptyFile);
+  // That folder is a repository of athanor's own, so no variable that places
+  // another one may reach it: with GIT_COMMON_DIR, init would write that other
+  // repository's config and the attributes file below would go unread, and with
+  // GIT_WORK_TREE, init fails. Windows matches variable names in any case.
+  const inherited: Env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^git_(common_dir|work_tree)$/i.test(name)));
   const archiveDir = join(dir, 'archive.git');
   // The same object format as the repo (sha1 or sha256), or it cannot read its objects.
   const format = (await git(['rev-parse', '--show-object-format'], { cwd: root, what: 'read the object format' })).trim();
-  await git(['init', '--bare', '-q', '--template=', `--object-format=${format}`, archiveDir], { cwd: dir, env: clean, what: 'make a folder for archives' });
+  await git(['init', '--bare', '-q', `--object-format=${format}`, archiveDir], { cwd: dir, env: inherited, what: 'make a folder for archives' });
   mkdirSync(join(archiveDir, 'info'), { recursive: true });
   writeFileSync(join(archiveDir, 'info', 'attributes'), '* -export-ignore -export-subst -filter\n');
+  // For the base's git calls only.
+  const clean = cleanGitEnv(emptyFile);
   let copies = 0;
   return {
     dir,
@@ -181,11 +186,8 @@ export async function makeScratch(home: string, root: string): Promise<Scratch> 
       return { ...process.env, GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' };
     },
     objectsEnv: { ...process.env, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
-    archiveEnv: { ...clean, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
-    baseEnv: {
-      ...clean, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1',
-      GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: emptyFile, GIT_NO_LAZY_FETCH: '1',
-    },
+    archiveEnv: { ...inherited, GIT_DIR: archiveDir, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1' },
+    baseEnv: { ...clean, GIT_OBJECT_DIRECTORY: objects, GIT_LITERAL_PATHSPECS: '1', GIT_NO_LAZY_FETCH: '1' },
     emptyFile,
     format,
     remove(): void {
@@ -260,11 +262,6 @@ export async function resolveBase(
       throw new AthanorError(`${label} is ambiguous: more than one ref has that name. Name it in full, such as refs/remotes/origin/main.`);
     }
     throw new AthanorError(`${label} names nothing athanor can carry. If it is a remote-tracking branch, fetch it, or name a ref that exists.`);
-  }
-  // git follows a symbolic ref, such as a remote's HEAD, to a name the check
-  // above never saw; that name must hold no control or format character either.
-  if (hasControl(ref)) {
-    throw new AthanorError(`${label} resolves to ${showName(ref)}, a name with a control or invisible formatting character. Name the branch you mean directly.`);
   }
   if (ref.includes(' ')) {
     throw new AthanorError(`${label} resolves to "${ref}", a name with a space. Name the branch you mean directly.`);
@@ -441,11 +438,10 @@ export async function buildContext(
 }
 
 // A tar stream of a commit or tree, for a Docker child's stdin. It comes from
-// athanor's own git folder in the clean environment, so it holds exactly the
-// tree, with the archive settings pinned here; the attributes file is pinned
-// empty, as git reads its default one even with no global config. A carried
-// base's four files ride after the tree, in their own folder (ADR 0032).
-// Returns the git child; its stdout is the stream.
+// athanor's own git folder, so it holds exactly the tree, with the archive
+// settings pinned here; the global attributes file is pinned empty, and a
+// system one still applies. A carried base's four files ride after the tree, in
+// their own folder (ADR 0032). Returns the git child; its stdout is the stream.
 export function tarStream(root: string, scratch: Scratch, id: string, of: TarOf, added: string[] = []): Started {
   const pinned = [
     ...ARCHIVE_CONFIG,

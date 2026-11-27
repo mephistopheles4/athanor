@@ -126,8 +126,7 @@ export async function tryServerLock(prefix: string, n: number, limit: number, in
 const isHolderAnswer = (v: any): v is HolderAnswer =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Number.isInteger(v.slot) && Number.isInteger(v.pid) && Number.isFinite(new Date(v.started).getTime()) && typeof v.started === 'number' &&
-  // No control characters, so an answer cannot draw on the terminal that shows it.
-  typeof v.repo === 'string' && !/[\u0000-\u001f\u007f-\u009f]/.test(v.repo) && Number.isInteger(v.limit);
+  typeof v.repo === 'string' && Number.isInteger(v.limit);
 
 // Ask slot n's holder. Resolves to { held: false }, { held: true }, or
 // { held: true, answer } when it answered with one well-formed JSON line.
@@ -138,13 +137,10 @@ export function ask(prefix: string, slot: number, timeoutMs = 1000): Promise<Ask
 export type ServerAnswer = HolderInfo & { server: number; limit: number; name: string; port?: number };
 export type AskedServer = { held: false } | { held: true; answer?: ServerAnswer };
 
-// No control characters, so an answer cannot draw on the terminal that shows it.
-const plain = (v: unknown): boolean => typeof v === 'string' && !/[\u0000-\u001f\u007f-\u009f]/.test(v);
-
 const isServerAnswer = (v: any): v is ServerAnswer =>
   v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Number.isInteger(v.server) && Number.isInteger(v.pid) && typeof v.started === 'number' && Number.isFinite(new Date(v.started).getTime()) &&
-  plain(v.repo) && plain(v.name) && Number.isInteger(v.limit) &&
+  typeof v.repo === 'string' && typeof v.name === 'string' && Number.isInteger(v.limit) &&
   (v.port === undefined || (Number.isInteger(v.port) && v.port >= 1 && v.port <= 65535));
 
 // Ask server lock n's holder, as ask does for a slot.

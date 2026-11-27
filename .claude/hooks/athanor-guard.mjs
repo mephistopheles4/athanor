@@ -9,9 +9,8 @@
 // the host and passes as it is. Ported from the-pact's hook (its ADR 0104).
 //
 // It reads the command as data, never runs it, and never changes it. It runs
-// one program, athanor's `--version`, by a full path with no shell (ADR 0002,
-// ADR 0020's amendment), and only when the command is a guarded host run. It
-// writes nothing and sends nothing.
+// one program, athanor's `--version`, with no shell (ADR 0002), and only when
+// the command is a guarded host run. It writes nothing and sends nothing.
 //
 // Everything that is not a refusal is silence: exit 0, nothing on standard
 // output, nothing on standard error. A hook that answers with an explicit
@@ -23,7 +22,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, posix, win32 } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // The refusal. Fixed text: nothing from the command is echoed into it, so a
@@ -228,17 +227,17 @@ export async function decide(input, { athanorPresent }) {
 
 const LIMIT_MS = 5000;
 
-// The athanor an npm global install leaves in an absolute PATH entry, as the
-// program and arguments that print its version, or null. On Windows the
-// install leaves a .cmd shim, which only a shell runs, so the probe runs Node
-// itself on the package's bin script beside the shim instead (ADR 0002). An
-// empty or relative entry is never searched (ADR 0020's amendment).
+// The athanor an npm global install leaves in a PATH entry, as the program and
+// arguments that print its version, or null. On Windows the install leaves a
+// .cmd shim, which only a shell runs, so the probe runs Node itself on the
+// package's bin script beside the shim instead (ADR 0002).
 export function findAthanor({ env = process.env, platform = process.platform } = {}) {
   const win = platform === 'win32';
   const named = Object.keys(env).find(k => k.toUpperCase() === 'PATH');
-  const absolute = win ? win32.isAbsolute : posix.isAbsolute;
-  for (const dir of (named ? env[named] : '').split(win ? ';' : ':')) {
-    if (dir === '' || !absolute(dir)) continue;
+  for (const entry of (named ? env[named] : '').split(win ? ';' : ':')) {
+    if (entry === '') continue;
+    // A relative entry counts from the working folder; the probe runs elsewhere.
+    const dir = resolve(entry);
     if (win) {
       const script = join(dir, 'node_modules', '@mephistopheles4', 'athanor', 'bin', 'athanor.mjs');
       if (existsSync(join(dir, 'athanor.cmd')) && existsSync(script)) return { file: process.execPath, args: [script, '--version'] };

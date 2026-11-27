@@ -99,7 +99,8 @@ The same object works as `athanor.json`, at the top level of the file with no
 Save `athanor.json` as UTF-8 without a byte-order mark. PowerShell 5.1's `>`
 writes UTF-16, which athanor rejects as invalid JSON. Whichever
 file you use must be a regular file inside the repo, not a link to a place
-outside it.
+outside it. athanor does not check that the file is a regular one, so a named
+pipe in its place makes the run wait: stop it and put a file there.
 
 - `dockerfile` (required) and `context` (default: the Dockerfile's folder)
   are repo-relative paths. Every tracked file under `context` keys the image,
@@ -168,6 +169,10 @@ check run on the host, reading only commits, would not.
 - The base is only as fresh as your last `git fetch`: athanor never fetches.
 - A shallow or partial clone is refused, since part of the history may be
   missing, and so is a snapshot that holds a path named `.athanor-base`.
+- Replace refs and grafts change what git reads on your machine and are not
+  carried, so in a repo that has them the history inside the container can be
+  missing commits, and your command's git calls can then fail. Remove them, or
+  run without a base.
 - The image needs git for a run with a base, 2.29 or later for a sha256 repo.
 - athanor 0.2.0 is the first release that takes `base` and `--base`. A repo
   that adopts the key needs 0.2.0 or later: an older athanor refuses the
@@ -263,12 +268,14 @@ files it left out. It never changes your working tree, index, refs or stash
 list; it writes outside the state folder only into an `--output` folder.
 
 The files reach the container and the image build as committed: athanor pins
-their line endings and file modes, and applies your repo's own
-`.gitattributes` settings for `text`, `eol`, `ident` and
-`working-tree-encoding`. The step that packs them into a tar stream
-(`git archive`) runs no git content filter and does not read your global or
-system git configuration, so a Git LFS file arrives as its pointer file. The git calls that record uncommitted work still run with your git
-configuration, clean filters included
+their line endings and file modes, leaves out your global git attributes file,
+and applies your repo's own `.gitattributes` settings for `text`, `eol`,
+`ident` and `working-tree-encoding`. The step that packs them into a tar
+stream (`git archive`) runs no git content filter, so a Git LFS file arrives
+as its pointer file. It reads your git configuration and `GIT_*` variables
+(never `GIT_COMMON_DIR` or `GIT_WORK_TREE`), so a setting there, or a system
+attributes file, can change the files. The git calls that record uncommitted
+work run with your git configuration too, clean filters included
 ([issue 42](https://github.com/mephistopheles4/athanor/issues/42)). With Git
 LFS, its clean filter can copy uncommitted files, and with `--untracked`
 untracked ones, into the repo's `.git/lfs` folder, where they stay.
@@ -443,8 +450,10 @@ The state folder holds copies of your uncommitted files while a run lasts, and
 for up to a day after a run that was killed hard. With a base, it also holds a
 pack of the history from the merge base onward, until the run has streamed it
 into the container (or, if it can't be removed then, until the run ends), and
-for up to a day after a run that was killed hard. If you set
-`ATHANOR_HOME`, point it at a folder only you can read.
+for up to a day after a run that was killed hard. athanor sets no private mode
+on the folder: on Linux and macOS your umask does, which often lets other
+accounts read it. Run `mkdir -p ~/.athanor && chmod 700 ~/.athanor`, with your
+`ATHANOR_HOME` folder in place of `~/.athanor` if you set one.
 
 ## Disk
 
@@ -494,8 +503,14 @@ full class.
   proxy settings, passwords included. The tests run as root unless the
   Dockerfile names another user, and keep six Linux capabilities. Everything
   tracked under `context`, a file added with `git add -N` included, reaches
-  that build. Use athanor only on repos you trust to build. Out of scope: a
-  repo's own code, in the threat model's [Scope](docs/threat-model.md#scope).
+  that build. On Windows, and on any system when your PATH holds a relative
+  entry such as `.`, a program file in the repo, or in the folder you run
+  athanor from, can also be started in place of git or docker, and then runs on
+  your machine, outside any container. Use athanor only on repos you trust to
+  build. Keep relative entries out of your PATH, and on Windows use it only on
+  repos you would run on your machine. Out of scope: a repo's own code, in the
+  threat model's
+  [Scope](docs/threat-model.md#scope).
 - **A shared or remote engine.** Anyone who can use the engine can read your
   runs and change their results. With `allowRemoteDocker`, the engine's or
   builder's operator receives your work, decides the result and chooses the
@@ -508,7 +523,9 @@ full class.
   outputs cross the network unencrypted. Set it only on a network you trust. Accepted class "A shared or remote engine, and the network".
 - **A local address that leads elsewhere.** A socket, pipe or loopback port
   that athanor counts as local can be forwarded to another machine, or held by
-  another local program. Know where your Docker endpoint leads. Accepted class
+  another local program. athanor checks your engine and builder once, so know
+  where your Docker endpoint leads, and don't edit your Docker context or builder
+  while a run or server is starting or waiting. Accepted class
   "A shared or remote engine, and the network"; a local program holding it is
   the machine's, out of scope.
 - **The Windows slot pipe on the network.** On Windows, a user elsewhere on
@@ -564,7 +581,8 @@ full class.
 - **Your git configuration.** The git calls that record uncommitted work run
   your clean filters (files added with `git add -N` included), and Git LFS
   can copy uncommitted files into `.git/lfs`
-  (see [Use](#use)). In a repo with a clean filter such as Git LFS, commit
+  (see [Use](#use)). The step that packs your files reads your git settings, so
+  one there can change what the container and the build get. In a repo with a clean filter such as Git LFS, commit
   work before a run, or know that the filter sees it. Out of scope: your git
   configuration is the machine's.
 - **What a copied file holds.** With `--output`, a report the test code wrote
@@ -583,6 +601,11 @@ full class.
   folder's access rules, and athanor sets no private mode on it; keep the folder
   where only you can read it. Out of
   scope: files left on the machine are the machine's.
+- **Who can read the state folder.** On Linux and macOS its mode comes from
+  your umask, so other accounts may be able to read the copies of your files and
+  history in it. Make it private, as
+  [the configuration section](#machine-configuration) says. Out of scope: other
+  accounts on the machine are the machine's.
 - **Command arguments.** The words after `<name> --` are visible in your
   machine's process list, in `docker inspect` on the engine, and to a remote
   engine's operator. Don't pass secrets as command arguments. The process list

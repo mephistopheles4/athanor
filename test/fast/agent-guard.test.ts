@@ -53,16 +53,17 @@ test('H1 a host run of the fast tier is refused while athanor is on the machine'
     assert.match(out.hookSpecificOutput.permissionDecisionReason, /athanor run fast/);
     assert.match(out.hookSpecificOutput.permissionDecisionReason, /--host-fallback=/);
   }
+  // A relative PATH entry counts from the working folder.
+  const here = tempDir(t);
+  fakeAthanor(join(here, 'rel'));
+  const out = JSON.parse(runHook(call('node test/run.mjs fast'), 'rel', here));
+  assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', 'a relative PATH entry is searched');
 });
 
 test('H2 everything else passes in silence: no athanor, the docker tier, a named fallback, other commands, bad input', (t) => {
   const path = fakeAthanor(tempDir(t));
   const none = tempDir(t);
   assert.equal(runHook(call('node test/run.mjs fast'), none), '', 'athanor missing');
-  // A relative entry that would find an athanor from the working folder is never searched.
-  const here = tempDir(t);
-  fakeAthanor(join(here, 'rel'));
-  assert.equal(runHook(call('node test/run.mjs fast'), 'rel', here), '', 'a relative PATH entry is not searched');
   for (const command of [
     'node test/run.mjs docker',
     "node test/run.mjs fast --host-fallback='docker is stopped'",
