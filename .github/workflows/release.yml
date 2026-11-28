@@ -82,7 +82,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.0'
+          node-version: '24.22.3'
           package-manager-cache: false
       # The first step that reads the repo: the tag is v plus package.json's
       # version, and the version is X.Y.Z or X.Y.Z-rc.N (S1, S3).
@@ -196,7 +196,7 @@ jobs:
           path: ${{ runner.temp }}/release
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24.22.0'
+          node-version: '24.22.3'
           package-manager-cache: false
       # The same check runs in both jobs; publish has no checkout to share a
       # script from, so change the two together.

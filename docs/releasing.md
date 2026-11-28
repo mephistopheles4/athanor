@@ -364,7 +364,7 @@ Every log-out on this page ends with `npm whoami` failing, as in step 16.
     deployment and re-run the run on its tag, or bump the version and tag anew.
 14. Before logging in, in a clean checkout at that commit, build and pack.
     `npm --version` must match the `npm:` line of the check job's summary:
-    11.19.1, the npm that Node 24.22.0 bundles, which the release jobs pin. If
+    11.19.1, the npm that Node 24.22.3 bundles, which the release jobs pin. If
     it doesn't, install that Node before you go on. No install, build or repo
     script runs after the login.
 
