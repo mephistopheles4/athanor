@@ -25,7 +25,7 @@ Only the owner does any step on this page.
   - [Stop conditions and rollback](#stop-conditions-and-rollback)
   - [Testing an unreleased build locally](#testing-an-unreleased-build-locally)
   - [Upkeep](#upkeep)
-- [What to know](#what-to-know)
+- [What to know (stale-table proof)](#what-to-know-stale-table-proof)
 
 <!-- /toc -->
 
