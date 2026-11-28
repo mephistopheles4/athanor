@@ -21,6 +21,19 @@ except what reaches an engine (a base's history, a command's arguments), which
 is the engine class, and "the supply-chain bullet" is the Release and CI
 boundary.
 
+<!-- toc -->
+
+- [Boundaries](#boundaries)
+  - [The Docker engine and builder](#the-docker-engine-and-builder)
+  - [What athanor exposes on the network](#what-athanor-exposes-on-the-network)
+  - [Release and CI](#release-and-ci)
+- [Scope](#scope)
+- [Residual risk](#residual-risk)
+- [Accepted threat classes](#accepted-threat-classes)
+- [Open issues](#open-issues)
+
+<!-- /toc -->
+
 ## Boundaries
 
 ```mermaid

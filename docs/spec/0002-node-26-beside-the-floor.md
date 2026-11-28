@@ -2,6 +2,26 @@
 
 Status: proposed, revision 4. Revision 3 followed Design rounds 1 and 2, the second final. Revision 4 holds the owner's decision of 2026-11-27: Node 26 runs on Linux alone, and no scheduled run covers the other systems. Tier: thorough, on the sensitive route (the lead's pick, flagged for the owner). The work touches `release.yml`, the fast tier that `release.yml` runs, the required check, and, in the-pact, the signed Node that every cloud session runs.
 
+<!-- toc -->
+
+- [S1. Objective](#s1-objective)
+- [S2. The stacks pattern, and what this keeps and changes](#s2-the-stacks-pattern-and-what-this-keeps-and-changes)
+- [S3. The Node lines](#s3-the-node-lines)
+- [S4. The CI shape](#s4-the-ci-shape)
+- [S5. The agreement check](#s5-the-agreement-check)
+- [S6. The release pin](#s6-the-release-pin)
+- [S7. The cloud sessions' Node pin](#s7-the-cloud-sessions-node-pin)
+- [S8. The docs](#s8-the-docs)
+- [S9. The pattern, for other repos](#s9-the-pattern-for-other-repos)
+- [S10. Trade-off points](#s10-trade-off-points)
+- [S11. Security](#s11-security)
+- [S12. Acceptance claims](#s12-acceptance-claims)
+- [S13. Tickets](#s13-tickets)
+- [S14. Boundaries](#s14-boundaries)
+- [S15. Needs a human](#s15-needs-a-human)
+
+<!-- /toc -->
+
 ## S1. Objective
 
 athanor is tested on Node 24 alone. Node 26 has been the newest LTS line since 26.13.0 (2026-10-28), and Node 24 stays supported until April 2028. athanor should be tested on both, with 24 still the lowest version it supports, its **floor**. A user on Node 26 gets the same package as a user on Node 24, tested on Linux.

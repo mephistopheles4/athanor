@@ -12,8 +12,9 @@
 #               registry, npm ci from the lockfile, a check of the installed
 #               packages' registry signatures, a strict tsc check of src/ and
 #               of test/, a syntax check of every .mjs file, the source check,
-#               both test tiers (each builds dist/ first; the docker tier uses
-#               the runner's own Docker engine), and npm pack after an explicit
+#               the table-of-contents check (scripts/toc.mjs --check), both
+#               test tiers (each builds dist/ first; the docker tier uses the
+#               runner's own Docker engine), and npm pack after an explicit
 #               build, followed by a check of what the packed file holds
 #               (scripts/check-pack.mjs, which the release workflow shares), a
 #               comparison of its dist/ with a fresh build, an install of it
@@ -154,6 +155,8 @@ jobs:
           git ls-files '*.mjs' | while read -r f; do node --check "$f"; done
       - name: Source check
         run: node scripts/check-source.mjs
+      - name: Table of contents check
+        run: node scripts/toc.mjs --check
       - name: Fast tier
         run: node test/run.mjs fast
       - name: Docker tier
@@ -215,10 +218,10 @@ jobs:
             --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts
 
   # The same checks on a Mac (spec on ATH-7, S8): the install checks, both tsc
-  # checks, the .mjs syntax check, the source check, the lock probe, the fast
-  # tier, the pack-and-install check and the typed import. zizmor and the
-  # workflows' own rules run in the workflows job only, and the docker tier in
-  # the suite job only.
+  # checks, the .mjs syntax check, the source check, the table-of-contents
+  # check, the lock probe, the fast tier, the pack-and-install check and the
+  # typed import. zizmor and the workflows' own rules run in the workflows job
+  # only, and the docker tier in the suite job only.
   ci-macos:
     name: ci-macos
     runs-on: macos-15
@@ -292,6 +295,8 @@ jobs:
           git ls-files '*.mjs' | while read -r f; do node --check "$f"; done
       - name: Source check
         run: node scripts/check-source.mjs
+      - name: Table of contents check
+        run: node scripts/toc.mjs --check
       # The automated criteria of the lock on macOS (1, 2, 3 and 6); the JSON
       # record is in this step's log.
       - name: Probe the lock
@@ -355,9 +360,9 @@ jobs:
             --types node --typeRoots "$GITHUB_WORKSPACE/node_modules/@types" check.mts
 
   # The fast tier on Windows (T14), which was the owner's check by hand: npm ci
-  # from the lockfile, the strict tsc check of the tests and the fast tier. The
-  # docker tier on Docker Desktop (K5) stays by hand: a Windows runner has no
-  # Linux container engine.
+  # from the lockfile, the strict tsc check of the tests, the table-of-contents
+  # check and the fast tier. The docker tier on Docker Desktop (K5) stays by
+  # hand: a Windows runner has no Linux container engine.
   ci-windows:
     name: ci-windows
     runs-on: windows-2025
@@ -374,6 +379,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Strict type check of the tests
         run: node node_modules/typescript/bin/tsc -p test/tsconfig.json --noEmit
+      - name: Table of contents check
+        run: node scripts/toc.mjs --check
       - name: Fast tier
         run: node test/run.mjs fast
 

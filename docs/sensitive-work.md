@@ -1,3 +1,9 @@
+<!-- toc -->
+
+- [The sensitive-work list](#the-sensitive-work-list)
+
+<!-- /toc -->
+
 ## The sensitive-work list
 
 - **Authentication and authorization.** athanor has no accounts or logins.

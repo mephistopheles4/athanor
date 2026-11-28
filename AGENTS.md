@@ -113,7 +113,7 @@ no `npm publish`, `npm dist-tag` or `npm stage approve`), a check that install s
 every package resolves from the public registry, `npm ci`, `npm audit
 signatures`, a strict `tsc` check of `src/` and of
 `test/` (`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file,
-the source check, both tiers, and a pack-and-install check that builds before
+the source check, the table-of-contents check, both tiers, and a pack-and-install check that builds before
 it packs, compares the packed `dist/` with a rebuild, checks the packed file's
 contents and type-checks an import of the package by its name, on Linux.
 Node 26 runs in the Linux `suite` job alone; the rest runs on 24. The ruleset requires `ci`, which waits for the Linux jobs. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
@@ -121,7 +121,7 @@ workflows' own rules and the docker tier. Every test sets its own `ATHANOR_HOME`
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
-Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. `ci-windows` runs the type check of the tests and the fast tier on Windows (`T14`); the docker tier on Docker Desktop (`K5`) stays the owner's by hand. `ci-macos` is the only Mac evidence. On a docs-only diff the source check is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
+Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. `ci-windows` runs the type check of the tests, the table-of-contents check and the fast tier on Windows (`T14`); the docker tier on Docker Desktop (`K5`) stays the owner's by hand. `ci-macos` is the only Mac evidence. On a docs-only diff the source check is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
 
 ## Releases
 
@@ -147,6 +147,10 @@ read [the issue tracker rules](docs/agents/issue-tracker.md), including whose
 text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
 Read changes to `docs/spec/` closely.
+
+## Tables of contents
+
+After a heading change in a doc `scripts/toc.config.json` covers, run `node scripts/toc.mjs`. Read changes to the vendored `scripts/toc.mjs` closely; to update it, copy the pact's `docs/toc.mjs` and name its commit on the Source line.
 
 ## Security
 

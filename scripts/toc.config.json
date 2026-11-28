@@ -1,0 +1,13 @@
+{
+  "exclude": [
+    "docs/adr/",
+    "docs/log/",
+    "test/",
+    ".claude/agents/",
+    ".claude/commands/",
+    "**/CLAUDE.md",
+    "**/AGENTS.md",
+    "**/SKILL.md",
+    "**/README.md"
+  ]
+}
