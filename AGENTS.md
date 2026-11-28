@@ -62,6 +62,10 @@ decisions are in [docs/adr/](docs/adr/).
   an error, what to do next.
 - **Source files use LF line endings** (`.gitattributes`). The container's
   boot script is passed to `sh -c` and breaks on a carriage return.
+- **Tables of contents.** After a heading change in any doc, run
+  `node scripts/toc.mjs`; it writes only the docs that need a table. Read changes
+  to the vendored `scripts/toc.mjs` closely; to update it, copy `docs/toc.mjs`
+  from `mephistopheles4/the-pact` and name its commit on the Source line.
 
 ## Running the tests
 
@@ -147,10 +151,6 @@ read [the issue tracker rules](docs/agents/issue-tracker.md), including whose
 text counts. Labels: [triage labels](docs/agents/triage-labels.md).
 
 Read changes to `docs/spec/` closely.
-
-## Tables of contents
-
-After a heading change in a doc `scripts/toc.config.json` covers, run `node scripts/toc.mjs`. Read changes to the vendored `scripts/toc.mjs` closely; to update it, copy the pact's `docs/toc.mjs` and name its commit on the Source line.
 
 ## Security
 
