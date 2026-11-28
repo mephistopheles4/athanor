@@ -13,4 +13,5 @@ None yet.
 
 ## All specs
 
+- [0002-node-26-beside-the-floor](0002-node-26-beside-the-floor.md) — test athanor on Node 24 and 26 in CI, with 24 still the lowest version it supports
 - [0001-outside-configuration](0001-outside-configuration.md) — `--config` and `ATHANOR_CONFIG`: read athanor's configuration from a file outside the repo under test

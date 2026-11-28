@@ -2,7 +2,7 @@
 
 athanor runs a repo's tests on the tracked files in the working tree,
 uncommitted edits included, inside a fresh Docker container, and keeps a
-machine-wide limit on how many runs go at once. It is a Node 24 package, `@mephistopheles4/athanor`, whose command is
+machine-wide limit on how many runs go at once. Its package, `@mephistopheles4/athanor`, is tested on Node 24, the lowest version it supports, and on 26. Its command is
 `athanor`. Words used here are defined in [GLOSSARY.md](GLOSSARY.md); the
 decisions are in [docs/adr/](docs/adr/).
 
@@ -49,8 +49,8 @@ decisions are in [docs/adr/](docs/adr/).
   in athanor's own git folder, with `-filter` on every path and pinned line
   endings, global attributes file and file modes. That folder's `git init` and every
   archive drop `GIT_COMMON_DIR` and `GIT_WORK_TREE`, so neither places
-  another repository there. The host's other git settings apply: ADR 0038 cut the rest of
-  ADR 0020's clean environment. A change here is security-sensitive work.
+  another repository there. The host's other git settings apply (ADR 0038).
+  A change here is security-sensitive work.
 - **A user-facing accepted threat class has a README line.** A change that
   adds or changes an accepted class a user has to act on or know about also
   adds or changes its line in the README's "What athanor doesn't protect you
@@ -87,8 +87,8 @@ skips the project file for those), so every pack builds `dist/` first
 the hand publish. Then one runner, named tiers, from the repo root:
 
 - `node test/run.mjs fast` — a fake Docker and real git in temporary repos.
-  Runs anywhere Node 24, git and `tar` run (Linux, macOS, and Windows 10 and
-  later).
+  Runs anywhere Node 24 or later, git and `tar` run (Linux, macOS, and Windows
+  10 and later).
 - `node test/run.mjs docker` — real Docker with a small Alpine fixture. Needs a
   Docker engine.
 - `node node_modules/typescript/bin/tsc -p test/tsconfig.json` — the type check
@@ -111,18 +111,18 @@ with `id-token: write` starting only on a push of tags `v*`, no checkout in the
 job that names `environment: npm`, `--tag` on every `npm stage publish`, and
 no `npm publish`, `npm dist-tag` or `npm stage approve`), a check that install scripts are off and
 every package resolves from the public registry, `npm ci`, `npm audit
-signatures` (the registry's signatures over the installed packages' metadata;
-`npm ci` enforces the lockfile hashes), a strict `tsc` check of `src/` and of
+signatures`, a strict `tsc` check of `src/` and of
 `test/` (`test/tsconfig.json`, no emit), `node --check` on every `.mjs` file,
 the source check, both tiers, and a pack-and-install check that builds before
 it packs, compares the packed `dist/` with a rebuild, checks the packed file's
-contents and type-checks an import of the package by its name, on Linux and
-Node 24. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
+contents and type-checks an import of the package by its name, on Linux.
+Jobs run on Node 24 and 26; zizmor and the workflows' own rules run on 24
+alone. The ruleset requires `ci`, which waits for the Linux jobs. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
 workflows' own rules and the docker tier. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.
 
-Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. `ci-windows` runs the type check of the tests and the fast tier on Windows (`T14`); the docker tier on Docker Desktop (`K5`) stays the owner's by hand. `ci-macos` is the only Mac evidence. On a docs-only diff the source check, which reads only JavaScript and TypeScript, is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
+Each test is named by the acceptance claim it backs, such as `F5`. The spec or pull request that set the claim says how it is checked. To find it, read the test file's header, which may name it, or search the tracker for the claim's id. A new spec takes a letter that no earlier claim uses; a search of the tracker shows which are taken. `ci-windows` runs the type check of the tests and the fast tier on Windows (`T14`); the docker tier on Docker Desktop (`K5`) stays the owner's by hand. `ci-macos` is the only Mac evidence. On a docs-only diff the source check is a carried-over CI gate, not a check of its own. `test/fast/docs.test.ts` holds a word budget for each agent-facing doc: an over-budget doc loses history and duplicates, never an instruction in force; a doc that needs more words for one raises its number and says why in the pull request.
 
 ## Releases
 
