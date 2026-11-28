@@ -240,8 +240,8 @@ test('NV4 a types major, a matrix, a literal, a release pin or a test image off 
 test('NV4 a leg that runs other lines, or on another system, is refused', () => {
   // Linux loses the newer line: the list, the whole matrix, or the step that reads it.
   refused('ci', changed('ci', MATRIX, "node: ['24']"), /two lines/);
-  const alone = changed('ci', /\n    strategy:\n      fail-fast: false\n      matrix:\n        node: \['24', '26'\]/, '');
-  refused('ci', { ...alone, ci: alone.ci.replace('node-version: ${{ matrix.node }}', "node-version: '24'") }, /matrix/);
+  refused('ci', changed('ci', MATRIX, "node: ['24', '26', '28']"), /two lines/);
+  refused('ci', changed('ci', /\n    strategy:\n      fail-fast: false\n      matrix:\n        node: \['24', '26'\]/, ''), /two lines/);
   refused('ci', changed('ci', /node-version: \$\{\{ matrix\.node \}\}/, "node-version: '24'"), /matrix/);
   // Another system takes the newer line, in a matrix or in place of the floor.
   refused('ci', changed('ci', /\n  ci-macos:\n/, "$&    strategy:\n      matrix:\n        node: ['24', '26']\n"), /matrix/);
@@ -285,7 +285,8 @@ test('NV4 a layout the check cannot read is refused, never passed', () => {
   refused('packageJson', changed('packageJson', /">=24"/, '">=24.1"'), /engines/);
   refused('ci', changed('ci', MATRIX, "$&\n        exclude:\n          - node: '26'"), /read/);
   refused('ci', changed('ci', /\n    if: always\(\)/, '$&\n    "continue-on-error": true'), /read/);
-  refused('ci', changed('ci', /if: always\(\)\n/, '$&    strategy: { fail-fast: false }\n'), /read/);
+  refused('ci', changed('ci', /if: always\(\)\n/, '$&    env: { A: b }\n'), /read/);
+  refused('ci', changed('ci', /if: always\(\)\n/, '$&    env: &shared\n'), /read/);
   refused('ci', changed('ci', /if: always\(\)\n/, '$&    env: *shared\n'), /read/);
   refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, 'node-version-file: .nvmrc'), /setup-node/);
   refused('release', changed('release', /\n      - uses: actions\/setup-node@[^\n]*\n        with:\n          node-version: [^\n]*\n          package-manager-cache: false/g, ''), /no node-version is named/);
