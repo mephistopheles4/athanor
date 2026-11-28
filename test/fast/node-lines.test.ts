@@ -220,7 +220,7 @@ test('NV4 the real files agree', () => {
 test('NV4 a types major, a matrix, a literal, a release pin or a test image off the floor is refused', () => {
   refused('packageJson', changed('packageJson', /("@types\/node": ")\d+/, '$199'), /@types\/node/);
   refused('ci', changed('ci', EVERY_MATRIX, "node: ['22', '24']"), /matrix/);
-  refused('ci', changed('ci', EVERY_MATRIX, "node: ['26', '24']"), /matrix/);
+  refused('ci', changed('ci', EVERY_MATRIX, "node: ['24', '22']"), /matrix/);
   refused('ci', changed('ci', /node-version: '24'/, "node-version: '99'"), /node-version/);
   refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, "node-version: '99.0.0'"), /node-version/);
   refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, "node-version: '24'"), /node-version/);
@@ -241,6 +241,8 @@ test('NV4 a setup-node step that names neither the matrix nor a literal is refus
 test('NV4 an aggregator without if: always(), or without a job in needs:, is refused', () => {
   refused('ci', changed('ci', /\n    if: always\(\)/, ''), /if: always\(\)/);
   refused('ci', changed('ci', /if: always\(\)\n/, 'if: ${{ !cancelled() }}\n'), /if: always\(\)/);
+  // On a step it holds nothing: the job itself would still be skipped.
+  refused('ci', changed('ci', /\n    if: always\(\)([\s\S]*?\n      - name: Every job it needs passed)/, '$1\n        if: always()'), /if: always\(\)/);
   refused('ci', changed('ci', /needs: \[workflows, suite\]/, 'needs: [workflows]'), /suite/);
   refused('ci', changed('ci', /needs: \[workflows, suite\]/, 'needs: [suite]'), /workflows/);
   refused('ci', changed('ci', /\njobs:\n/, '\njobs:\n  extra:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: node --version\n'), /extra/);
@@ -263,5 +265,8 @@ test('NV4 a layout the check cannot read is refused, never passed', () => {
   refused('packageJson', changed('packageJson', /">=24"/, '">=24.1"'), /engines/);
   refused('ci', changed('ci', MATRIX, "$&\n        exclude:\n          - node: '26'"), /read/);
   refused('ci', changed('ci', /\n    if: always\(\)/, '$&\n    "continue-on-error": true'), /read/);
-  refused('ci', changed('ci', /\n        with:\n          node-version: '24'\n          package-manager-cache: false/, "\n        with: { node-version: '24', package-manager-cache: false }"), /read|setup-node/);
+  refused('ci', changed('ci', /if: always\(\)\n/, '$&    strategy: { fail-fast: false }\n'), /read/);
+  refused('ci', changed('ci', /if: always\(\)\n/, '$&    env: *shared\n'), /read/);
+  refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, 'node-version-file: .nvmrc'), /setup-node/);
+  refused('release', changed('release', /\n      - uses: actions\/setup-node@[^\n]*\n        with:\n          node-version: [^\n]*\n          package-manager-cache: false/g, ''), /no node-version is named/);
 });
