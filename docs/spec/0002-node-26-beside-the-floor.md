@@ -1,14 +1,14 @@
 # Spec: Node 26 beside the Node 24 floor — V1
 
-Status: proposed, revision 3 (after Design rounds 1 and 2, the second final). Tier: thorough, on the sensitive route (the lead's pick, flagged for the owner). The work touches `release.yml`, the fast tier that `release.yml` runs, the required check, and, in the-pact, the signed Node that every cloud session runs.
+Status: proposed, revision 4. Revision 3 followed Design rounds 1 and 2, the second final. Revision 4 holds the owner's decision of 2026-11-27: Node 26 runs on Linux alone, and no scheduled run covers the other systems. Tier: thorough, on the sensitive route (the lead's pick, flagged for the owner). The work touches `release.yml`, the fast tier that `release.yml` runs, the required check, and, in the-pact, the signed Node that every cloud session runs.
 
 ## S1. Objective
 
-athanor is tested on Node 24 alone. Node 26 has been the newest LTS line since 26.13.0 (2026-10-28), and Node 24 stays supported until April 2028. athanor should be tested on both, with 24 still the lowest version it supports, its **floor**. A user on Node 26 gets the same tested package as a user on Node 24.
+athanor is tested on Node 24 alone. Node 26 has been the newest LTS line since 26.13.0 (2026-10-28), and Node 24 stays supported until April 2028. athanor should be tested on both, with 24 still the lowest version it supports, its **floor**. A user on Node 26 gets the same package as a user on Node 24, tested on Linux.
 
 Done looks like this:
 
-- Every CI job that runs athanor's tests runs them on 24 and on 26.
+- Every pull request and push runs athanor's tests on 24 on Linux, macOS and Windows, and on 26 on Linux.
 - The required check `ci` stays the one name the ruleset requires, and a test holds its shape.
 - A type check still refuses an API only Node 26 has.
 - A fast-tier test fails when the places that name the floor disagree.
@@ -30,7 +30,7 @@ stacks tested Node 22 beside 24 from 2026-07-31 to 2026-10-16 (its ADR-0023, the
 
 - **The floor** is line 24. `package.json` keeps `"engines": { "node": ">=24" }`. `@types/node` keeps major 24 (today `24.19.2`). Both `tsconfig.json` files keep `target` and `lib` at `es2024`. So the type checks see only what Node 24 declares: a Node-26-only API, or a language feature past ES2024, fails them.
 - **What is tested on the floor is its newest release.** CI's `'24'` resolves to the newest 24.x, and `@types/node` 24.19.2 declares APIs added in later 24 minors. Nothing runs or types the code against 24.0. This was so before this change, and it stays an accepted gap: a user on an old 24.x should update within the line.
-- **The newest line** is 26. It appears only in the CI matrices.
+- **The newest line** is 26. It appears only in the matrix of the Linux job `suite`.
 - Dependabot already holds `@types/node` to its major ("The major tracks the Node floor"), and that stays. Dependabot moves setup-node's action SHA, never a `node-version`.
 - `test/container/Dockerfile` keeps `FROM node:24-alpine`. `athanor run fast` tests the floor on the owner's machine, and only CI tests 26.
 
@@ -42,11 +42,12 @@ stacks tested Node 22 beside 24 from 2026-07-31 to 2026-10-16 (its ADR-0023, the
 | --- | --- | --- | --- |
 | `workflows` | ubuntu-24.04, `timeout-minutes: 10` | `'24'` | checkout, zizmor, setup-node, `node scripts/check-workflows.mjs` |
 | `suite (node 24)`, `suite (node 26)` | ubuntu-24.04, `timeout-minutes: 30` | matrix `['24', '26']` | every other step of today's `ci` job, unchanged and in order: the install-scripts and registry check, `npm ci`, `npm audit signatures`, both tsc checks, the `.mjs` syntax check, the source check, the fast tier, the docker tier, pack and install, the typed import |
-| `ci-macos (node 24)`, `ci-macos (node 26)` | macos-15 | matrix `['24', '26']` | today's `ci-macos` steps |
-| `ci-windows (node 24)`, `ci-windows (node 26)` | windows-2025 | matrix `['24', '26']` | today's `ci-windows` steps |
+| `ci-macos` | macos-15 | `'24'` | today's `ci-macos` steps |
+| `ci-windows` | windows-2025 | `'24'` | today's `ci-windows` steps |
 | `ci` | ubuntu-24.04, `timeout-minutes: 5` | none | the aggregator below |
 
-- Each matrix job sets `strategy.fail-fast: false`, `matrix.node: ['24', '26']`, `name: <job> (node ${{ matrix.node }})` and `node-version: ${{ matrix.node }}`. The three matrix lists are the same list.
+- `suite` sets `strategy.fail-fast: false`, `matrix.node: ['24', '26']`, `name: suite (node ${{ matrix.node }})` and `node-version: ${{ matrix.node }}`. It is the one job with a matrix.
+- **Node 26 is not tested on macOS or Windows,** on a pull request, a push or a schedule. The owner's reason is cost: the pattern goes to the owner's other repos, and each further leg is runner time in each. What a new Node line breaks mostly breaks the same way on every system. The residual: a break that only Node 26 on macOS or Windows shows reaches a user before CI sees it.
 - **The aggregator `ci`** has `needs: [workflows, suite]` and `if: always()`. It has no checkout, no setup-node and no `permissions:` of its own. Its one step fails unless every needed job's result is `success`:
 
   ```yaml
@@ -71,7 +72,7 @@ stacks tested Node 22 beside 24 from 2026-07-31 to 2026-10-16 (its ADR-0023, the
   - the same `concurrency`.
 
   `node scripts/check-workflows.mjs` passes on the new file.
-- The header comment of `ci.yml` is rewritten. It names the five jobs, the two lines and the jobs `ci` needs, and says why `if: always()` must stay.
+- The header comment of `ci.yml` is rewritten. It names the five jobs, the two lines and which system runs which, and the jobs `ci` needs, and says why `if: always()` must stay.
 
 ## S5. The agreement check
 
@@ -79,8 +80,12 @@ A new fast-tier test, `test/fast/node-lines.test.ts`, reads these as text, with 
 
 1. the floor: `engines.node` in `package.json`, which must be exactly `>=N`;
 2. `@types/node`'s major in `package.json`'s `devDependencies`;
-3. every `matrix.node` list in `ci.yml`: each must be the same list, in rising order, starting at N;
-4. every literal `node-version` in `ci.yml` (the `workflows` job's): each must be `'N'`;
+3. **the legs** in `ci.yml`:
+   - `suite` runs on an `ubuntu-` runner, its matrix is N and one newer line, and each of its `node-version`s reads the matrix;
+   - `ci-macos` and `ci-windows` run on a `macos-` and a `windows-` runner;
+   - each of the three has a setup-node step;
+   - no other job has a matrix;
+4. every `node-version` in `ci.yml` outside `suite`: each must be `'N'`;
 5. every `node-version` in `release.yml`: each must be an exact `N.y.z`;
 6. the `FROM node:N-...` line of `test/container/Dockerfile`;
 7. **the aggregator's shape** in `ci.yml`:
@@ -91,14 +96,17 @@ A new fast-tier test, `test/fast/node-lines.test.ts`, reads these as text, with 
 
 The test fails, naming the file and what to change, when:
 
-- any of 2 to 6 disagrees with 1;
-- a `ci.yml` setup-node step names neither the matrix nor a literal;
+- any of 2, 4, 5 or 6 disagrees with 1;
+- 3 does not hold;
+- a `ci.yml` setup-node step names no `node-version`;
 - 7 does not hold.
 
 The logic is one pure function over the files' text. It is tested on the real files, and on copies with one input changed at a time:
 
-- each of inputs 2 to 6;
-- two `ci.yml` matrices that differ;
+- each of inputs 2, 4, 5 and 6;
+- `suite`'s matrix off N, short of a newer line, dropped, or unread by its setup-node step;
+- a matrix, or a newer line, on `ci-macos` or `ci-windows`;
+- a leg on another system, removed, or without its setup-node step;
 - the aggregator's `if:` dropped;
 - a job left out of its `needs:`;
 - a checkout, a setup-node or a `permissions:` key added to the aggregator;
@@ -112,7 +120,7 @@ A layout the function cannot read fails the test, never passes it. The test file
 
 - **The release stays on the floor line.** Its fast tier then runs on the floor. The tarball is plain JavaScript compiled by tsc, so the publishing Node does not shape it. The release moves to the next line when the floor does, and the agreement check (S5) holds it there.
 - **AGENTS.md's rule holds:** the pull request names the release and its date, v24.22.3 of 2026-11-10. On 2026-11-27 it is 17 days old, past the 7 days.
-- The release's "Check that CI passed on this commit" reads the whole `ci.yml` run, so a release now also waits for the Node 26 legs. `release.yml` needs no other change.
+- The release's "Check that CI passed on this commit" reads the whole `ci.yml` run, so a release now also waits for the Node 26 leg. `release.yml` needs no other change.
 
 ## S7. The cloud sessions' Node pin
 
@@ -134,10 +142,10 @@ The owner asked to recheck the backlog's cloud Node 24 pin here. It is the-pact'
 - **AGENTS.md:**
   - "It is a Node 24 package" says it is tested on Node 24, the lowest version it supports, and on 26.
   - "Runs anywhere Node 24, git and `tar` run" says Node 24 or later.
-  - The CI paragraph says the jobs run on 24 and 26, and that `ci` is the job the ruleset requires, which waits for the others.
+  - The CI paragraph says 26 runs in the Linux `suite` job alone, and that `ci` is the job the ruleset requires, which waits for the Linux jobs.
   - AGENTS.md uses plain words, not "floor", so GLOSSARY.md (1,199 of its 1,200 words) needs no entry.
   - AGENTS.md is at 1,688 of its 1,700 words. The builder first cuts history or a duplicate, as `test/fast/docs.test.ts` says. The builder raises the number only for an instruction in force, and says why in the pull request.
-- **README, Install:** "Needs Node 24 or later" adds that athanor is tested on Node 24 and 26.
+- **README, Install:** "Needs Node 24 or later" adds that athanor is tested on Node 24, and on Node 26 on Linux only.
 - **docs/releasing.md:** step 14's Node version (S6).
 - **ADR 0040,** "Two Node lines: the floor and the newest LTS", with its line in `docs/adr/README.md`. It holds the decision (S3 to S6), why, and a section "To copy it" (S9). ADRs may use "floor", and the ADR defines it.
 - The threat model names no Node version and no CI job. It does not change (S11).
@@ -147,26 +155,26 @@ The owner asked to recheck the backlog's cloud Node 24 pin here. It is the-pact'
 ADR 0040's "To copy it" is written so a repo can follow it without reading athanor:
 
 1. Name the floor once in `engines` (`>=N`). Keep the types package at major N, and the TypeScript `lib` and `target` at what Node N runs. The floor is tested at its newest release.
-2. Use one matrix list, `['N', 'M']`, M being the newest LTS, with `fail-fast: false`, on every job that runs the code. A check whose verdict does not move with Node runs once, on N.
+2. On every pull request and push, run N on every system the package supports, and M, the newest LTS, on Linux alone: one matrix `['N', 'M']` with `fail-fast: false` on the Linux job that runs the code, and a literal N on the others. The other systems do not test M. That saves runner time, and what a new line breaks mostly shows on Linux too. A check whose verdict does not move with Node runs once, on N.
 3. Use one aggregator job with the required check's name.
    - It has `needs:` on every job a merge must wait for, and `if: always()`.
    - It fails on any result but `success`, and on an empty list.
    - It has no checkout, no secret and no permission beyond the workflow's.
    - It reads the results through `env:`, never inline.
    - `if: always()` is what keeps a skipped aggregator from passing as success, so a test holds it.
-4. Write a test that reads the floor, the types major, every matrix, every literal `node-version`, every other Node pin and the aggregator's shape, and fails when they disagree.
+4. Write a test that reads the floor, the types major, the matrix, which system runs which line, every literal `node-version`, every other Node pin and the aggregator's shape, and fails when they disagree.
 5. Keep an exact release pin on line N, moved by hand to a release at least 7 days old.
 6. **When a line comes or goes:**
-   - Add M to the matrix when it becomes LTS (each October).
-   - Move the floor to the next line before N's end of life. Do it in one change that moves `engines`, the types major, the release pin and the matrix together; the test enforces this.
+   - When a newer line becomes LTS (each October), make it M.
+   - Move the floor to the next line before N's end of life. Do it in one change that moves `engines`, the types major, the release pin, every literal and the matrix together; the test enforces this.
    - For a published package, a floor move is a breaking change.
 
 ## S10. Trade-off points
 
 | Qualities | Side taken | Driver |
 | --- | --- | --- |
-| Compatibility (26 tested everywhere) against performance (runner time) | 26 on every job that runs the tests, on all three systems. The legs run side by side. macOS runners can queue, so a run may take longer to finish, and no budget is set. The repo is public, so the minutes cost nothing. Trimming a leg is a one-line change. | No business driver is named in AGENTS.md (flagged), so this leans to what is cheaper to reverse. |
-| Reliability of the gates (twice the legs, twice the chances of a flaky red) against compatibility | Accepted. A flaky leg is re-run from the run's page. A leg that stays red on 26 alone goes by S14's stop. | Cheaper to reverse: a leg is one line. |
+| Compatibility (26 tested everywhere) against performance (runner time) | 24 on every system, 26 on Linux alone. athanor's repo is public, so its own minutes cost nothing; the cost counts across the repos that copy the pattern. Adding a system is a few lines. | The owner's, of 2026-11-27: cost across the owner's repos. What a new Node line breaks mostly breaks the same way on every system. |
+| Reliability of the gates (a second leg, a second chance of a flaky red) against compatibility | Accepted. A flaky leg is re-run from the run's page. A leg that stays red on 26 alone goes by S14's stop. | Cheaper to reverse: a leg is one line. |
 | Reliability of the merge gate against flexibility (which jobs block a merge) | `ci` needs the Linux jobs only, as today. macOS and Windows block the release, not the merge. | Cheaper to reverse. Widening the required set is the owner's call (Q1). |
 | Maintainability (a line-based read of YAML) against a YAML dev package | Line-based, as `check-workflows.mjs` already reads workflows. A layout it can't read fails the test, never passes it. | ADR 0001 and the supply-chain rules keep dev packages to the compiler and its types. |
 | Compatibility (release on 26) against reliability (release on the floor) | The floor. | The release's fast tier proves the floor, and there is one fewer line to move. |
@@ -190,15 +198,15 @@ ADR 0040's "To copy it" is written so a repo can follow it without reading athan
 ## S12. Acceptance claims
 
 - **NV1.** On the pull request's CI run, `suite (node 24)` and `suite (node 26)` each run every step of today's `ci` job except zizmor and the workflow rules, and pass. Each leg's setup-node log shows its line. `workflows` passes. `ci.yml`'s header comment says what S4's last bullet says.
-- **NV2.** `ci-macos (node 24)`, `ci-macos (node 26)`, `ci-windows (node 24)` and `ci-windows (node 26)` run today's steps of their jobs and pass.
+- **NV2.** `ci-macos` and `ci-windows` run today's steps of their jobs on 24 and pass. No run of `ci.yml` has a macOS or Windows job on 26, and no workflow runs on a schedule.
 - **NV3.** `ci` reports on the pull request, and passes when every job it needs passes. The builder checks by hand, once, that it fails in both other cases:
   - a throwaway commit makes one step fail on the 26 leg only, and `ci` goes red;
   - a second sets `if: false` on `suite`, and `ci` goes red with `skipped`.
 
   Both commits are reverted, and the pull request links the three runs.
 - **NV4.** `test/fast/node-lines.test.ts` passes on the tree. It fails, naming the file, for each change S5 lists:
-  - inputs 2 to 6 changed alone;
-  - two `ci.yml` matrices that differ;
+  - inputs 2, 4, 5 and 6 changed alone;
+  - each change to the legs;
   - the aggregator's `if:` dropped;
   - a job left out of its `needs:`;
   - a checkout, a setup-node or a `permissions:` key added to the aggregator;
@@ -260,7 +268,8 @@ ADR 0040's "To copy it" is written so a repo can follow it without reading athan
   - dropping 24 (before April 2028, in its own change);
   - moving the-pact's sessions to 26 (the-pact's own Node 26 item);
   - copying the pattern to the other repos (the follow-up in S13);
-  - the Windows docker tier on Docker Desktop (K5). It stays on 24, by hand: it checks the engine on a Windows host, and the `ci-windows` legs already run athanor's Node code on 26 there.
+  - Node 26 on macOS and Windows, on a pull request, a push or a schedule (S4);
+  - the Windows docker tier on Docker Desktop (K5). It stays on 24, by hand: it checks the engine on a Windows host.
 
 ## S15. Needs a human
 
@@ -268,7 +277,7 @@ ADR 0040's "To copy it" is written so a repo can follow it without reading athan
 | --- | --- | --- | --- |
 | Accept this spec, or correct it | the owner | before T1, T2 and T3 start | — |
 | **Q1.** Should `ci` also need the macOS and Windows jobs, so they block a merge? | the owner | before T2 starts | No, as today. They still block the release, and adding them is one line in `needs:`. |
-| **Q2.** Node 26 on macOS and Windows on every pull request, or on Linux only? | the owner | before T2 starts | All three systems. AGENTS.md names all three, and a leg is one line to trim. |
+| **Q2.** Node 26 on macOS and Windows on every pull request, or on Linux only? | the owner | answered, 2026-11-27 | Linux only, with no scheduled run either (revision 4). The session's earlier pick was all three systems. |
 | **Q3.** T3 as the-pact's backlog item for the cloud Node pin in the-pact, related to this work's issue, rather than an athanor sub-issue | the owner | before T3 starts | As the-pact's backlog item for the cloud Node pin. |
 | **Q4.** No business driver is named, so the trade-offs lean to what is cheaper to reverse | the owner | at acceptance | — |
 | The required check is rebuilt as an aggregator (S11), a change to a named control | the owner | at acceptance | Take it, with NV3 and NV4. |

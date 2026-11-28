@@ -2,7 +2,7 @@
 
 athanor runs a repo's tests on the tracked files in the working tree,
 uncommitted edits included, inside a fresh Docker container, and keeps a
-machine-wide limit on how many runs go at once. Its package, `@mephistopheles4/athanor`, is tested on Node 24, the lowest version it supports, and on 26. Its command is
+machine-wide limit on how many runs go at once. Its package, `@mephistopheles4/athanor`, is tested on Node 24, the lowest version it supports, and on 26 on Linux. Its command is
 `athanor`. Words used here are defined in [GLOSSARY.md](GLOSSARY.md); the
 decisions are in [docs/adr/](docs/adr/).
 
@@ -116,8 +116,7 @@ signatures`, a strict `tsc` check of `src/` and of
 the source check, both tiers, and a pack-and-install check that builds before
 it packs, compares the packed `dist/` with a rebuild, checks the packed file's
 contents and type-checks an import of the package by its name, on Linux.
-Jobs run on Node 24 and 26; zizmor and the workflows' own rules run on 24
-alone. The ruleset requires `ci`, which waits for the Linux jobs. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
+Node 26 runs in the Linux `suite` job alone; the rest runs on 24. The ruleset requires `ci`, which waits for the Linux jobs. A macOS job, `ci-macos`, adds the lock probe and drops zizmor, the
 workflows' own rules and the docker tier. Every test sets its own `ATHANOR_HOME` and name
 prefix, so tests never touch a live machine's slots, configuration or image
 marks.

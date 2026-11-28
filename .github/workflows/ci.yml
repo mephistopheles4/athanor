@@ -1,7 +1,8 @@
 # Five jobs on two Node lines: 24, the lowest line athanor supports, and 26.
-# The steps the jobs share are copies: change each. suite, ci-macos and
-# ci-windows each run once per line; their comments, further down, say what
-# the last two run.
+# Node 24 runs on Linux, macOS and Windows; Node 26 on Linux alone, to spend
+# less runner time. The steps the jobs share are copies: change each. suite
+# runs once per line; the comments on ci-macos and ci-windows, further down,
+# say what they run.
 #   workflows   Node 24: zizmor on the workflows and the workflows' own rules
 #               (scripts/check-workflows.mjs). Neither verdict moves with
 #               Node, so they run once.
@@ -18,8 +19,8 @@
 #               comparison of its dist/ with a fresh build, an install of it
 #               into a temporary prefix, and a type check of a file that
 #               imports it by its name and sees no test-only option.
-#   ci-macos    macOS, Node 24 and 26.
-#   ci-windows  Windows, Node 24 and 26.
+#   ci-macos    macOS, Node 24.
+#   ci-windows  Windows, Node 24.
 #   ci          the one check main's ruleset requires. It needs workflows and
 #               suite, and fails unless every one of them, on each line, ended
 #               success. Its if: always() must stay: without it a failed or
@@ -219,20 +220,16 @@ jobs:
   # workflows' own rules run in the workflows job only, and the docker tier in
   # the suite job only.
   ci-macos:
-    name: ci-macos (node ${{ matrix.node }})
+    name: ci-macos
     runs-on: macos-15
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['24', '26']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '24'
           package-manager-cache: false
       # Proves CI reads the repo's .npmrc, and that the install and the
       # signature check below use the public registry and its keys. It reads
@@ -362,20 +359,16 @@ jobs:
   # docker tier on Docker Desktop (K5) stays by hand: a Windows runner has no
   # Linux container engine.
   ci-windows:
-    name: ci-windows (node ${{ matrix.node }})
+    name: ci-windows
     runs-on: windows-2025
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['24', '26']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '24'
           package-manager-cache: false
       - name: Install the compiler from the lockfile
         run: npm ci --ignore-scripts --no-audit --no-fund

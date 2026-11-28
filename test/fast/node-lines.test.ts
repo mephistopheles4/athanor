@@ -21,6 +21,13 @@ type Files = Record<keyof typeof PATHS, string>;
 
 // The jobs ci may leave out of needs: they do not block a merge (spec, Q1).
 const NOT_NEEDED = ['ci-macos', 'ci-windows'];
+// The jobs that run athanor on every pull request and push, the system each one
+// runs on, and whether it runs a newer line beside the floor (spec, S4).
+const LEGS = [
+  { name: 'suite', runner: 'ubuntu-', newer: true },
+  { name: 'ci-macos', runner: 'macos-', newer: false },
+  { name: 'ci-windows', runner: 'windows-', newer: false },
+];
 const FROM_MATRIX = '${{ matrix.node }}';
 
 // A workflow line that means something: no blank, no comment, and nothing
@@ -139,23 +146,27 @@ function nodeLineProblems(files: Files): string[] {
 
   const read = (file: 'ci' | 'release') => readJobs(files[file], (line) => say(file, `cannot read "${line.trim()}": write the workflow's jobs in plain block style.`));
   const ci = read('ci');
-  let first: string | undefined;
   for (const job of ci) {
+    const both = LEGS.some((leg) => leg.newer && leg.name === job.name);
+    const want = both ? FROM_MATRIX : `'${floor}'`;
     const list = matrix(job);
     if (list === undefined) say('ci', `cannot read the matrix of job ${job.name}: write it as strategy:, matrix:, node: [...] with no other key.`);
-    if (list) {
-      first ??= String(list);
-      const rising = list.every((v, i) => i === 0 || Number(v) > Number(list[i - 1]));
-      if (list[0] !== floor || !rising || String(list) !== first) say('ci', `the matrix of job ${job.name} is [${list}]: give every job the same node list, in rising order, starting at ${floor}.`);
-    }
+    else if (both && !(list?.length === 2 && list[0] === floor && Number(list[1]) > Number(floor))) say('ci', `job ${job.name} must run two lines: give it the matrix node: ['${floor}', a newer line].`);
+    else if (!both && list) say('ci', `job ${job.name} has a node matrix: it runs ${floor} alone, so remove the matrix and write '${floor}'.`);
     for (const version of nodeVersions(job.lines)) {
-      if (version === FROM_MATRIX) {
-        if (list === null) say('ci', `job ${job.name} has node-version: ${FROM_MATRIX} and no matrix: give it the matrix, or write '${floor}'.`);
-      } else if (version !== floor) say('ci', `job ${job.name} has node-version ${version}: write '${floor}' or ${FROM_MATRIX}.`);
+      if (version !== (both ? FROM_MATRIX : floor)) say('ci', `job ${job.name} has node-version ${version}: write ${want}.`);
     }
-    if (steps(job).some((s) => uses(s, 'actions/setup-node') && nodeVersions(s).length !== 1)) say('ci', `a setup-node step of job ${job.name} names no node-version: give it '${floor}' or ${FROM_MATRIX}.`);
+    if (steps(job).some((s) => uses(s, 'actions/setup-node') && nodeVersions(s).length !== 1)) say('ci', `a setup-node step of job ${job.name} names no node-version: give it ${want}.`);
   }
-  if (first === undefined) say('ci', 'no job has a node matrix: give the jobs that run the code strategy.matrix.node.');
+  for (const leg of LEGS) {
+    const job = ci.find((j) => j.name === leg.name);
+    if (!job) {
+      say('ci', `there is no job ${leg.name}: keep it, so its system stays tested.`);
+      continue;
+    }
+    if (!unquoted(jobKeys(job).find((l) => l.key === 'runs-on')?.value ?? '').startsWith(leg.runner)) say('ci', `job ${leg.name} must run on a ${leg.runner} runner.`);
+    if (!steps(job).some((s) => uses(s, 'actions/setup-node'))) say('ci', `job ${leg.name} has no setup-node step: add one, so it does not run the runner's own Node.`);
+  }
 
   const release = read('release');
   const pin = new RegExp(`^${floor}\\.\\d+\\.\\d+$`);
@@ -210,7 +221,6 @@ function refused(file: keyof Files, copy: Files, why: RegExp): void {
 }
 
 const MATRIX = /node: \['24', '26'\]/;
-const EVERY_MATRIX = /node: \['24', '26'\]/g;
 const AGGREGATOR_STEPS = /(  ci:\n    name: ci\n[\s\S]*?    steps:\n)/;
 
 test('NV4 the real files agree', () => {
@@ -219,16 +229,26 @@ test('NV4 the real files agree', () => {
 
 test('NV4 a types major, a matrix, a literal, a release pin or a test image off the floor is refused', () => {
   refused('packageJson', changed('packageJson', /("@types\/node": ")\d+/, '$199'), /@types\/node/);
-  refused('ci', changed('ci', EVERY_MATRIX, "node: ['22', '24']"), /matrix/);
-  refused('ci', changed('ci', EVERY_MATRIX, "node: ['24', '22']"), /matrix/);
+  refused('ci', changed('ci', MATRIX, "node: ['25', '26']"), /matrix/);
+  refused('ci', changed('ci', MATRIX, "node: ['24', '22']"), /matrix/);
   refused('ci', changed('ci', /node-version: '24'/, "node-version: '99'"), /node-version/);
   refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, "node-version: '99.0.0'"), /node-version/);
   refused('release', changed('release', /node-version: '\d+\.\d+\.\d+'/, "node-version: '24'"), /node-version/);
   refused('dockerfile', changed('dockerfile', /FROM node:\d+-/, 'FROM node:99-'), /FROM/);
 });
 
-test('NV4 two matrices that differ are refused', () => {
-  refused('ci', changed('ci', MATRIX, "node: ['24', '99']"), /matrix/);
+test('NV4 a leg that runs other lines, or on another system, is refused', () => {
+  // Linux loses the newer line: the list, the whole matrix, or the step that reads it.
+  refused('ci', changed('ci', MATRIX, "node: ['24']"), /two lines/);
+  const alone = changed('ci', /\n    strategy:\n      fail-fast: false\n      matrix:\n        node: \['24', '26'\]/, '');
+  refused('ci', { ...alone, ci: alone.ci.replace('node-version: ${{ matrix.node }}', "node-version: '24'") }, /matrix/);
+  refused('ci', changed('ci', /node-version: \$\{\{ matrix\.node \}\}/, "node-version: '24'"), /matrix/);
+  // Another system takes the newer line, in a matrix or in place of the floor.
+  refused('ci', changed('ci', /\n  ci-macos:\n/, "$&    strategy:\n      matrix:\n        node: ['24', '26']\n"), /matrix/);
+  refused('ci', changed('ci', /(\n  ci-windows:\n[\s\S]*?node-version: )'24'/, "$1'26'"), /node-version/);
+  refused('ci', changed('ci', /runs-on: macos-\d+/, 'runs-on: ubuntu-24.04'), /macos- runner/);
+  refused('ci', changed('ci', /\n  ci-windows:\n[\s\S]*?(?=\n  ci:\n)/, ''), /no job ci-windows/);
+  refused('ci', changed('ci', /(\n  ci-macos:\n[\s\S]*?)\n      - uses: actions\/setup-node@[^\n]*\n        with:\n          node-version: '24'\n          package-manager-cache: false/, '$1'), /no setup-node step/);
 });
 
 test('NV4 a setup-node step that names neither the matrix nor a literal is refused', () => {
