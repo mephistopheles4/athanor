@@ -40,3 +40,4 @@ changed one gets a new record that names the one it replaces.
 | [0037](0037-the-macos-lock-is-a-loopback-port.md) | The macOS lock is a loopback port (amends 0004, 0011 and 0020; superseded in part by 0038) |
 | [0038](0038-guards-against-the-owners-own-machine-are-cut.md) | Guards against the owner's own machine are cut (supersedes parts of 0011, 0020, 0021, 0023, 0024, 0032, 0034 and 0037) |
 | [0039](0039-an-outside-configuration-is-a-second-source-of-build-files.md) | An outside configuration is a second source of build files (amends 0006 and 0038; extends 0010) |
+| [0040](0040-two-node-lines-the-floor-and-the-newest-lts.md) | Two Node lines: the floor and the newest LTS |
