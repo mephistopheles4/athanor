@@ -766,7 +766,7 @@ print the same number. Cautions:
   rule for a pull request that moves an action SHA or `node-version` is in
   AGENTS.md, "Releases".
 
-## What to know
+## What to know (stale-table proof)
 
 - **The build is explicit.** The repo's `.npmrc` turns lifecycle scripts off
   (ADR 0018), so `npm pack` and `npm publish` do not run `prepack`. Run
