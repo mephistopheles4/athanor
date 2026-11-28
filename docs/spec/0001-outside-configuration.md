@@ -2,6 +2,23 @@
 
 Status: proposed, revision 2. Tier: standard.
 
+<!-- toc -->
+
+- [Objective](#objective)
+- [The owner's decisions (from chat, 2026-11-27)](#the-owners-decisions-from-chat-2026-11-27)
+- [Behaviour](#behaviour)
+- [Commands](#commands)
+- [Project structure](#project-structure)
+- [Code style](#code-style)
+- [Testing strategy](#testing-strategy)
+- [Success criteria](#success-criteria)
+- [Boundaries](#boundaries)
+- [Trade-offs](#trade-offs)
+- [Out of scope (deferred)](#out-of-scope-deferred)
+- [Open questions](#open-questions)
+
+<!-- /toc -->
+
 ## Objective
 
 athanor reads its configuration only from the repo it tests: `athanor.json`,

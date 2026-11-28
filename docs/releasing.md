@@ -10,6 +10,25 @@ published once read, from which Zenodo archives the repo (ADR 0029, ADR 0031).
 A release candidate gets none.
 Only the owner does any step on this page.
 
+<!-- toc -->
+
+- [Versions and dist-tags](#versions-and-dist-tags)
+- [The first publish, by hand](#the-first-publish-by-hand)
+- [Later releases, through the workflow](#later-releases-through-the-workflow)
+  - [Before the merge of the workflow, once](#before-the-merge-of-the-workflow-once)
+  - [After the merge, once: the dry run](#after-the-merge-once-the-dry-run)
+  - [The first workflow release, within 2 days of adding the trusted publisher](#the-first-workflow-release-within-2-days-of-adding-the-trusted-publisher)
+  - [Before the next release, once](#before-the-next-release-once)
+  - [The `npm` environment, after the tag workflow merges, once](#the-npm-environment-after-the-tag-workflow-merges-once)
+  - [Each release](#each-release)
+  - [If a run fails](#if-a-run-fails)
+  - [Stop conditions and rollback](#stop-conditions-and-rollback)
+  - [Testing an unreleased build locally](#testing-an-unreleased-build-locally)
+  - [Upkeep](#upkeep)
+- [What to know](#what-to-know)
+
+<!-- /toc -->
+
 ## Versions and dist-tags
 
 A release version is `X.Y.Z` or `X.Y.Z-rc.N`, where X, Y, Z and N are whole
