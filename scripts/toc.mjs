@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Source: the-pact 2b1eaaae2b605d1a22320161239d3fb57e4b6832
+// Source: the-pact bc0af43334ebd489914714ee43a6fb23058914e6
 // Writes each long doc's table of contents from its headings (PACT-78).
 //
 //   node <this file>           write every covered doc whose table is missing or stale
