@@ -93,6 +93,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
+      - name: Throwaway for NV3, fail the 26 leg only
+        if: matrix.node == '26'
+        run: exit 1
       # Proves CI reads the repo's .npmrc, and that the install and the
       # signature check below use the public registry and its keys. It reads
       # .npmrc and the lockfile as text and prints no line of either.
